@@ -15,6 +15,17 @@ body {
   @apply bg-slate-50 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100;
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior-y: none;
+  /* No double-tap zoom (taps on chips and buttons were zooming the page); pinch zoom still works. */
+  touch-action: manipulation;
+}
+
+/* iOS zooms into any form field under 16px when it gets focus. Keep fields at 16px on touch screens. */
+@media (pointer: coarse) {
+  input,
+  select,
+  textarea {
+    font-size: max(16px, 1em) !important;
+  }
 }
 
 .safe-top {
