@@ -8,14 +8,14 @@ export function Export(props: { today: string }) {
   const q = (format: string, kind = 'items') => `/api/export?format=${format}&kind=${kind}&from=${from}&to=${to}`;
   return (
     <section class="card flex flex-col gap-3 p-4">
-      <h2 class="font-semibold">Export</h2>
+      <h2 class="display text-xl font-semibold">Export</h2>
       <div class="grid grid-cols-2 gap-3">
         <label class="flex flex-col gap-1">
-          <span class="text-xs text-slate-500">From</span>
+          <span class="text-xs text-ink-2">From</span>
           <input class="input" type="date" value={from} max={to} onChange={(e) => setFrom((e.target as HTMLInputElement).value)} />
         </label>
         <label class="flex flex-col gap-1">
-          <span class="text-xs text-slate-500">To</span>
+          <span class="text-xs text-ink-2">To</span>
           <input class="input" type="date" value={to} min={from} max={props.today} onChange={(e) => setTo((e.target as HTMLInputElement).value)} />
         </label>
       </div>
@@ -30,7 +30,7 @@ export function Export(props: { today: string }) {
           JSON
         </a>
       </div>
-      <p class="text-xs text-slate-500">Foods CSV has one row per item; Daily CSV has totals vs targets and weight trend; JSON has full records.</p>
+      <p class="text-xs text-ink-2">Foods CSV has one row per item; Daily CSV has totals vs targets and weight trend; JSON has full records.</p>
     </section>
   );
 }

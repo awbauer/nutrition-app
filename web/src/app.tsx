@@ -1,3 +1,4 @@
+import { ChartColumn, NotebookPen, Plus, Scale, Settings2 } from 'lucide-preact';
 import { useEffect, useState } from 'preact/hooks';
 import { api, ApiError } from './api';
 import { isIOS, isStandalone } from './push';
@@ -84,36 +85,53 @@ export function App() {
 
   const today = me ? logToday(me.timezone, me.settings.day_cutoff) : null;
 
+  const openLog = () => {
+    // The Today screen owns the log sheet (it knows which day you're looking at).
+    if (tab !== 'today') setTab('today');
+    setTimeout(() => dispatchEvent(new CustomEvent('open-log')), tab === 'today' ? 0 : 50);
+  };
+
   return (
     <div class="mx-auto flex min-h-dvh max-w-lg flex-col">
       <Toaster />
-      <main class="safe-top flex-1 px-4 pb-28">
+      <main class="safe-top flex-1 px-5 pb-32">
         {today && tab === 'today' && <Today key={today} today={today} />}
         {today && tab === 'week' && <Week key={today} today={today} />}
         {me && tab === 'weight' && <Weight unit={me.settings.weight_unit} />}
         {today && tab === 'settings' && <SettingsView today={today} onSaved={loadMe} />}
       </main>
-      <nav class="safe-bottom fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/90 backdrop-blur dark:border-slate-800 dark:bg-slate-950/90">
-        <div class="mx-auto flex max-w-lg">
-          {(
-            [
-              ['today', 'Today', '◉'],
-              ['week', 'Week', '▤'],
-              ['weight', 'Weight', '⚖'],
-              ['settings', 'Settings', '⚙'],
-            ] as const
-          ).map(([t, label, icon]) => (
+      <nav class="safe-bottom fixed inset-x-0 bottom-0 z-20 border-t border-line bg-paper/90 backdrop-blur-md" aria-label="Main">
+        <div class="mx-auto grid max-w-lg grid-cols-5 items-end px-2">
+          <NavItem tab="today" current={tab} onSelect={setTab} label="Today" icon={<NotebookPen size={22} strokeWidth={1.75} />} />
+          <NavItem tab="week" current={tab} onSelect={setTab} label="Week" icon={<ChartColumn size={22} strokeWidth={1.75} />} />
+          <div class="flex justify-center">
             <button
-              class={`flex flex-1 flex-col items-center gap-0.5 py-2 text-xs ${tab === t ? 'text-brand-700 dark:text-brand-500' : 'text-slate-500'}`}
-              onClick={() => setTab(t)}
-              aria-current={tab === t ? 'page' : undefined}
+              class="flex h-16 w-16 -translate-y-4 items-center justify-center rounded-full bg-accent text-white shadow-lg shadow-accent/30 ring-[6px] ring-paper transition active:scale-95"
+              onClick={openLog}
+              aria-label="Log food"
             >
-              <span class="text-lg leading-none">{icon}</span>
-              {label}
+              <Plus size={30} strokeWidth={2.25} />
             </button>
-          ))}
+          </div>
+          <NavItem tab="weight" current={tab} onSelect={setTab} label="Weight" icon={<Scale size={22} strokeWidth={1.75} />} />
+          <NavItem tab="settings" current={tab} onSelect={setTab} label="Settings" icon={<Settings2 size={22} strokeWidth={1.75} />} />
         </div>
       </nav>
     </div>
+  );
+}
+
+function NavItem(props: { tab: Tab; current: Tab; onSelect: (t: Tab) => void; label: string; icon: preact.ComponentChildren }) {
+  const on = props.tab === props.current;
+  return (
+    <button
+      class={`flex flex-col items-center gap-1 pt-2.5 pb-1.5 text-[11px] font-medium ${on ? 'text-ink' : 'text-faint'}`}
+      onClick={() => props.onSelect(props.tab)}
+      aria-current={on ? 'page' : undefined}
+    >
+      {props.icon}
+      <span>{props.label}</span>
+      <span class={`h-1 w-1 rounded-full ${on ? 'bg-accent' : 'bg-transparent'}`} aria-hidden="true" />
+    </button>
   );
 }

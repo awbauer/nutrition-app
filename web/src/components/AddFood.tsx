@@ -87,22 +87,22 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
     const g = unit === 'g' ? amount : portion ? (amount * portion.grams) / portion.amount : amount;
     return (
       <div class="flex flex-col gap-4">
-        <button class="self-start text-sm text-brand-700 dark:text-brand-500" onClick={() => setPicked(null)}>
+        <button class="self-start text-sm text-accent-ink" onClick={() => setPicked(null)}>
           ← Back to results
         </button>
         <div>
           <h3 class="font-semibold">{picked.name}</h3>
-          {picked.brand && <p class="text-sm text-slate-500">{picked.brand}</p>}
+          {picked.brand && <p class="text-sm text-ink-2">{picked.brand}</p>}
         </div>
         <AmountPicker portions={picked.portions} amount={amount} unit={unit} onChange={(a, u) => (setAmount(a), setUnit(u))} />
         <div class="grid grid-cols-2 gap-2 text-center">
-          <div class="rounded-xl bg-slate-100 p-3 dark:bg-slate-800">
-            <div class="text-xl font-bold tabular-nums">{kcal100 != null ? Math.round((kcal100 * g) / 100) : '–'}</div>
-            <div class="text-xs text-slate-500">kcal</div>
+          <div class="rounded-xl bg-sunken p-3 ">
+            <div class="num text-2xl font-semibold">{kcal100 != null ? Math.round((kcal100 * g) / 100) : '–'}</div>
+            <div class="text-xs text-ink-2">kcal</div>
           </div>
-          <div class="rounded-xl bg-slate-100 p-3 dark:bg-slate-800">
-            <div class="text-xl font-bold tabular-nums">{prot100 != null ? Math.round((prot100 * g) / 10) / 10 : '–'}</div>
-            <div class="text-xs text-slate-500">g protein</div>
+          <div class="rounded-xl bg-sunken p-3 ">
+            <div class="num text-2xl font-semibold">{prot100 != null ? Math.round((prot100 * g) / 10) / 10 : '–'}</div>
+            <div class="text-xs text-ink-2">g protein</div>
           </div>
         </div>
         {!props.intakeId && (
@@ -132,8 +132,8 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
         autoFocus
         enterKeyHint="search"
       />
-      {loading && hits.length === 0 && <p class="text-sm text-slate-500">Searching…</p>}
-      <ul class="flex flex-col divide-y divide-slate-100 dark:divide-slate-800">
+      {loading && hits.length === 0 && <p class="text-sm text-ink-2">Searching…</p>}
+      <ul class="flex flex-col divide-y divide-line">
         {hits.map((h) => {
           const name = h.kind === 'local' ? h.food.name : h.hit.name;
           const brand = h.kind === 'local' ? h.food.brand : h.hit.brand;
@@ -144,12 +144,12 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
               <button class="flex w-full items-center gap-3 py-3 text-left" onClick={() => choose(h)}>
                 <div class="min-w-0 flex-1">
                   <p class="truncate text-sm font-medium">{name}</p>
-                  <p class="truncate text-xs text-slate-500">
+                  <p class="truncate text-xs text-ink-2">
                     {tag}
                     {brand ? ` · ${brand}` : ''}
                   </p>
                 </div>
-                <span class="shrink-0 text-xs text-slate-500 tabular-nums">{Math.round(per100(nutrients, 'ENERC_KCAL') ?? 0)} kcal/100g</span>
+                <span class="shrink-0 text-xs text-ink-2 tabular-nums">{Math.round(per100(nutrients, 'ENERC_KCAL') ?? 0)} kcal/100g</span>
               </button>
             </li>
           );

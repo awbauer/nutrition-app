@@ -27,8 +27,9 @@ export function SettingsView(props: { today: string; onSaved: () => void }) {
   const deviceTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   return (
     <div class="flex flex-col gap-4">
-      <h1 class="text-2xl font-bold">Settings</h1>
+      <h1 class="display pt-2 text-[2.1rem] leading-none font-semibold">Settings</h1>
       <section class="card flex flex-col gap-4 p-4">
+        <h2 class="display text-xl font-semibold">Your day</h2>
         <label class="flex flex-col gap-1">
           <span class="text-sm font-medium">Time zone</span>
           <div class="flex gap-2">
@@ -43,7 +44,7 @@ export function SettingsView(props: { today: string; onSaved: () => void }) {
         <label class="flex flex-col gap-1">
           <span class="text-sm font-medium">Day starts at</span>
           <input class="input" type="time" value={s.day_cutoff} onChange={(e) => save({ day_cutoff: (e.target as HTMLInputElement).value })} />
-          <span class="text-xs text-slate-500">Meals before this time count toward the previous day.</span>
+          <span class="text-xs text-ink-2">Meals before this time count toward the previous day.</span>
         </label>
         <div class="flex gap-4">
           <label class="flex flex-1 flex-col gap-1">
@@ -65,7 +66,7 @@ export function SettingsView(props: { today: string; onSaved: () => void }) {
       <Targets weightUnit={s.weight_unit} />
       <Reminders />
       <Export today={props.today} />
-      <p class="pb-2 text-center text-xs text-slate-400">Version {APP_VERSION}</p>
+      <p class="pb-2 text-center text-xs text-faint">Version {APP_VERSION}</p>
     </div>
   );
 }

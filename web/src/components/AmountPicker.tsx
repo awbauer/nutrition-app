@@ -29,7 +29,7 @@ export function AmountPicker(props: {
           ))}
         </select>
       </div>
-      {gramsPreview != null && props.unit !== 'g' && <p class="text-xs text-slate-500">≈ {Math.round(gramsPreview)} g</p>}
+      {gramsPreview != null && props.unit !== 'g' && <p class="text-xs text-ink-2">≈ {Math.round(gramsPreview)} g</p>}
     </div>
   );
 }

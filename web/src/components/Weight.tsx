@@ -49,7 +49,7 @@ export function Weight(props: { unit: 'kg' | 'lb' }) {
 
   return (
     <div class="flex flex-col gap-4">
-      <h1 class="text-2xl font-bold">Weight</h1>
+      <h1 class="display pt-2 text-[2.1rem] leading-none font-semibold">Weight</h1>
       <section class="card flex gap-2 p-4">
         <input
           class="input text-lg tabular-nums"
@@ -66,29 +66,29 @@ export function Weight(props: { unit: 'kg' | 'lb' }) {
       </section>
       {latest && (
         <section class="card p-5">
-          <p class="text-sm text-slate-500">Trend weight</p>
+          <p class="eyebrow">Trend weight</p>
           <div class="flex items-baseline gap-3">
-            <span class="text-4xl font-bold tabular-nums">{show(latest.trend).toFixed(1)}</span>
-            <span class="text-slate-500">{props.unit}</span>
+            <span class="num text-5xl font-semibold">{show(latest.trend).toFixed(1)}</span>
+            <span class="text-ink-2">{props.unit}</span>
             {change != null && (
-              <span class={`text-sm font-medium ${change <= 0 ? 'text-emerald-600' : 'text-amber-600'}`}>
+              <span class={`text-sm font-medium ${change <= 0 ? 'text-sage' : 'text-mustard'}`}>
                 {change > 0 ? '+' : ''}
                 {change.toFixed(1)} this week
               </span>
             )}
           </div>
           <Chart trend={t} show={show} />
-          <p class="mt-2 text-xs text-slate-500">Dots are daily weigh-ins; the line is a 7-day moving average. Daily swings are mostly water.</p>
+          <p class="mt-2 text-xs text-ink-2">Dots are daily weigh-ins; the line is a 7-day moving average. Daily swings are mostly water.</p>
         </section>
       )}
       {data && data.entries.length > 0 && (
-        <section class="card divide-y divide-slate-100 dark:divide-slate-800">
+        <section class="card divide-y divide-line">
           {[...data.entries].reverse().slice(0, 14).map((e) => (
             <div class="flex items-center justify-between px-4 py-2.5 text-sm">
               <span>{new Date(e.effective_at).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}</span>
               <span class="flex items-center gap-3 tabular-nums">
                 {fmtW(e.value)}
-                <button class="text-slate-400 hover:text-rose-600" onClick={() => remove(e.id)} aria-label="Delete weigh-in">
+                <button class="text-faint hover:text-berry" onClick={() => remove(e.id)} aria-label="Delete weigh-in">
                   ✕
                 </button>
               </span>
@@ -96,7 +96,7 @@ export function Weight(props: { unit: 'kg' | 'lb' }) {
           ))}
         </section>
       )}
-      {data && data.entries.length === 0 && <p class="py-6 text-center text-sm text-slate-500">Weigh in a few mornings a week to see your trend.</p>}
+      {data && data.entries.length === 0 && <p class="py-6 text-center text-sm text-ink-2">Weigh in a few mornings a week to see your trend.</p>}
     </div>
   );
 }
@@ -116,9 +116,9 @@ function Chart(props: { trend: Data['trend']; show: (kg: number) => number }) {
   return (
     <svg viewBox={`0 0 ${W} ${H}`} class="mt-3 w-full" role="img" aria-label="Weight trend">
       {pts.map((p, i) => (
-        <circle cx={x(xs[i]!)} cy={y(props.show(p.kg))} r="2.5" class="fill-slate-400" />
+        <circle cx={x(xs[i]!)} cy={y(props.show(p.kg))} r="2.5" class="fill-[var(--faint)]" />
       ))}
-      <path d={line} fill="none" stroke-width="2.5" class="stroke-brand-600" stroke-linejoin="round" />
+      <path d={line} fill="none" stroke-width="2.5" class="stroke-[var(--accent)]" stroke-linejoin="round" />
     </svg>
   );
 }
