@@ -35,10 +35,17 @@ const UNIT_LABEL: Record<string, string> = {
 };
 export const unitLabel = (u: string) => UNIT_LABEL[u] ?? u;
 
+const NO_PLURAL = new Set(['g', 'mL', 'kg', 'oz', 'lb', 'tbsp', 'tsp', 'fl oz', 'small', 'medium', 'large', 'L', 'ml']);
+const PLURAL: Record<string, string> = { glass: 'glasses', piece: 'pieces', slice: 'slices', serving: 'servings', handful: 'handfuls', bowl: 'bowls', cup: 'cups', mug: 'mugs', plate: 'plates', scoop: 'scoops', can: 'cans', bottle: 'bottles' };
+
+/** "1½ bowls", "2 handfuls", "170 g", "1 medium". */
 export function amountLabel(amount: number, unit: string): string {
   const u = unitLabel(unit);
-  const a = Number.isInteger(amount) ? amount : Math.round(amount * 100) / 100;
-  return u === 'g' || u === 'mL' ? `${a} ${u}` : `${a} ${u}`;
+  const whole = Math.floor(amount);
+  const frac = amount - whole;
+  const count = Math.abs(frac - 0.5) < 0.01 ? `${whole || ''}½` : Number.isInteger(amount) ? String(amount) : String(Math.round(amount * 100) / 100);
+  const word = amount > 1 && !NO_PLURAL.has(u) ? (PLURAL[u] ?? u) : u;
+  return `${count} ${word}`;
 }
 
 /** Confidence levels shown to the user; values are what gets stored (0 to 1). */
@@ -55,10 +62,10 @@ export function confidenceLevel(c: number | null | undefined) {
 }
 
 const TONE: Record<string, { dot: string; text: string }> = {
-  low: { dot: 'bg-rose-500', text: 'text-rose-600 dark:text-rose-400' },
-  medium: { dot: 'bg-amber-500', text: 'text-amber-600 dark:text-amber-400' },
-  high: { dot: 'bg-emerald-500', text: 'text-emerald-600 dark:text-emerald-400' },
-  exact: { dot: 'bg-brand-600', text: 'text-brand-700 dark:text-brand-500' },
+  low: { dot: 'bg-berry', text: 'text-berry' },
+  medium: { dot: 'bg-mustard', text: 'text-mustard' },
+  high: { dot: 'bg-sage', text: 'text-sage' },
+  exact: { dot: 'bg-plum', text: 'text-plum' },
 };
 
 export function confidenceTone(c: number | null | undefined): { label: string; cls: string; dot: string } {

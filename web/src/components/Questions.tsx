@@ -21,18 +21,18 @@ export function Questions(props: { intake: Intake; onDone: (i: Intake) => void }
 
   if (!qs.length) return null;
   return (
-    <div class="flex flex-col gap-4 rounded-xl bg-brand-50 p-3 dark:bg-slate-800/60">
+    <div class="flex flex-col gap-4 rounded-2xl bg-accent-soft/60 p-4">
       {qs.map((q) => {
         const chosen = answers[q.id] ?? q.default;
         return (
           <div>
             <p class="mb-2 text-sm font-medium">
               {q.text}
-              <span class="ml-1 text-xs font-normal text-slate-500">({props.intake.items[q.item_index]?.display_name})</span>
+              <span class="ml-1 text-xs font-normal text-ink-2">({props.intake.items[q.item_index]?.display_name})</span>
             </p>
             <div class="flex flex-wrap gap-2">
               {q.options.map((o) => (
-                <button class={o === chosen ? 'chip-on' : 'chip bg-white dark:bg-slate-900'} onClick={() => setAnswers({ ...answers, [q.id]: o })}>
+                <button class={o === chosen ? 'chip-on' : 'chip bg-card'} onClick={() => setAnswers({ ...answers, [q.id]: o })}>
                   {o}
                 </button>
               ))}

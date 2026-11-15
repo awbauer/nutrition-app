@@ -1,18 +1,94 @@
 @import 'tailwindcss';
+@import '@fontsource-variable/fraunces';
 
+/*
+ * Design language: a kitchen notebook. Warm paper, ink text, a serif for numbers and
+ * headings, tomato for actions. Colors are CSS variables that flip for dark mode, so
+ * components use one class (bg-card, text-ink) instead of light/dark pairs.
+ */
+:root {
+  --paper: #f6f1e7;
+  --card: #fffdf8;
+  --sunken: #efe8da;
+  --line: #e4dccb;
+  --ink: #1e211d;
+  --ink-2: #555b52;
+  --faint: #8d8f86;
+  --accent: #d4502a; /* tomato: actions, energy */
+  --accent-ink: #a23a17;
+  --accent-soft: #f9e2d8;
+  --sage: #3f7d58; /* protein, good */
+  --sage-soft: #dcebdf;
+  --mustard: #b88a1b; /* check this, medium */
+  --mustard-soft: #f5e9c8;
+  --berry: #b0344f; /* low, over */
+  --berry-soft: #f6dde2;
+  --plum: #6b5a8e; /* exact */
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #121411;
+    --card: #1b1e1a;
+    --sunken: #242822;
+    --line: #2e322b;
+    --ink: #efe9dd;
+    --ink-2: #b2b2a6;
+    --faint: #7f8177;
+    --accent: #f0714a;
+    --accent-ink: #ff9b7a;
+    --accent-soft: #3a2219;
+    --sage: #74b48d;
+    --sage-soft: #1f3327;
+    --mustard: #e2b95a;
+    --mustard-soft: #3a3019;
+    --berry: #e9768f;
+    --berry-soft: #3a1d24;
+    --plum: #a996d4;
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --font-display: 'Fraunces Variable', ui-serif, Georgia, serif;
+  --font-sans: ui-sans-serif, -apple-system, 'SF Pro Text', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --color-paper: var(--paper);
+  --color-card: var(--card);
+  --color-sunken: var(--sunken);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-sage: var(--sage);
+  --color-sage-soft: var(--sage-soft);
+  --color-mustard: var(--mustard);
+  --color-mustard-soft: var(--mustard-soft);
+  --color-berry: var(--berry);
+  --color-berry-soft: var(--berry-soft);
+  --color-plum: var(--plum);
+}
+
+/* Kept so older class names still resolve while components move to the tokens above. */
 @theme {
-  --color-brand-50: #f0fdfa;
-  --color-brand-100: #ccfbf1;
-  --color-brand-500: #14b8a6;
-  --color-brand-600: #0d9488;
-  --color-brand-700: #0f766e;
+  --color-brand-50: #f9e2d8;
+  --color-brand-100: #f9e2d8;
+  --color-brand-500: #f0714a;
+  --color-brand-600: #d4502a;
+  --color-brand-700: #d4502a;
 }
 
 @custom-variant dark (@media (prefers-color-scheme: dark));
 
 html,
 body {
-  @apply bg-slate-50 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior-y: none;
   /* No double-tap zoom (taps on chips and buttons were zooming the page); pinch zoom still works. */
@@ -28,6 +104,12 @@ body {
   }
 }
 
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
 .safe-top {
   padding-top: max(env(safe-area-inset-top), 0.75rem);
 }
@@ -35,26 +117,138 @@ body {
   padding-bottom: max(env(safe-area-inset-bottom), 0.5rem);
 }
 
+/* Numbers in the display serif, with lining figures so columns line up. */
+@utility num {
+  font-family: var(--font-display);
+  font-variant-numeric: lining-nums tabular-nums;
+  font-optical-sizing: auto;
+  letter-spacing: -0.01em;
+}
+@utility display {
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  letter-spacing: -0.015em;
+}
+@utility eyebrow {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
 @utility card {
-  @apply rounded-2xl bg-white shadow-sm ring-1 ring-slate-200/70 dark:bg-slate-900 dark:ring-slate-800;
+  background: var(--card);
+  border-radius: 1.25rem;
+  box-shadow:
+    0 0 0 1px var(--line),
+    0 1px 2px rgb(30 33 29 / 0.04);
 }
 @utility btn {
-  @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition active:scale-[0.98] disabled:opacity-50;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 999px;
+  padding: 0.65rem 1.1rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  transition:
+    transform 120ms ease,
+    background-color 120ms ease,
+    opacity 120ms ease;
+  &:active {
+    transform: scale(0.97);
+  }
+  &:disabled {
+    opacity: 0.45;
+  }
 }
 @utility btn-primary {
-  @apply btn bg-brand-700 text-white hover:bg-brand-600;
+  @apply btn;
+  background: var(--accent);
+  color: #fff;
 }
 @utility btn-ghost {
-  @apply btn bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700;
+  @apply btn;
+  background: var(--sunken);
+  color: var(--ink);
+}
+@utility btn-quiet {
+  @apply btn;
+  padding: 0.5rem 0.75rem;
+  color: var(--ink-2);
+  &:hover {
+    background: var(--sunken);
+  }
+}
+@utility icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 999px;
+  color: var(--ink-2);
+  transition: background-color 120ms ease;
+  &:hover,
+  &:active {
+    background: var(--sunken);
+  }
 }
 @utility input {
-  @apply w-full rounded-xl border-0 bg-slate-100 px-3 py-2.5 text-base ring-1 ring-transparent outline-none focus:ring-brand-500 dark:bg-slate-800;
+  width: 100%;
+  border-radius: 0.875rem;
+  background: var(--sunken);
+  padding: 0.7rem 0.9rem;
+  font-size: 1rem;
+  color: var(--ink);
+  border: 1px solid transparent;
+  outline: none;
+  &::placeholder {
+    color: var(--faint);
+  }
+  &:focus {
+    border-color: var(--accent);
+    background: var(--card);
+  }
 }
 @utility chip {
-  @apply rounded-full px-3 py-1.5 text-sm font-medium ring-1 ring-slate-200 dark:ring-slate-700;
+  border-radius: 999px;
+  padding: 0.45rem 0.9rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--ink-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+  background: var(--card);
 }
 @utility chip-on {
-  @apply chip bg-brand-700 text-white ring-brand-700;
+  @apply chip;
+  background: var(--ink);
+  color: var(--paper);
+  box-shadow: none;
+}
+@utility segmented {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border-radius: 999px;
+  background: var(--sunken);
+}
+@utility seg {
+  border-radius: 999px;
+  padding: 0.45rem 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--ink-2);
+  &[aria-checked='true'],
+  &[aria-pressed='true'] {
+    background: var(--card);
+    color: var(--ink);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+  }
 }
 
 @keyframes toast-in {
@@ -66,8 +260,18 @@ body {
 .toast-in {
   animation: toast-in 180ms ease-out;
 }
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.rise {
+  animation: rise 260ms ease-out both;
+}
 @media (prefers-reduced-motion: reduce) {
-  .toast-in {
+  .toast-in,
+  .rise {
     animation: none;
   }
 }

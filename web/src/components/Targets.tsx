@@ -84,11 +84,11 @@ export function Targets(props: { weightUnit: 'kg' | 'lb' }) {
   return (
     <div class="flex flex-col gap-4">
       <section class="card flex flex-col gap-3 p-4">
-        <h2 class="font-semibold">Daily targets</h2>
+        <h2 class="display text-xl font-semibold">Daily targets</h2>
         <div class="grid grid-cols-2 gap-3">
           {FIELDS.map(([, code, label]) => (
             <label class="flex flex-col gap-1">
-              <span class="text-xs text-slate-500">{label}</span>
+              <span class="text-xs text-ink-2">{label}</span>
               <input
                 class="input tabular-nums"
                 type="number"
@@ -106,14 +106,14 @@ export function Targets(props: { weightUnit: 'kg' | 'lb' }) {
       </section>
 
       <section class="card flex flex-col gap-3 p-4">
-        <h2 class="font-semibold">Calculate a starting target</h2>
+        <h2 class="display text-xl font-semibold">Calculate a starting target</h2>
         <div class="grid grid-cols-2 gap-3">
           <label class="flex flex-col gap-1">
-            <span class="text-xs text-slate-500">Height (cm)</span>
+            <span class="text-xs text-ink-2">Height (cm)</span>
             <input class="input" type="number" value={p.height_cm} onInput={(e) => setP({ ...p, height_cm: num((e.target as HTMLInputElement).value) })} />
           </label>
           <label class="flex flex-col gap-1">
-            <span class="text-xs text-slate-500">Weight ({props.weightUnit})</span>
+            <span class="text-xs text-ink-2">Weight ({props.weightUnit})</span>
             <input
               class="input"
               type="number"
@@ -125,11 +125,11 @@ export function Targets(props: { weightUnit: 'kg' | 'lb' }) {
             />
           </label>
           <label class="flex flex-col gap-1">
-            <span class="text-xs text-slate-500">Age</span>
+            <span class="text-xs text-ink-2">Age</span>
             <input class="input" type="number" value={p.age} onInput={(e) => setP({ ...p, age: num((e.target as HTMLInputElement).value) })} />
           </label>
           <label class="flex flex-col gap-1">
-            <span class="text-xs text-slate-500">Sex (for the formula)</span>
+            <span class="text-xs text-ink-2">Sex (for the formula)</span>
             <select class="input" value={p.sex} onChange={(e) => setP({ ...p, sex: (e.target as HTMLSelectElement).value as Profile['sex'] })}>
               <option value="male">Male</option>
               <option value="female">Female</option>
@@ -137,7 +137,7 @@ export function Targets(props: { weightUnit: 'kg' | 'lb' }) {
           </label>
         </div>
         <label class="flex flex-col gap-1">
-          <span class="text-xs text-slate-500">Activity</span>
+          <span class="text-xs text-ink-2">Activity</span>
           <select class="input" value={p.activity} onChange={(e) => setP({ ...p, activity: (e.target as HTMLSelectElement).value as Profile['activity'] })}>
             {ACTIVITY.map(([v, l]) => (
               <option value={v}>{l}</option>
@@ -145,7 +145,7 @@ export function Targets(props: { weightUnit: 'kg' | 'lb' }) {
           </select>
         </label>
         <label class="flex flex-col gap-1">
-          <span class="text-xs text-slate-500">Goal ({props.weightUnit} per week; negative to lose)</span>
+          <span class="text-xs text-ink-2">Goal ({props.weightUnit} per week; negative to lose)</span>
           <input
             class="input"
             type="number"
@@ -161,14 +161,14 @@ export function Targets(props: { weightUnit: 'kg' | 'lb' }) {
           Calculate
         </button>
         {suggestion && (
-          <div class="rounded-xl bg-slate-100 p-3 text-sm dark:bg-slate-800">
+          <div class="rounded-xl bg-sunken p-3 text-sm ">
             <p>
               Resting burn ≈ <b>{suggestion.bmr.toLocaleString()}</b> kcal, daily burn ≈ <b>{suggestion.tdee.toLocaleString()}</b> kcal.
             </p>
             <p class="mt-1">
               Suggested: <b>{suggestion.energy.toLocaleString()} kcal</b> and <b>{suggestion.protein} g protein</b> a day.
             </p>
-            {suggestion.floored && <p class="mt-1 text-amber-600">Raised to a minimum safe intake; consider a slower rate.</p>}
+            {suggestion.floored && <p class="mt-1 text-mustard">Raised to a minimum safe intake; consider a slower rate.</p>}
             <button class="btn-primary mt-3 w-full" onClick={() => calc(true)}>
               Use these targets
             </button>

@@ -179,4 +179,19 @@ describe('manual intake and daily totals', () => {
     expect(edit.data.items[1]).toMatchObject({ grams: 150, confidence: 0.6 });
     expect((await api(`/item/${a.id}`, { method: 'PATCH', json: { confidence: 2 } })).status).toBe(400);
   });
+
+  it('accepts relative sizes: handfuls, bowls, glasses, and the food\'s own portions first', async () => {
+    const r = await api('/intake', { method: 'POST', json: { occurrence_at: '2026-11-07T12:00:00Z', items: [{ fdc_id: 171477, amount: 100, unit: 'g' }] } });
+    const id = r.data.items[0].id;
+    const handful = await api(`/item/${id}`, { method: 'PATCH', json: { amount: 1, unit: 'handful' } });
+    expect(handful.data.items[0]).toMatchObject({ grams: 30, amount_unit: 'handful' });
+    const bowls = await api(`/item/${id}`, { method: 'PATCH', json: { amount: 1.5, unit: 'bowls' } });
+    expect(bowls.data.items[0]).toMatchObject({ grams: 450, amount_value: 1.5, amount_unit: 'bowl' });
+    expect(bowls.data.items[0].nutrients.ENERC_KCAL).toBeCloseTo(742.5, 1);
+    // The food's own portion beats the generic table: chicken's "1 cup, chopped" is 140 g, not 240.
+    const cup = await api(`/item/${id}`, { method: 'PATCH', json: { amount: 1, unit: 'cup' } });
+    expect(cup.data.items[0].grams).toBe(140);
+    const mug = await api(`/item/${id}`, { method: 'PATCH', json: { amount: 2, unit: 'mugs' } });
+    expect(mug.data.items[0].grams).toBe(600);
+  });
 });

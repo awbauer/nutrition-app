@@ -1,21 +1,37 @@
-import { useState } from 'preact/hooks';
+import { Copy, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-preact';
+import { useEffect, useRef, useState } from 'preact/hooks';
+import { watch } from '../analysis';
 import { api, type Intake, type Item } from '../api';
-import { Questions } from './Questions';
+import { amountLabel, confidenceTone, kcal, MEAL_LABEL } from '../format';
+import { toast } from '../toast';
 import { ItemSheet } from './ItemSheet';
 import { MealEdit } from './MealEdit';
+import { Questions } from './Questions';
 import { Sheet } from './Sheet';
-import { watch } from '../analysis';
-import { toast } from '../toast';
-import { amountLabel, confidenceTone, kcal, MEAL_LABEL, time } from '../format';
 
 export function MealCard(props: { meal: Intake; onChange: (m: Intake | null) => void; onAdd: (m: Intake) => void }) {
   const { meal } = props;
   const [openItem, setOpenItem] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [menu, setMenu] = useState(false);
   const [busy, setBusy] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menu) return;
+    const close = (e: Event) => !menuRef.current?.contains(e.target as Node) && setMenu(false);
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setMenu(false);
+    document.addEventListener('pointerdown', close);
+    document.addEventListener('keydown', esc);
+    return () => {
+      document.removeEventListener('pointerdown', close);
+      document.removeEventListener('keydown', esc);
+    };
+  }, [menu]);
 
   async function run<T>(fn: () => Promise<T>) {
     setBusy(true);
+    setMenu(false);
     try {
       return await fn();
     } catch (e) {
@@ -26,9 +42,10 @@ export function MealCard(props: { meal: Intake; onChange: (m: Intake | null) => 
   }
 
   const remove = () =>
-    confirm('Delete this meal?') &&
+    confirm(`Delete this ${MEAL_LABEL[meal.meal_type].toLowerCase()}?`) &&
     run(async () => {
       await api.del(`/intake/${meal.id}`);
+      toast.success(`${MEAL_LABEL[meal.meal_type]} deleted`);
       props.onChange(null);
     });
   const retry = () =>
@@ -37,86 +54,100 @@ export function MealCard(props: { meal: Intake; onChange: (m: Intake | null) => 
       watch(m);
       props.onChange(m);
     });
+  const copy = () =>
+    run(async () => {
+      props.onChange(await api.post<Intake>(`/intake/${meal.id}/copy`, {}));
+      toast.success(`${MEAL_LABEL[meal.meal_type]} copied to now`);
+    });
+
   const analyzing = meal.status === 'preparation' && !meal.pending?.error;
   const failed = meal.status === 'preparation' && !!meal.pending?.error;
-
-  const copy = () => run(async () => props.onChange(await api.post<Intake>(`/intake/${meal.id}/copy`, {})));
+  const asking = meal.status === 'in-progress';
+  const done = meal.status === 'completed';
 
   return (
-    <article class="card overflow-hidden">
-      <header class="flex items-center justify-between px-4 pt-3">
-        <div>
-          <h3 class="font-semibold">
+    <article class="card">
+      <header class="flex items-start gap-2 px-4 pt-3.5">
+        <div class="min-w-0 flex-1">
+          <h3 class="display text-lg leading-tight font-semibold">
             {MEAL_LABEL[meal.meal_type]}
-            {meal.status === 'in-progress' && <span class="ml-2 rounded bg-brand-100 px-1.5 py-0.5 text-[10px] font-medium text-brand-700">draft</span>}
-            {meal.pending?.adding_to_meal && <span class="ml-2 text-xs font-normal text-slate-500">will be added to your {MEAL_LABEL[meal.meal_type].toLowerCase()}</span>}
+            {analyzing && <StatusPill tone="neutral" pulse>{meal.source === 'voice' ? 'Listening' : 'Reading'}</StatusPill>}
+            {asking && <StatusPill tone="accent">One question</StatusPill>}
+            {failed && <StatusPill tone="berry">Couldn't read</StatusPill>}
           </h3>
-          <p class="text-xs text-slate-500">
-            {time(meal.occurrence_at)}
-
-          </p>
+          {meal.pending?.adding_to_meal && <p class="mt-0.5 text-xs text-ink-2">Will join your {MEAL_LABEL[meal.meal_type].toLowerCase()} when it's done</p>}
         </div>
-        {meal.status === 'preparation' ? null : (
+        {meal.status !== 'preparation' && (
           <div class="text-right">
-            <div class="font-semibold tabular-nums">{kcal(meal.totals.ENERC_KCAL)} kcal</div>
-            <div class="text-xs text-slate-500 tabular-nums">{Math.round(meal.totals.PROCNT ?? 0)} g protein</div>
+            <p class="num text-xl leading-tight font-semibold">
+              {kcal(meal.totals.ENERC_KCAL)}
+              <span class="ml-1 font-sans text-xs font-normal text-faint">kcal</span>
+            </p>
+            <p class="text-xs font-medium text-sage">{Math.round(meal.totals.PROCNT ?? 0)} g protein</p>
           </div>
         )}
+        <div class="relative -mt-1 -mr-2" ref={menuRef}>
+          <button class="icon-btn" onClick={() => setMenu(!menu)} aria-label={`More for ${MEAL_LABEL[meal.meal_type].toLowerCase()}`} aria-expanded={menu} aria-haspopup="menu" disabled={busy}>
+            <MoreHorizontal size={20} />
+          </button>
+          {menu && (
+            <div class="toast-in absolute top-10 right-0 z-30 w-52 overflow-hidden rounded-2xl bg-card py-1 shadow-xl ring-1 ring-line" role="menu">
+              {meal.status !== 'preparation' && <MenuItem icon={<Pencil size={16} />} label="Edit time, meal or note" onClick={() => (setMenu(false), setEditing(true))} />}
+              {done && <MenuItem icon={<Copy size={16} />} label="Copy to now" onClick={copy} />}
+              <MenuItem icon={<Trash2 size={16} />} label="Delete" danger onClick={remove} />
+            </div>
+          )}
+        </div>
       </header>
-      {meal.note && <p class="mx-4 mt-1 text-sm text-slate-600 italic dark:text-slate-300">{meal.note}</p>}
+
+      {meal.note && <p class="display mx-4 mt-1.5 text-[0.95rem] text-ink-2 italic">{meal.note}</p>}
       {meal.has_media && meal.source === 'photo' && (
-        <img src={`/api/intake/${meal.id}/media`} alt="" loading="lazy" class="mx-4 mt-2 h-32 w-[calc(100%-2rem)] rounded-xl object-cover" />
+        <img src={`/api/intake/${meal.id}/media`} alt="Meal photo" loading="lazy" class="mx-4 mt-3 h-36 w-[calc(100%-2rem)] rounded-2xl object-cover" />
       )}
+
       {meal.status === 'preparation' && (
-        // Fixed-height placeholder: progress and errors are reported by toasts, so the page doesn't jump.
-        <div class="mx-4 mt-2 flex h-20 flex-col justify-center gap-2" aria-busy={analyzing}>
+        // Fixed height while the AI works; progress and errors come as toasts, so nothing jumps.
+        <div class="mx-4 mt-3 mb-4 flex h-16 flex-col justify-center gap-2" aria-busy={analyzing}>
           {meal.raw_input_text && meal.source === 'text' ? (
-            <p class="truncate text-sm text-slate-500 italic">“{meal.raw_input_text}”</p>
+            <p class="display truncate text-ink-2 italic">“{meal.raw_input_text}”</p>
           ) : (
-            <div class={`h-3 w-2/3 rounded bg-slate-200 dark:bg-slate-800 ${analyzing ? 'animate-pulse' : ''}`} />
+            <div class={`h-3 w-2/3 rounded-full bg-sunken ${analyzing ? 'animate-pulse' : ''}`} />
           )}
           {failed ? (
             <div class="flex items-center gap-2 text-sm">
-              <span class="flex-1 truncate text-rose-600">Couldn't read this meal</span>
-              <button class="btn-primary px-3 py-1" onClick={retry} disabled={busy}>
+              <span class="flex-1 truncate text-berry">{meal.pending?.error ?? "Couldn't read this meal"}</span>
+              <button class="btn-primary px-3 py-1.5 text-sm" onClick={retry} disabled={busy}>
                 Try again
               </button>
             </div>
           ) : (
-            <div class="h-3 w-1/2 animate-pulse rounded bg-slate-200 dark:bg-slate-800" />
+            <div class="h-3 w-1/2 animate-pulse rounded-full bg-sunken" />
           )}
         </div>
       )}
-      {meal.status === 'in-progress' && (
-        <div class="mx-4 mt-2">
+
+      {asking && (
+        <div class="mx-4 mt-3">
           <Questions intake={meal} onDone={props.onChange} />
         </div>
       )}
-      <ul class="mt-2 divide-y divide-slate-100 dark:divide-slate-800">
-        {meal.items.map((it) => (
-          <ItemRow item={it} onOpen={() => setOpenItem(it.id)} />
-        ))}
-      </ul>
-      <footer class="flex gap-1 border-t border-slate-100 px-2 py-1.5 text-sm dark:border-slate-800">
-        {meal.status === 'completed' && (
-          <>
-            <button class="rounded-lg px-3 py-1.5 text-brand-700 hover:bg-slate-100 dark:text-brand-500 dark:hover:bg-slate-800" onClick={() => props.onAdd(meal)} disabled={busy}>
-              + Add item
-            </button>
-            <button class="rounded-lg px-3 py-1.5 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800" onClick={copy} disabled={busy}>
-              Copy to now
-            </button>
-          </>
-        )}
-        {meal.status !== 'preparation' && (
-          <button class="rounded-lg px-3 py-1.5 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800" onClick={() => setEditing(true)} disabled={busy}>
-            Edit
-          </button>
-        )}
-        <button class="ml-auto rounded-lg px-3 py-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950" onClick={remove} disabled={busy}>
-          Delete
+
+      {meal.items.length > 0 && (
+        <ul class="mt-2">
+          {meal.items.map((it) => (
+            <ItemRow item={it} onOpen={() => setOpenItem(it.id)} />
+          ))}
+        </ul>
+      )}
+
+      {done ? (
+        <button class="flex w-full items-center gap-2 border-t border-dashed border-line px-4 py-3 text-sm font-medium text-accent-ink" onClick={() => props.onAdd(meal)} disabled={busy}>
+          <Plus size={16} /> Add to {MEAL_LABEL[meal.meal_type].toLowerCase()}
         </button>
-      </footer>
+      ) : (
+        meal.status !== 'preparation' && <div class="h-3" />
+      )}
+
       <Sheet open={!!openItem} onClose={() => setOpenItem(null)} title="Food details">
         {openItem && <ItemSheet itemId={openItem} onChange={props.onChange} onClose={() => setOpenItem(null)} />}
       </Sheet>
@@ -135,31 +166,45 @@ export function MealCard(props: { meal: Intake; onChange: (m: Intake | null) => 
   );
 }
 
+function StatusPill(props: { tone: 'neutral' | 'accent' | 'berry'; pulse?: boolean; children: preact.ComponentChildren }) {
+  const cls = { neutral: 'bg-sunken text-ink-2', accent: 'bg-accent-soft text-accent-ink', berry: 'bg-berry-soft text-berry' }[props.tone];
+  return (
+    <span class={`ml-2 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 align-middle font-sans text-[11px] font-semibold ${cls}`}>
+      {props.pulse && <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-current" />}
+      {props.children}
+    </span>
+  );
+}
+
+function MenuItem(props: { icon: preact.ComponentChildren; label: string; onClick: () => void; danger?: boolean }) {
+  return (
+    <button role="menuitem" class={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm hover:bg-sunken ${props.danger ? 'text-berry' : 'text-ink'}`} onClick={props.onClick}>
+      {props.icon}
+      {props.label}
+    </button>
+  );
+}
+
 function ItemRow(props: { item: Item; onOpen: () => void }) {
   const it = props.item;
   const tone = confidenceTone(it.confidence);
   const showMatch = it.food_name && it.food_name.toLowerCase() !== it.display_name.toLowerCase();
   return (
     <li>
-      <button class="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800/50" onClick={props.onOpen}>
+      <button class="flex w-full items-center gap-3 px-4 py-2.5 text-left active:bg-sunken" onClick={props.onOpen}>
+        {tone.dot && <span class={`h-2 w-2 shrink-0 rounded-full ${tone.dot}`} title={`${tone.label} confidence`} aria-label={`${tone.label} confidence`} role="img" />}
         <div class="min-w-0 flex-1">
-          <p class="truncate text-sm">
+          <p class="truncate text-[0.95rem]">
             {it.display_name}
-            {it.check_match ? (
-              <span class="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-900 dark:text-amber-200">check match</span>
-            ) : (
-              it.estimated && <span class="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-900 dark:text-amber-200">estimated</span>
-            )}
+            {it.check_match && <span class="ml-1.5 rounded-full bg-mustard-soft px-1.5 py-0.5 align-middle text-[10px] font-semibold text-mustard">check match</span>}
           </p>
-          <p class="truncate text-xs text-slate-500">
+          <p class="truncate text-xs text-faint">
             {amountLabel(it.amount_value, it.amount_unit)}
             {it.amount_unit !== 'g' && ` · ${Math.round(it.grams)} g`}
-            {showMatch && ` · ${it.food_name}`}
+            {it.estimated ? ' · AI estimate' : showMatch ? ` · ${it.food_name}` : ''}
           </p>
         </div>
-        <span class="text-sm tabular-nums text-slate-600 dark:text-slate-300">{kcal(it.nutrients.ENERC_KCAL)}</span>
-        {tone.dot && <span class={`h-2 w-2 shrink-0 rounded-full ${tone.dot}`} title={`${tone.label} confidence`} aria-label={`${tone.label} confidence`} role="img" />}
-        <span class="text-slate-300 dark:text-slate-600" aria-hidden="true">›</span>
+        <span class="num text-[0.95rem] text-ink-2">{kcal(it.nutrients.ENERC_KCAL)}</span>
       </button>
     </li>
   );

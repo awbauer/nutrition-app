@@ -1,4 +1,5 @@
 import { toast } from '../toast';
+import { Mic, Square } from 'lucide-preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 
 const MAX_SECONDS = 60;
@@ -77,22 +78,19 @@ export function Recorder(props: { onClip: (clip: Blob | null) => void }) {
   return (
     <div class="flex flex-col items-center gap-3 py-2">
       <button
-        class={`flex h-24 w-24 items-center justify-center rounded-full text-4xl text-white shadow-lg transition active:scale-95 ${
-          state === 'recording' ? 'animate-pulse bg-rose-600' : 'bg-brand-700'
-        }`}
+        class={`relative flex h-24 w-24 items-center justify-center rounded-full text-white shadow-lg transition active:scale-95 ${state === 'recording' ? 'bg-berry' : 'bg-accent'}`}
         onClick={state === 'recording' ? stop : start}
         aria-label={state === 'recording' ? 'Stop recording' : 'Start recording'}
       >
-        {state === 'recording' ? '■' : '🎙'}
+        {state === 'recording' && <span class="absolute inset-0 animate-ping rounded-full bg-berry/40" aria-hidden="true" />}
+        {state === 'recording' ? <Square size={30} fill="currentColor" /> : <Mic size={36} />}
       </button>
-      <p class="text-sm text-slate-500" aria-live="polite">
-        {state === 'recording'
-          ? `Recording… ${seconds}s (tap to stop)`
-          : state === 'done'
-            ? 'Got it. Tap to re-record.'
-            : 'Tap and say what you ate.'}
+      <p class="num text-2xl" aria-live="polite">
+        {state === 'recording' ? `0:${String(seconds).padStart(2, '0')}` : ''}
       </p>
-      {url && state === 'done' && <audio src={url} controls class="w-full" />}
+      <p class="text-center text-sm text-ink-2">
+        {state === 'recording' ? 'Listening… tap to finish' : state === 'done' ? 'Got it.' : 'Tap and say what you ate, like you would to a friend.'}
+      </p>
     </div>
   );
 }

@@ -2,6 +2,8 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../env';
 import { createCustomFood, getFood, resolveFdc, searchLocal, usdaClient, type CustomFoodInput } from '../lib/foods';
 import { HttpError } from '../lib/ids';
+import { MEAL_TYPES, type MealType } from '../lib/intake';
+import { quickFoods } from '../lib/quick';
 
 export const foods = new Hono<AppEnv>();
 
@@ -30,6 +32,13 @@ foods.get('/fdc/:fdcId', async (c) => {
   const fdcId = c.req.param('fdcId');
   if (!/^\d+$/.test(fdcId)) throw new HttpError(400, 'bad fdc id');
   return c.json(await resolveFdc(c.env, fdcId));
+});
+
+/** GET /api/foods/quick?meal_type= -> recent and frequent foods (frequent ranked for that meal). */
+foods.get('/quick', async (c) => {
+  const mt = c.req.query('meal_type');
+  const mealType = mt && MEAL_TYPES.includes(mt as MealType) ? (mt as MealType) : null;
+  return c.json(await quickFoods(c.env.DB, c.get('user').id, mealType));
 });
 
 foods.get('/:id', async (c) => {

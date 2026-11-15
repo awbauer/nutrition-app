@@ -67,37 +67,37 @@ export function Reminders() {
 
   return (
     <section class="card flex flex-col gap-3 p-4">
-      <h2 class="font-semibold">Reminders</h2>
+      <h2 class="display text-xl font-semibold">Reminders</h2>
       {needsInstall ? (
-        <div class="rounded-xl bg-brand-50 p-3 text-sm dark:bg-slate-800">
+        <div class="rounded-2xl bg-accent-soft/60 p-4 text-sm">
           <p class="font-medium">Add the app to your Home Screen first</p>
-          <ol class="mt-1 list-decimal pl-5 text-slate-600 dark:text-slate-300">
+          <ol class="mt-1 list-decimal pl-5 text-ink-2">
             <li>Tap the Share button in Safari.</li>
             <li>Choose “Add to Home Screen”.</li>
             <li>Open Meals from your Home Screen and come back here.</li>
           </ol>
-          <p class="mt-1 text-xs text-slate-500">iPhone only allows notifications for apps on the Home Screen (iOS 16.4+).</p>
+          <p class="mt-1 text-xs text-ink-2">iPhone only allows notifications for apps on the Home Screen (iOS 16.4+).</p>
         </div>
       ) : !pushSupported() ? (
-        <p class="text-sm text-slate-500">This browser doesn't support notifications.</p>
+        <p class="text-sm text-ink-2">This browser doesn't support notifications.</p>
       ) : (
         <button class={subscribed ? 'btn-ghost' : 'btn-primary'} disabled={busy} onClick={toggleNotifications}>
           {busy ? '…' : subscribed ? 'Turn off notifications on this device' : 'Turn on notifications'}
         </button>
       )}
       {list?.map((r, i) => (
-        <div class="flex flex-col gap-2 border-t border-slate-100 pt-3 dark:border-slate-800">
+        <div class="flex flex-col gap-2 border-t border-line pt-3">
           <div class="flex items-center gap-2">
             <input class="input min-w-0 flex-1 py-1.5" value={r.label} onChange={(e) => update(i, { label: (e.target as HTMLInputElement).value })} aria-label="Reminder label" />
             <input class="input w-36 shrink-0 py-1.5" type="time" value={r.local_time} onChange={(e) => update(i, { local_time: (e.target as HTMLInputElement).value })} aria-label="Time" />
-            <input type="checkbox" class="h-5 w-5 accent-brand-700" checked={r.enabled} onChange={(e) => update(i, { enabled: (e.target as HTMLInputElement).checked })} aria-label="Enabled" />
+            <input type="checkbox" class="h-5 w-5 accent-[var(--accent)]" checked={r.enabled} onChange={(e) => update(i, { enabled: (e.target as HTMLInputElement).checked })} aria-label="Enabled" />
           </div>
           <div class="flex items-center justify-between gap-1" role="group" aria-label="Days">
             {DAYS.map((d, n) => {
               const on = r.days_of_week.includes(String(n));
               return (
                 <button
-                  class={`h-9 w-9 shrink-0 rounded-full text-sm ${on ? 'bg-brand-700 text-white' : 'bg-slate-100 text-slate-500 dark:bg-slate-800'}`}
+                  class={`h-9 w-9 shrink-0 rounded-full text-sm ${on ? 'bg-accent text-white' : 'bg-sunken text-ink-2 '}`}
                   aria-pressed={on}
                   aria-label={DAY_NAMES[n]}
                   onClick={() => update(i, { days_of_week: on ? r.days_of_week.replace(String(n), '') || r.days_of_week : r.days_of_week + n })}
@@ -123,19 +123,19 @@ export function Reminders() {
               <option value="any">Any meal</option>
               <option value="end-of-day">End-of-day summary</option>
             </select>
-            <button class="shrink-0 p-2 text-slate-400 hover:text-rose-600" onClick={() => save(list.filter((_, j) => j !== i))} aria-label="Delete reminder">
+            <button class="shrink-0 p-2 text-faint hover:text-berry" onClick={() => save(list.filter((_, j) => j !== i))} aria-label="Delete reminder">
               ✕
             </button>
           </div>
         </div>
       ))}
       <button
-        class="self-start text-sm text-brand-700 dark:text-brand-500"
+        class="self-start text-sm text-accent-ink"
         onClick={() => list && save([...list, { label: 'Snack', meal_type: 'snack', kind: 'meal', local_time: '16:00', days_of_week: '0123456', enabled: true }])}
       >
         + Add reminder
       </button>
-      <p class="text-xs text-slate-500">Meal reminders are skipped when that meal is already logged.</p>
+      <p class="text-xs text-ink-2">Meal reminders are skipped when that meal is already logged.</p>
     </section>
   );
 }
