@@ -168,6 +168,12 @@ body {
   @apply btn;
   background: var(--accent);
   color: #fff;
+  /* Disabled reads as plainly inactive in both themes, not a muddy tomato. */
+  &:disabled {
+    opacity: 1;
+    background: var(--sunken);
+    color: var(--faint);
+  }
 }
 @utility btn-ghost {
   @apply btn;
@@ -267,7 +273,7 @@ body {
   }
 }
 .rise {
-  animation: rise 260ms ease-out both;
+  animation: rise 260ms ease-out backwards;
 }
 @media (prefers-reduced-motion: reduce) {
   .toast-in,

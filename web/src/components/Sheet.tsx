@@ -1,4 +1,5 @@
 import { X } from 'lucide-preact';
+import { createPortal } from 'preact/compat';
 import type { ComponentChildren } from 'preact';
 import { useEffect } from 'preact/hooks';
 import { holdUpdates } from '../update';
@@ -17,7 +18,9 @@ export function Sheet(props: { open: boolean; onClose: () => void; title: string
     };
   }, [props.open]);
   if (!props.open) return null;
-  return (
+  // Rendered into <body> so no ancestor (an animated timeline row, a card) can trap the
+  // fixed overlay. iOS Safari treats a transformed ancestor as the containing block.
+  return createPortal(
     <div class="fixed inset-0 z-40 flex items-end justify-center sm:items-center" role="dialog" aria-modal="true" aria-label={props.title}>
       <div class="absolute inset-0 bg-[#1e211d]/45 backdrop-blur-[3px]" onClick={props.onClose} />
       <div class="safe-bottom toast-in relative flex max-h-[92dvh] w-full max-w-lg flex-col rounded-t-[1.75rem] bg-paper shadow-2xl sm:rounded-[1.75rem]">
@@ -28,8 +31,9 @@ export function Sheet(props: { open: boolean; onClose: () => void; title: string
             <X size={20} />
           </button>
         </div>
-        <div class="overflow-y-auto px-5 pb-5">{props.children}</div>
+        <div class="overflow-y-auto overscroll-contain px-5 pb-5">{props.children}</div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
