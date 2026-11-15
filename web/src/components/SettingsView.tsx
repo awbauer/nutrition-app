@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'preact/hooks';
 import { api, type Settings } from '../api';
+import { Export } from './Export';
 import { Reminders } from './Reminders';
 import { Targets } from './Targets';
 
-export function SettingsView(props: { onSaved: () => void }) {
+export function SettingsView(props: { today: string; onSaved: () => void }) {
   const [s, setS] = useState<Settings | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -64,6 +65,7 @@ export function SettingsView(props: { onSaved: () => void }) {
       {msg && <p class="text-center text-sm text-slate-500">{msg}</p>}
       <Targets weightUnit={s.weight_unit} />
       <Reminders />
+      <Export today={props.today} />
     </div>
   );
 }

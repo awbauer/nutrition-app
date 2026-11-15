@@ -92,7 +92,7 @@ export function App() {
         {today && tab === 'today' && <Today key={today} today={today} />}
         {today && tab === 'week' && <Week key={today} today={today} />}
         {me && tab === 'weight' && <Weight unit={me.settings.weight_unit} />}
-        {me && tab === 'settings' && <SettingsView onSaved={loadMe} />}
+        {today && tab === 'settings' && <SettingsView today={today} onSaved={loadMe} />}
       </main>
       <nav class="safe-bottom fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/90 backdrop-blur dark:border-slate-800 dark:bg-slate-950/90">
         <div class="mx-auto flex max-w-lg">
