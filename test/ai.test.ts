@@ -257,4 +257,20 @@ describe('voice logging', () => {
     expect(ai.calls[0]!.model).toBe('@cf/openai/whisper-large-v3-turbo');
     expect(typeof ai.calls[0]!.inputs.audio).toBe('string');
   });
+
+  it('accepts webm clips from non-Safari browsers and rejects silent clips', async () => {
+    const out = { items: [{ name: 'apple', amount: 1, unit: 'medium', confidence: 0.9 }], questions: [] };
+    const ok = await api(
+      '/intake',
+      { method: 'POST', body: form({ audio: new File([new Uint8Array([1])], 'v.webm', { type: 'audio/webm;codecs=opus' }) }) },
+      { AI: fakeAI([{ text: 'an apple' }, { response: out }]).AI },
+    );
+    expect(ok.status).toBe(201);
+    const silent = await api(
+      '/intake',
+      { method: 'POST', body: form({ audio: new File([new Uint8Array([1])], 'v.m4a', { type: 'audio/mp4' }) }) },
+      { AI: fakeAI([{ text: '   ' }]).AI },
+    );
+    expect(silent.status).toBe(422);
+  });
 });
