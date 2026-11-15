@@ -111,6 +111,10 @@ describe('model output validation', () => {
   it('extracts JSON from fenced or chatty text', () => {
     expect(extractJson('Sure!\n```json\n{"items":[]}\n```')).toEqual({ items: [] });
   });
+  it('tolerates comments and trailing commas copied from the example', () => {
+    const raw = '{\n "items": [{"name": "a // b", "grams": 454, // 16 fl oz\n "x": "http://y" /* note */,}],\n}';
+    expect(extractJson(raw)).toEqual({ items: [{ name: 'a // b', grams: 454, x: 'http://y' }] });
+  });
   it('normalises fields and drops bad questions', () => {
     const v = validateOutput({
       meal_type_guess: 'brunch',
@@ -125,6 +129,28 @@ describe('model output validation', () => {
     expect(v.questions).toHaveLength(1);
     expect(v.questions[0]).toMatchObject({ default: 'No', id: 'q2' });
     expect(v.questions[0]!.effects.Yes!.add_item!.search_terms).toEqual(['butter']);
+  });
+  it('reads OpenAI-style responses and gives reasoning models room to answer', async () => {
+    const { modelOptions } = await import('../src/worker/lib/ai');
+    expect(modelOptions('@cf/thinkingmachines/inkling-2-small')).toMatchObject({ reasoning_effort: 'low', max_tokens: 8000 });
+    expect(modelOptions('@cf/meta/llama-3.3-70b-instruct-fp8-fast')).toEqual({ max_tokens: 1500 });
+    const choices = { choices: [{ message: { content: '{"items":[{"name":"apple","amount":1,"unit":"medium","confidence":0.9}]}' } }] };
+    const r = await api('/intake', { method: 'POST', body: form({ text: 'apple' }) }, { AI: fakeAI([choices]).AI });
+    expect(r.data.items[0].display_name).toBe('apple');
+  });
+  it('normalises barcodes and validates printed label values', () => {
+    const v = validateOutput({ items: [{ name: 'x', amount: 1, unit: 'bottle', barcode: '8 11620 02211 8', brand: ' fairlife ', label: { serving_amount: '340', serving_unit: 'mL', kcal: 150, protein: 30 } }] });
+    expect(v.items[0]).toMatchObject({ barcode: '811620022118', brand: 'fairlife', label: { serving_amount: 340, serving_unit: 'ml', kcal: 150, protein: 30 } });
+    const bad = validateOutput({ items: [{ name: 'x', amount: 1, unit: 'g', label: { kcal: 150 } }] });
+    expect(bad.items[0]!.label).toBeNull();
+  });
+  it('drops barcodes that fail the check digit', async () => {
+    const { validGtin } = await import('../src/worker/lib/ai');
+    expect(validGtin('811620022118')).toBe(true); // the fairlife bottle
+    expect(validGtin('011620022118')).toBe(false); // same barcode with the first digit misread
+    expect(validGtin('4006381333931')).toBe(true); // EAN-13
+    expect(validGtin('12345')).toBe(false);
+    expect(validateOutput({ items: [{ name: 'x', amount: 1, unit: 'g', barcode: '011620022118' }] }).items[0]!.barcode).toBeNull();
   });
   it('rejects outputs without items', () => {
     expect(() => validateOutput('{"foo":1}')).toThrow();
@@ -142,7 +168,7 @@ describe('text logging', () => {
     );
     expect(r.status).toBe(202);
     expect(ai.calls[0]!.opts).toEqual({ gateway: { id: 'nutrition' } });
-    expect(r.data).toMatchObject({ source: 'text', status: 'in-progress', meal_type: 'dinner', prompt_version: 'parse-v1', pipeline_version: '2.0' });
+    expect(r.data).toMatchObject({ source: 'text', status: 'in-progress', meal_type: 'dinner', prompt_version: 'parse-v3', pipeline_version: '2.0' });
     expect(r.data.model_id).toMatch(/llama/);
 
     // q2 (5 g difference) is not worth asking; the oil question is.

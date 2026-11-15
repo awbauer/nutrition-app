@@ -15,7 +15,8 @@ export const DEFAULT_SETTINGS: Settings = {
   mass_unit: 'g',
   question_confidence_threshold: 0.6,
   max_questions: 2,
-  model_vision: '@cf/meta/llama-4-scout-17b-16e-instruct',
+  // Chosen by comparing models on real packaged-food photos: best at reading brand, label and barcode, and fastest.
+  model_vision: '@cf/thinkingmachines/inkling-2-small',
   model_parser: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
   model_speech: '@cf/openai/whisper-large-v3-turbo',
 };

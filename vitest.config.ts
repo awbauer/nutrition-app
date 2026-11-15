@@ -9,7 +9,7 @@ export default defineConfig(async () => {
         wrangler: { configPath: './wrangler.jsonc' },
         remoteBindings: false,
         miniflare: {
-          bindings: { TEST_MIGRATIONS: migrations, DEV_AUTH: '1', DEV_USER_EMAIL: 'test@example.test', USDA_API_KEY: 'test-key', AI_GATEWAY_ID: 'nutrition' },
+          bindings: { TEST_MIGRATIONS: migrations, DEV_AUTH: '1', DEV_USER_EMAIL: 'test@example.test', USDA_API_KEY: 'test-key', AI_GATEWAY_ID: 'nutrition', USDA_BASE_URL: '' },
         },
       }),
     ],

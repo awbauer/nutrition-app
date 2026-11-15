@@ -86,7 +86,41 @@ export interface Item {
   estimation_method: string;
   estimated: boolean;
   fdc_id: string | null;
+  food_source: string | null;
+  food_name: string | null;
+  food_data_type: string | null;
+  has_match_details: boolean;
+  check_match: boolean;
   nutrients: Record<string, number>;
+}
+
+export interface MatchCandidate {
+  fdc_id?: string;
+  food_id?: string;
+  source: string;
+  name: string;
+  brand: string | null;
+  data_type: string | null;
+  kcal_100g: number | null;
+  protein_100g: number | null;
+  score: number;
+  notes: string[];
+}
+
+export interface MatchInfo {
+  query: string;
+  via: 'alias' | 'custom' | 'cache' | 'barcode' | 'label' | 'usda' | 'off' | 'estimate';
+  estimate_kcal_100g: number | null;
+  candidates: MatchCandidate[];
+  chosen: string | null;
+}
+
+export interface ItemDetail {
+  item: Item;
+  intake_id: string;
+  food: (Food & { fdc_url: string | null; owner_user_id: string | null }) | null;
+  conversion: { method: 'mass' | 'portion' | 'default-serving' | 'volume' | 'generic' | 'ai-estimate'; grams_per_unit: number; stored_grams: number } | null;
+  match: MatchInfo | null;
 }
 export interface Question {
   id: string;
