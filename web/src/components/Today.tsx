@@ -6,6 +6,7 @@ import { LogSheet } from './LogSheet';
 import { MealCard } from './MealCard';
 import { Sheet } from './Sheet';
 import { Summary } from './Summary';
+import { discard, flush, onQueueChange, pending, type QueuedMeal } from '../queue';
 
 function guessMeal(): MealType {
   const h = new Date().getHours() + new Date().getMinutes() / 60;
@@ -21,6 +22,16 @@ export function Today(props: { today: string }) {
   const [err, setErr] = useState<string | null>(null);
   const [adding, setAdding] = useState<{ intake?: Intake } | null>(null);
   const [yesterday, setYesterday] = useState<Intake[]>([]);
+  const [queued, setQueued] = useState<QueuedMeal[]>([]);
+
+  useEffect(() => {
+    const refresh = () => {
+      pending().then(setQueued);
+      load();
+    };
+    pending().then(setQueued);
+    return onQueueChange(refresh);
+  }, []);
 
   const load = async (d = date) => {
     try {
@@ -73,6 +84,28 @@ export function Today(props: { today: string }) {
       {day ? (
         <>
           <Summary totals={day.totals} targets={day.targets} remaining={day.remaining} />
+          {queued.length > 0 && (
+            <div class="card flex flex-col gap-2 p-3 text-sm">
+              <div class="flex items-center justify-between">
+                <span>
+                  {queued.filter((q) => !q.error).length > 0 && `${queued.filter((q) => !q.error).length} meal(s) waiting to sync`}
+                </span>
+                <button class="text-brand-700 dark:text-brand-500" onClick={() => flush()}>
+                  Retry now
+                </button>
+              </div>
+              {queued
+                .filter((q) => q.error)
+                .map((q) => (
+                  <div class="flex items-center justify-between gap-2 text-rose-600">
+                    <span class="truncate">Couldn't save a meal from {new Date(q.created_at).toLocaleString()}: {q.error}</span>
+                    <button class="shrink-0 text-slate-500" onClick={() => discard(q.id!)}>
+                      Discard
+                    </button>
+                  </div>
+                ))}
+            </div>
+          )}
           {repeatable.length > 0 && (
             <div class="flex gap-2 overflow-x-auto pb-1">
               {repeatable.map((m) => (

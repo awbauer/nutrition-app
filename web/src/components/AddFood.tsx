@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api, type Food, type Intake, type MealType, type UsdaHit } from '../api';
 import { MEALS, MEAL_LABEL } from '../format';
+import { submitMeal } from '../queue';
 import { AmountPicker } from './AmountPicker';
 
 type Hit = { kind: 'local'; food: Food } | { kind: 'usda'; hit: UsdaHit };
@@ -68,8 +69,8 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
       const item = { food_id: picked.id, amount, unit };
       const res = props.intakeId
         ? await api.post<Intake>(`/intake/${props.intakeId}/items`, item)
-        : await api.post<Intake>('/intake', { meal_type: meal, occurrence_at: occurrenceFor(props.date), items: [item] });
-      props.onDone(res);
+        : await submitMeal('/intake', { meal_type: meal, ...(occurrenceFor(props.date) ? { occurrence_at: occurrenceFor(props.date) } : {}), items: [item] });
+      props.onDone(res as Intake);
     } catch (e) {
       setErr((e as Error).message);
     } finally {
