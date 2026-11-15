@@ -3,6 +3,8 @@ import { api, type Intake, type MealType } from '../api';
 import { MEALS, MEAL_LABEL, kcal } from '../format';
 import { resizeImage } from '../image';
 import { submitMeal } from '../queue';
+import { watch } from '../analysis';
+import { toast } from '../toast';
 import { AddFood, occurrenceFor } from './AddFood';
 import { Questions } from './Questions';
 import { Recorder } from './Recorder';
@@ -20,7 +22,6 @@ export function LogSheet(props: { date: string; defaultMeal: MealType; onDone: (
   const [photo, setPhoto] = useState<{ blob: Blob; url: string } | null>(null);
   const [clip, setClip] = useState<Blob | null>(null);
   const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
   const [draft, setDraft] = useState<Intake | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -41,14 +42,17 @@ export function LogSheet(props: { date: string; defaultMeal: MealType; onDone: (
     const at = occurrenceFor(props.date);
     if (at) f.append('occurrence_at', at);
     setBusy(true);
-    setErr(null);
     try {
       const r = await submitMeal('/intake', f);
       // Saved (or queued offline): the AI fills it in in the background and Today shows progress.
       if (r && r.status !== 'preparation') setDraft(r);
-      else props.onDone();
+      else {
+        if (r) watch(r);
+        else toast.info("You're offline. The meal will sync when you're back online.");
+        props.onDone();
+      }
     } catch (e) {
-      setErr((e as Error).message);
+      toast.error(e);
     } finally {
       setBusy(false);
     }
@@ -70,7 +74,7 @@ export function LogSheet(props: { date: string; defaultMeal: MealType; onDone: (
         {(['describe', 'voice', 'photo', 'search'] as Mode[]).map((m) => (
           <button
             class={`rounded-lg py-1.5 font-medium ${mode === m ? 'bg-white shadow-sm dark:bg-slate-900' : 'text-slate-500'}`}
-            onClick={() => (setMode(m), setErr(null))}
+            onClick={() => setMode(m)}
           >
             {MODE_LABEL[m]}
           </button>
@@ -116,7 +120,6 @@ export function LogSheet(props: { date: string; defaultMeal: MealType; onDone: (
               </button>
             ))}
           </div>
-          {err && <p class="text-sm text-rose-600">{err}</p>}
           <button class="btn-primary w-full py-3" disabled={busy || (mode === 'photo' ? !photo : mode === 'voice' ? !clip : !text.trim())} onClick={submit}>
             {busy ? 'Saving…' : 'Log meal'}
           </button>

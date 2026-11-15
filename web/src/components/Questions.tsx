@@ -1,3 +1,4 @@
+import { toast } from '../toast';
 import { useState } from 'preact/hooks';
 import { api, type Intake, type Question } from '../api';
 
@@ -6,15 +7,13 @@ export function Questions(props: { intake: Intake; onDone: (i: Intake) => void }
   const qs: Question[] = props.intake.pending?.questions ?? [];
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
 
   async function submit(skip: boolean) {
     setBusy(true);
-    setErr(null);
     try {
       props.onDone(await api.post<Intake>(`/intake/${props.intake.id}/answers`, { answers: skip ? {} : answers }));
     } catch (e) {
-      setErr((e as Error).message);
+      toast.error(e);
     } finally {
       setBusy(false);
     }
@@ -41,7 +40,6 @@ export function Questions(props: { intake: Intake; onDone: (i: Intake) => void }
           </div>
         );
       })}
-      {err && <p class="text-sm text-rose-600">{err}</p>}
       <div class="flex gap-2">
         <button class="btn-primary flex-1" disabled={busy} onClick={() => submit(false)}>
           {busy ? 'Saving…' : 'Done'}

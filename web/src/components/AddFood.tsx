@@ -1,3 +1,4 @@
+import { toast } from '../toast';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api, type Food, type Intake, type MealType, type UsdaHit } from '../api';
 import { MEALS, MEAL_LABEL } from '../format';
@@ -15,7 +16,6 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
   const [q, setQ] = useState('');
   const [hits, setHits] = useState<Hit[]>([]);
   const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
   const [picked, setPicked] = useState<Food | null>(null);
   const [amount, setAmount] = useState(100);
   const [unit, setUnit] = useState('g');
@@ -33,9 +33,9 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
         const r = await api.get<{ local: Food[]; usda: UsdaHit[]; usda_error?: string }>(`/foods?q=${encodeURIComponent(term)}`);
         if (n !== seq.current) return;
         setHits([...r.local.map((food) => ({ kind: 'local' as const, food })), ...r.usda.map((hit) => ({ kind: 'usda' as const, hit }))]);
-        setErr(r.usda_error ? 'Food database unavailable; showing saved foods only.' : null);
+        if (r.usda_error) toast.info('Food database unavailable; showing saved foods only.', { id: 'usda' });
       } catch (e) {
-        if (n === seq.current) setErr((e as Error).message);
+        if (n === seq.current) toast.error(e, { id: 'usda' });
       } finally {
         if (n === seq.current) setLoading(false);
       }
@@ -44,7 +44,6 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
   }, [q]);
 
   async function choose(h: Hit) {
-    setErr(null);
     try {
       const food = h.kind === 'local' ? h.food : await api.get<Food>(`/foods/fdc/${h.hit.sourceId}`);
       setPicked(food);
@@ -57,14 +56,13 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
         setUnit('g');
       }
     } catch (e) {
-      setErr((e as Error).message);
+      toast.error(e);
     }
   }
 
   async function save() {
     if (!picked || !(amount > 0)) return;
     setSaving(true);
-    setErr(null);
     try {
       const item = { food_id: picked.id, amount, unit };
       const res = props.intakeId
@@ -72,7 +70,7 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
         : await submitMeal('/intake', { meal_type: meal, ...(occurrenceFor(props.date) ? { occurrence_at: occurrenceFor(props.date) } : {}), items: [item] });
       props.onDone(res as Intake);
     } catch (e) {
-      setErr((e as Error).message);
+      toast.error(e);
     } finally {
       setSaving(false);
     }
@@ -112,7 +110,6 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
             ))}
           </div>
         )}
-        {err && <p class="text-sm text-rose-600">{err}</p>}
         <button class="btn-primary w-full py-3" disabled={saving || !(amount > 0)} onClick={save}>
           {saving ? 'Saving…' : props.intakeId ? 'Add to meal' : 'Log food'}
         </button>
@@ -131,7 +128,6 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
         autoFocus
         enterKeyHint="search"
       />
-      {err && <p class="text-sm text-amber-600">{err}</p>}
       {loading && hits.length === 0 && <p class="text-sm text-slate-500">Searching…</p>}
       <ul class="flex flex-col divide-y divide-slate-100 dark:divide-slate-800">
         {hits.map((h) => {

@@ -4,7 +4,9 @@
  * `online`, on start, and whenever the app becomes visible.
  */
 import { openDB, type IDBPDatabase } from 'idb';
+import { watch } from './analysis';
 import { api, ApiError, type Intake } from './api';
+import { toast } from './toast';
 
 type Body = { kind: 'json'; json: unknown } | { kind: 'form'; fields: [string, string | Blob, string?][] };
 
@@ -22,7 +24,31 @@ const db = () => (dbp ??= openDB('meal-queue', 1, { upgrade: (d) => d.createObje
 
 const listeners = new Set<() => void>();
 export const onQueueChange = (fn: () => void) => (listeners.add(fn), () => listeners.delete(fn));
-const notify = () => listeners.forEach((f) => f());
+const notify = () => {
+  listeners.forEach((f) => f());
+  void syncToasts();
+};
+
+/** Queue status as toasts, on every screen. */
+async function syncToasts() {
+  const items = await pending();
+  const waiting = items.filter((q) => !q.error).length;
+  if (waiting)
+    toast.info(`${waiting} meal${waiting > 1 ? 's' : ''} waiting to sync`, {
+      id: 'sync',
+      sticky: true,
+      dismissible: false,
+      action: { label: 'Retry', onClick: () => void flush() },
+    });
+  else toast.dismiss('sync', false);
+  for (const q of items.filter((x) => x.error))
+    toast.error(`Couldn't save a meal from ${new Date(q.created_at).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}: ${q.error}`, {
+      id: `q-${q.id}`,
+      sticky: true,
+      dismissible: false,
+      action: { label: 'Discard', onClick: () => discard(q.id!) },
+    });
+}
 
 export async function pending(): Promise<QueuedMeal[]> {
   try {
@@ -97,9 +123,10 @@ export async function flush(): Promise<number> {
     for (const item of await d.getAll('pending')) {
       if (item.error) continue;
       try {
-        await api.post(item.path, fromBody(item.body));
+        const created = await api.post<Intake>(item.path, fromBody(item.body));
         await d.delete('pending', item.id);
         sent++;
+        if (created) watch(created); // AI meals keep reporting progress after syncing
       } catch (e) {
         if (isTransient(e)) break; // try again later
         await d.put('pending', { ...item, attempts: item.attempts + 1, error: (e as Error).message });
@@ -107,7 +134,7 @@ export async function flush(): Promise<number> {
     }
   } finally {
     flushing = false;
-    if (sent) notify();
+    notify();
   }
   return sent;
 }
@@ -117,4 +144,5 @@ export function startQueue() {
   addEventListener('online', kick);
   document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && kick());
   kick();
+  void syncToasts();
 }

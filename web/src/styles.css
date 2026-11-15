@@ -45,3 +45,18 @@ body {
 @utility chip-on {
   @apply chip bg-brand-700 text-white ring-brand-700;
 }
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+}
+.toast-in {
+  animation: toast-in 180ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast-in {
+    animation: none;
+  }
+}

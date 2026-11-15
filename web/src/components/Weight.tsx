@@ -1,3 +1,4 @@
+import { toast } from '../toast';
 import { useEffect, useState } from 'preact/hooks';
 import { api } from '../api';
 
@@ -12,11 +13,10 @@ export function Weight(props: { unit: 'kg' | 'lb' }) {
   const [data, setData] = useState<Data | null>(null);
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
   const show = (kg: number) => (props.unit === 'lb' ? kg / LB : kg);
   const fmtW = (kg: number) => `${show(kg).toFixed(1)} ${props.unit}`;
 
-  const load = () => api.get<Data>('/weight').then(setData, (e) => setErr(e.message));
+  const load = () => api.get<Data>('/weight').then(setData, (e) => toast.error(e));
   useEffect(() => {
     load();
   }, []);
@@ -25,13 +25,12 @@ export function Weight(props: { unit: 'kg' | 'lb' }) {
     const v = Number(value);
     if (!(v > 0)) return;
     setBusy(true);
-    setErr(null);
     try {
       await api.post('/weight', { value: v, unit: props.unit });
       setValue('');
       await load();
     } catch (e) {
-      setErr((e as Error).message);
+      toast.error(e);
     } finally {
       setBusy(false);
     }
@@ -65,7 +64,6 @@ export function Weight(props: { unit: 'kg' | 'lb' }) {
           Log
         </button>
       </section>
-      {err && <p class="text-sm text-rose-600">{err}</p>}
       {latest && (
         <section class="card p-5">
           <p class="text-sm text-slate-500">Trend weight</p>

@@ -1,3 +1,4 @@
+import { toast } from '../toast';
 import { useEffect, useState } from 'preact/hooks';
 import { api, type MealType } from '../api';
 import { MEAL_LABEL } from '../format';
@@ -24,12 +25,11 @@ const DAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 export function Reminders() {
   const [list, setList] = useState<Reminder[] | null>(null);
   const [subscribed, setSubscribed] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const needsInstall = isIOS() && !isStandalone();
 
   useEffect(() => {
-    api.get<Reminder[]>('/reminders').then((r) => setList(r.length ? r : DEFAULTS), (e) => setMsg(e.message));
+    api.get<Reminder[]>('/reminders').then((r) => setList(r.length ? r : DEFAULTS), (e) => toast.error(e));
     currentSubscription().then((s) => setSubscribed(!!s));
   }, []);
 
@@ -38,13 +38,12 @@ export function Reminders() {
     try {
       setList(await api.put<Reminder[]>('/reminders', next));
     } catch (e) {
-      setMsg((e as Error).message);
+      toast.error(e);
     }
   }
 
   async function toggleNotifications() {
     setBusy(true);
-    setMsg(null);
     try {
       if (subscribed) {
         await disablePush();
@@ -54,9 +53,10 @@ export function Reminders() {
         setSubscribed(true);
         if (list) await save(list); // persist defaults the first time
         await api.post('/push/test');
+        toast.success('Notifications are on. A test notification is on its way.');
       }
     } catch (e) {
-      setMsg((e as Error).message);
+      toast.error(e);
     } finally {
       setBusy(false);
     }
@@ -130,7 +130,6 @@ export function Reminders() {
         + Add reminder
       </button>
       <p class="text-xs text-slate-500">Meal reminders are skipped when that meal is already logged.</p>
-      {msg && <p class="text-sm text-rose-600">{msg}</p>}
     </section>
   );
 }

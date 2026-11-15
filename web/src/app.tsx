@@ -2,6 +2,8 @@ import { useEffect, useState } from 'preact/hooks';
 import { api, ApiError } from './api';
 import { isIOS, isStandalone } from './push';
 import { applyUpdate, onUpdateAvailable } from './update';
+import { toast } from './toast';
+import { Toaster } from './components/Toaster';
 import { SettingsView } from './components/SettingsView';
 import { Today } from './components/Today';
 import { Week } from './components/Week';
@@ -24,9 +26,13 @@ function logToday(tz: string, cutoff: string): string {
 export function App() {
   const [tab, setTab] = useState<Tab>(() => (location.hash.slice(1) as Tab) || 'today');
   const [me, setMe] = useState<Me | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const [update, setUpdate] = useState<string | null>(null);
-  useEffect(() => onUpdateAvailable(setUpdate), []);
+  useEffect(
+    () =>
+      onUpdateAvailable((v) => {
+        if (v) toast.show({ id: 'update', message: 'A new version is ready.', sticky: true, dismissible: true, action: { label: 'Reload', onClick: applyUpdate } });
+      }),
+    [],
+  );
 
   const loadMe = () =>
     api.get<Me>('/me').then(
@@ -39,7 +45,12 @@ export function App() {
         }
         setMe(m);
       },
-      (e) => setErr(e instanceof ApiError && e.status === 401 ? 'Your session expired. Reload to sign in again.' : e.message),
+      (e) =>
+        toast.error(e instanceof ApiError && e.status === 401 ? 'Your session expired.' : e, {
+          id: 'me',
+          sticky: true,
+          action: { label: e instanceof ApiError && e.status === 401 ? 'Sign in' : 'Reload', onClick: () => location.reload() },
+        }),
     );
 
   useEffect(() => {
@@ -54,51 +65,29 @@ export function App() {
     return () => removeEventListener('hashchange', onHash);
   }, []);
 
-  const [installHint, setInstallHint] = useState(() => {
+  useEffect(() => {
+    let dismissed = true;
     try {
-      return isIOS() && !isStandalone() && localStorage.getItem('install-hint-dismissed') !== '1';
-    } catch {
-      return false;
-    }
-  });
-  const dismissHint = () => {
-    setInstallHint(false);
-    try {
-      localStorage.setItem('install-hint-dismissed', '1');
+      dismissed = localStorage.getItem('install-hint-dismissed') === '1';
     } catch {}
-  };
+    if (!isIOS() || isStandalone() || dismissed) return;
+    toast.info('Add Meals to your Home Screen for reminders: tap Share, then Add to Home Screen.', {
+      id: 'install',
+      sticky: true,
+      onDismiss: () => {
+        try {
+          localStorage.setItem('install-hint-dismissed', '1');
+        } catch {}
+      },
+    });
+  }, []);
 
   const today = me ? logToday(me.timezone, me.settings.day_cutoff) : null;
 
   return (
     <div class="mx-auto flex min-h-dvh max-w-lg flex-col">
+      <Toaster />
       <main class="safe-top flex-1 px-4 pb-28">
-        {err && (
-          <div class="card mt-8 p-6 text-center">
-            <p class="text-sm">{err}</p>
-            <button class="btn-primary mt-4" onClick={() => location.reload()}>
-              Reload
-            </button>
-          </div>
-        )}
-        {update && (
-          <button class="card mb-4 flex w-full items-center gap-3 p-3 text-left text-sm" onClick={() => applyUpdate()}>
-            <span class="text-xl">✨</span>
-            <span class="flex-1">A new version is ready.</span>
-            <span class="font-semibold text-brand-700 dark:text-brand-500">Reload</span>
-          </button>
-        )}
-        {installHint && (
-          <div class="card mb-4 flex items-start gap-3 p-3 text-sm">
-            <span class="text-xl">📲</span>
-            <p class="flex-1">
-              Add Meals to your Home Screen for full-screen use and reminders: tap <b>Share</b>, then <b>Add to Home Screen</b>.
-            </p>
-            <button class="text-slate-400" onClick={dismissHint} aria-label="Dismiss">
-              ✕
-            </button>
-          </div>
-        )}
         {today && tab === 'today' && <Today key={today} today={today} />}
         {today && tab === 'week' && <Week key={today} today={today} />}
         {me && tab === 'weight' && <Weight unit={me.settings.weight_unit} />}

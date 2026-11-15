@@ -1,6 +1,8 @@
 import { useState } from 'preact/hooks';
 import { api, type Intake, type Item } from '../api';
 import { Questions } from './Questions';
+import { watch } from '../analysis';
+import { toast } from '../toast';
 import { amountLabel, confidenceTone, kcal, MEAL_LABEL, time } from '../format';
 
 export function MealCard(props: { meal: Intake; onChange: (m: Intake | null) => void; onAdd: (m: Intake) => void }) {
@@ -14,7 +16,7 @@ export function MealCard(props: { meal: Intake; onChange: (m: Intake | null) => 
     try {
       return await fn();
     } catch (e) {
-      alert((e as Error).message);
+      toast.error(e);
     } finally {
       setBusy(false);
     }
@@ -26,7 +28,12 @@ export function MealCard(props: { meal: Intake; onChange: (m: Intake | null) => 
       await api.del(`/intake/${meal.id}`);
       props.onChange(null);
     });
-  const retry = () => run(async () => props.onChange(await api.post<Intake>(`/intake/${meal.id}/retry`)));
+  const retry = () =>
+    run(async () => {
+      const m = await api.post<Intake>(`/intake/${meal.id}/retry`);
+      watch(m);
+      props.onChange(m);
+    });
   const analyzing = meal.status === 'preparation' && !meal.pending?.error;
   const failed = meal.status === 'preparation' && !!meal.pending?.error;
 
@@ -61,21 +68,22 @@ export function MealCard(props: { meal: Intake; onChange: (m: Intake | null) => 
         <img src={`/api/intake/${meal.id}/media`} alt="" loading="lazy" class="mx-4 mt-2 h-32 w-[calc(100%-2rem)] rounded-xl object-cover" />
       )}
       {meal.status === 'preparation' && (
-        <div class="mx-4 mt-2 flex flex-col gap-2 rounded-xl bg-slate-100 p-3 text-sm dark:bg-slate-800/60">
-          {meal.raw_input_text && meal.source === 'text' && <p class="text-slate-600 italic dark:text-slate-300">“{meal.raw_input_text}”</p>}
-          {analyzing && (
-            <p class="flex items-center gap-2 text-slate-600 dark:text-slate-300" aria-live="polite">
-              <span class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-brand-600 border-t-transparent" />
-              {meal.source === 'voice' ? 'Transcribing and analyzing…' : 'Analyzing…'} You can keep using the app.
-            </p>
+        // Fixed-height placeholder: progress and errors are reported by toasts, so the page doesn't jump.
+        <div class="mx-4 mt-2 flex h-20 flex-col justify-center gap-2" aria-busy={analyzing}>
+          {meal.raw_input_text && meal.source === 'text' ? (
+            <p class="truncate text-sm text-slate-500 italic">“{meal.raw_input_text}”</p>
+          ) : (
+            <div class={`h-3 w-2/3 rounded bg-slate-200 dark:bg-slate-800 ${analyzing ? 'animate-pulse' : ''}`} />
           )}
-          {failed && (
-            <>
-              <p class="text-rose-600">{meal.pending!.error}</p>
-              <button class="btn-primary self-start px-3 py-1.5" onClick={retry} disabled={busy}>
+          {failed ? (
+            <div class="flex items-center gap-2 text-sm">
+              <span class="flex-1 truncate text-rose-600">Couldn't read this meal</span>
+              <button class="btn-primary px-3 py-1" onClick={retry} disabled={busy}>
                 Try again
               </button>
-            </>
+            </div>
+          ) : (
+            <div class="h-3 w-1/2 animate-pulse rounded bg-slate-200 dark:bg-slate-800" />
           )}
         </div>
       )}
@@ -120,7 +128,7 @@ function ItemRow(props: { item: Item; editing: boolean; onToggle: () => void; on
       props.onChange(m);
       props.onToggle();
     } catch (e) {
-      alert((e as Error).message);
+      toast.error(e);
     } finally {
       setBusy(false);
     }
