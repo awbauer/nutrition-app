@@ -13,7 +13,6 @@ export function MealCard(props: { meal: Intake; onChange: (m: Intake | null) => 
   const [openItem, setOpenItem] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
-  const tone = confidenceTone(meal.confidence);
 
   async function run<T>(fn: () => Promise<T>) {
     setBusy(true);
@@ -54,12 +53,7 @@ export function MealCard(props: { meal: Intake; onChange: (m: Intake | null) => 
           </h3>
           <p class="text-xs text-slate-500">
             {time(meal.occurrence_at)}
-            {tone.label && (
-              <>
-                {' · '}
-                <span class={tone.cls}>{tone.label} confidence</span>
-              </>
-            )}
+
           </p>
         </div>
         {meal.status === 'preparation' ? null : (
@@ -143,6 +137,7 @@ export function MealCard(props: { meal: Intake; onChange: (m: Intake | null) => 
 
 function ItemRow(props: { item: Item; onOpen: () => void }) {
   const it = props.item;
+  const tone = confidenceTone(it.confidence);
   const showMatch = it.food_name && it.food_name.toLowerCase() !== it.display_name.toLowerCase();
   return (
     <li>
@@ -163,6 +158,7 @@ function ItemRow(props: { item: Item; onOpen: () => void }) {
           </p>
         </div>
         <span class="text-sm tabular-nums text-slate-600 dark:text-slate-300">{kcal(it.nutrients.ENERC_KCAL)}</span>
+        {tone.dot && <span class={`h-2 w-2 shrink-0 rounded-full ${tone.dot}`} title={`${tone.label} confidence`} aria-label={`${tone.label} confidence`} role="img" />}
         <span class="text-slate-300 dark:text-slate-600" aria-hidden="true">›</span>
       </button>
     </li>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import { api, type Intake, type ItemDetail, type MatchCandidate } from '../api';
-import { amountLabel, kcal } from '../format';
+import { amountLabel, CONFIDENCE_LEVELS, confidenceLevel, kcal } from '../format';
 import { toast } from '../toast';
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -180,6 +180,28 @@ export function ItemSheet(props: { itemId: string; onChange: (m: Intake) => void
             )}
           </tbody>
         </table>
+      </section>
+
+      {/* How sure */}
+      <section class="flex flex-col gap-2">
+        <p class="text-xs tracking-wide text-slate-500 uppercase">How sure are you about this item?</p>
+        <div class="grid grid-cols-4 gap-1 rounded-xl bg-slate-100 p-1 text-sm dark:bg-slate-800" role="radiogroup" aria-label="Confidence">
+          {CONFIDENCE_LEVELS.map((l) => {
+            const on = confidenceLevel(item.confidence)?.key === l.key;
+            return (
+              <button
+                role="radio"
+                aria-checked={on}
+                class={`rounded-lg py-1.5 font-medium ${on ? 'bg-white shadow-sm dark:bg-slate-900' : 'text-slate-500'}`}
+                disabled={busy}
+                onClick={() => !on && patch({ confidence: l.value }, `Confidence set to ${l.label.toLowerCase()}`)}
+              >
+                {l.label}
+              </button>
+            );
+          })}
+        </div>
+        <p class="text-xs text-slate-500">{confidenceLevel(item.confidence)?.hint}. Low-confidence items are flagged so you know which numbers to trust less.</p>
       </section>
 
       {/* Edit amount */}

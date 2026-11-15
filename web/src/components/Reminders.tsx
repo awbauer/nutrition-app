@@ -21,6 +21,7 @@ const DEFAULTS: Reminder[] = [
   { label: 'End of day', meal_type: null, kind: 'end-of-day', local_time: '21:00', days_of_week: '0123456', enabled: true },
 ];
 const DAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 export function Reminders() {
   const [list, setList] = useState<Reminder[] | null>(null);
@@ -87,24 +88,29 @@ export function Reminders() {
       {list?.map((r, i) => (
         <div class="flex flex-col gap-2 border-t border-slate-100 pt-3 dark:border-slate-800">
           <div class="flex items-center gap-2">
-            <input class="input flex-1 py-1.5" value={r.label} onChange={(e) => update(i, { label: (e.target as HTMLInputElement).value })} aria-label="Reminder label" />
-            <input class="input w-28 py-1.5" type="time" value={r.local_time} onChange={(e) => update(i, { local_time: (e.target as HTMLInputElement).value })} aria-label="Time" />
+            <input class="input min-w-0 flex-1 py-1.5" value={r.label} onChange={(e) => update(i, { label: (e.target as HTMLInputElement).value })} aria-label="Reminder label" />
+            <input class="input w-36 shrink-0 py-1.5" type="time" value={r.local_time} onChange={(e) => update(i, { local_time: (e.target as HTMLInputElement).value })} aria-label="Time" />
             <input type="checkbox" class="h-5 w-5 accent-brand-700" checked={r.enabled} onChange={(e) => update(i, { enabled: (e.target as HTMLInputElement).checked })} aria-label="Enabled" />
           </div>
-          <div class="flex items-center gap-1">
+          <div class="flex items-center justify-between gap-1" role="group" aria-label="Days">
             {DAYS.map((d, n) => {
               const on = r.days_of_week.includes(String(n));
               return (
                 <button
-                  class={`h-7 w-7 rounded-full text-xs ${on ? 'bg-brand-700 text-white' : 'bg-slate-100 text-slate-500 dark:bg-slate-800'}`}
+                  class={`h-9 w-9 shrink-0 rounded-full text-sm ${on ? 'bg-brand-700 text-white' : 'bg-slate-100 text-slate-500 dark:bg-slate-800'}`}
+                  aria-pressed={on}
+                  aria-label={DAY_NAMES[n]}
                   onClick={() => update(i, { days_of_week: on ? r.days_of_week.replace(String(n), '') || r.days_of_week : r.days_of_week + n })}
                 >
                   {d}
                 </button>
               );
             })}
+          </div>
+          <div class="flex items-center gap-2">
             <select
-              class="input ml-auto w-auto py-1 text-xs"
+              class="input min-w-0 flex-1 py-1.5"
+              aria-label="What to remind about"
               value={r.kind === 'end-of-day' ? 'end-of-day' : (r.meal_type ?? 'any')}
               onChange={(e) => {
                 const v = (e.target as HTMLSelectElement).value;
@@ -117,7 +123,7 @@ export function Reminders() {
               <option value="any">Any meal</option>
               <option value="end-of-day">End-of-day summary</option>
             </select>
-            <button class="ml-1 text-slate-400 hover:text-rose-600" onClick={() => save(list.filter((_, j) => j !== i))} aria-label="Delete reminder">
+            <button class="shrink-0 p-2 text-slate-400 hover:text-rose-600" onClick={() => save(list.filter((_, j) => j !== i))} aria-label="Delete reminder">
               ✕
             </button>
           </div>
