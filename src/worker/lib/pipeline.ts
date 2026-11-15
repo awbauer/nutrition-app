@@ -161,7 +161,8 @@ export async function materialise(db: D1Database, userId: string, p: Pending, an
         display_name: e.add_item.name,
         amount: e.add_item.amount,
         unit: e.add_item.unit,
-        confidence: answered ? 0.8 : 0.5,
+        // An answered question confirms the add-on, but an AI-estimated food stays capped.
+        confidence: Math.min(answered ? 0.8 : 0.5, e.add_item.estimated ? ESTIMATE_CONFIDENCE_CAP : 1),
         method: 'described',
         estimated: e.add_item.estimated,
         match: e.add_item.match,

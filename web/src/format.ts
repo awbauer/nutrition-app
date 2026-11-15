@@ -41,9 +41,28 @@ export function amountLabel(amount: number, unit: string): string {
   return u === 'g' || u === 'mL' ? `${a} ${u}` : `${a} ${u}`;
 }
 
-export function confidenceTone(c: number | null): { label: string; cls: string } {
-  if (c == null) return { label: '', cls: '' };
-  if (c >= 0.8) return { label: 'High', cls: 'text-emerald-600 dark:text-emerald-400' };
-  if (c >= 0.5) return { label: 'Medium', cls: 'text-amber-600 dark:text-amber-400' };
-  return { label: 'Low', cls: 'text-rose-600 dark:text-rose-400' };
+/** Confidence levels shown to the user; values are what gets stored (0 to 1). */
+export const CONFIDENCE_LEVELS = [
+  { key: 'low', label: 'Low', value: 0.3, hint: 'A rough guess' },
+  { key: 'medium', label: 'Medium', value: 0.6, hint: 'About right' },
+  { key: 'high', label: 'High', value: 0.85, hint: 'Close' },
+  { key: 'exact', label: 'Exact', value: 1, hint: 'Weighed or from the label' },
+] as const;
+
+export function confidenceLevel(c: number | null | undefined) {
+  if (c == null) return null;
+  return c >= 0.95 ? CONFIDENCE_LEVELS[3] : c >= 0.8 ? CONFIDENCE_LEVELS[2] : c >= 0.5 ? CONFIDENCE_LEVELS[1] : CONFIDENCE_LEVELS[0];
+}
+
+const TONE: Record<string, { dot: string; text: string }> = {
+  low: { dot: 'bg-rose-500', text: 'text-rose-600 dark:text-rose-400' },
+  medium: { dot: 'bg-amber-500', text: 'text-amber-600 dark:text-amber-400' },
+  high: { dot: 'bg-emerald-500', text: 'text-emerald-600 dark:text-emerald-400' },
+  exact: { dot: 'bg-brand-600', text: 'text-brand-700 dark:text-brand-500' },
+};
+
+export function confidenceTone(c: number | null | undefined): { label: string; cls: string; dot: string } {
+  const l = confidenceLevel(c);
+  if (!l) return { label: '', cls: '', dot: '' };
+  return { label: l.label, cls: TONE[l.key]!.text, dot: TONE[l.key]!.dot };
 }

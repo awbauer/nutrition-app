@@ -197,6 +197,7 @@ describe('text logging', () => {
     expect(oil.grams).toBe(13.5);
     expect(oil.nutrients.ENERC_KCAL).toBeCloseTo(119.3, 1);
     expect(done.data.confidence).toBeLessThanOrEqual(0.4);
+    for (const it of done.data.items) if (it.estimated) expect(it.confidence).toBeLessThanOrEqual(0.4);
 
     const after = await api('/day/2026-11-14');
     expect(after.data.totals.ENERC_KCAL).toBeCloseTo(247.5 + 60 + 119.3, 0);

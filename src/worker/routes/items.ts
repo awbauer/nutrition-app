@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../env';
 import { HttpError } from '../lib/ids';
+import { round } from '../lib/nutrients';
 import { getIntake, itemStatements, refreshConfidence, resolveRef, validAmount, type ItemRef } from '../lib/intake';
 import { getFood, searchLocal } from '../lib/foods';
 import { localCandidate, rankedUsda, rememberChoice, usdaCandidate, type MatchInfo } from '../lib/matcher';
@@ -99,8 +100,18 @@ items.patch('/:id', async (c) => {
   const user = c.get('user');
   const row = await loadRow(c.env.DB, c.req.param('id'), user.id);
   if (!row) throw new HttpError(404, 'item not found');
-  const body = await c.req.json<Partial<ItemRef> & { remember?: boolean }>();
+  const body = await c.req.json<Partial<ItemRef> & { remember?: boolean; confidence?: number }>();
+  if (body.confidence !== undefined && !(typeof body.confidence === 'number' && body.confidence >= 0 && body.confidence <= 1))
+    throw new HttpError(400, 'confidence must be between 0 and 1');
   const swapping = body.food_id != null || body.fdc_id != null;
+  // Confidence alone: just record how sure the user is about this item.
+  if (body.confidence !== undefined && !swapping && body.amount === undefined && body.unit === undefined && body.grams === undefined && body.display_name === undefined) {
+    await c.env.DB.batch([
+      c.env.DB.prepare('UPDATE consumed_item SET confidence = ? WHERE id = ? AND user_id = ?').bind(round(body.confidence, 2), row.id, user.id),
+      refreshConfidence(c.env.DB, row.intake_id),
+    ]);
+    return c.json(await getIntake(c.env.DB, user.id, row.intake_id));
+  }
   const food = swapping ? await resolveRef(c.env, user, body as ItemRef) : row.food_id ? await getFood(c.env.DB, user.id, row.food_id) : null;
   if (!food) throw new HttpError(400, 'item has no food; supply food_id or fdc_id');
   const amount = body.amount ?? row.amount_value;
@@ -126,8 +137,8 @@ items.patch('/:id', async (c) => {
         amount,
         unit,
         grams,
-        // A user correction is as good as it gets for that item.
-        confidence: edited ? 1 : row.confidence,
+        // A user correction is as good as it gets for that item, unless they say otherwise.
+        confidence: body.confidence ?? (edited ? 1 : row.confidence),
         method: body.grams !== undefined || /^(g|kg|\[oz_av\]|\[lb_av\]|oz|lb)$/.test(unit) ? 'weighed' : edited ? 'described' : row.estimation_method,
         estimated: swapping ? food.source === 'estimate' : row.estimated === 1,
         match,

@@ -160,4 +160,23 @@ describe('manual intake and daily totals', () => {
     const otherItem = await api(`/item/${r.data.items[0].id}`, { method: 'PATCH', json: { amount: 1 } }, { DEV_USER_EMAIL: 'someone-else@example.test' });
     expect(otherItem.status).toBe(404);
   });
+
+  it('sets confidence per item without touching the numbers', async () => {
+    const r = await api('/intake', {
+      method: 'POST',
+      json: { occurrence_at: '2026-11-06T12:00:00Z', items: [{ fdc_id: 171477, amount: 100, unit: 'g' }, { fdc_id: 168878, amount: 100, unit: 'g' }] },
+    });
+    const [a, b] = r.data.items;
+    const low = await api(`/item/${a.id}`, { method: 'PATCH', json: { confidence: 0.3 } });
+    const items = low.data.items;
+    expect(items[0]).toMatchObject({ id: a.id, confidence: 0.3, grams: 100 });
+    expect(items[0].nutrients.ENERC_KCAL).toBe(a.nutrients.ENERC_KCAL);
+    expect(items[1].confidence).toBe(b.confidence);
+    expect(low.data.confidence).toBe(0.3); // meal keeps the lowest item value for export
+
+    // Editing an amount normally means "exact", but an explicit confidence wins.
+    const edit = await api(`/item/${b.id}`, { method: 'PATCH', json: { amount: 150, unit: 'g', confidence: 0.6 } });
+    expect(edit.data.items[1]).toMatchObject({ grams: 150, confidence: 0.6 });
+    expect((await api(`/item/${a.id}`, { method: 'PATCH', json: { confidence: 2 } })).status).toBe(400);
+  });
 });
