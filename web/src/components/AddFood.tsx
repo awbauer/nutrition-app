@@ -65,9 +65,13 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
     setSaving(true);
     try {
       const item = { food_id: picked.id, amount, unit };
-      const res = props.intakeId
-        ? await api.post<Intake>(`/intake/${props.intakeId}/items`, item)
-        : await submitMeal('/intake', { meal_type: meal, ...(occurrenceFor(props.date) ? { occurrence_at: occurrenceFor(props.date) } : {}), items: [item] });
+      // Into a specific meal (its Add item), or from the main button: breakfast/lunch/dinner join the day's meal.
+      const at = occurrenceFor(props.date);
+      const res = await submitMeal(
+        '/intake',
+        props.intakeId ? { append_to: props.intakeId, items: [item] } : { meal_type: meal, merge: true, ...(at ? { occurrence_at: at } : {}), items: [item] },
+      );
+      if (!res) toast.info("You're offline. The food will sync when you're back online.");
       props.onDone(res as Intake);
     } catch (e) {
       toast.error(e);

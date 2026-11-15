@@ -8,6 +8,7 @@ import { parsePhoto, parseText, transcribe, type ModelOutput } from './ai';
 import { localParts } from './dates';
 import { HttpError } from './ids';
 import type { MealType } from './intake';
+import { mergeDraft, resolveTarget, type MergeSpec } from './merge';
 import { buildPending, finishDraft } from './pipeline';
 import { getSettings } from './settings';
 
@@ -18,7 +19,7 @@ export interface JobMessage {
 
 /** Stored in pending_json while the meal is in `preparation`. */
 export interface JobState {
-  job: { meal_explicit: boolean; hint: string | null };
+  job: { meal_explicit: boolean; hint: string | null; merge?: MergeSpec | null };
   error?: string;
   attempts?: number;
 }
@@ -91,7 +92,13 @@ export async function processIntake(env: Env, msg: JobMessage, final: boolean): 
 
     const pending = await buildPending(env, user, out, settings, row.source === 'photo' ? 'photo-estimate' : 'described');
     const mealGuess: MealType | undefined = state.job.meal_explicit ? undefined : (out.meal_type_guess ?? undefined);
+    pending.merge = state.job.merge ?? null;
     await finishDraft(env, user, msg.intakeId, { model_id: model, raw_input_text: rawText, meal_type: mealGuess }, pending);
+    // No questions: it's complete, so add it to the meal it belongs to now (meal type is final).
+    if (!pending.questions.length) {
+      const target = await resolveTarget(env, user.id, msg.intakeId, state.job.merge);
+      if (target) await mergeDraft(env, user.id, msg.intakeId, target);
+    }
     return 'done';
   } catch (e) {
     // Input problems won't fix themselves on retry; record them right away.

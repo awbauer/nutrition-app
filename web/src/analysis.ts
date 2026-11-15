@@ -18,13 +18,15 @@ const label = (i: Intake) => MEAL_LABEL[i.meal_type];
 const toastId = (id: string) => `ai-${id}`;
 
 function report(i: Intake) {
-  const id = toastId(i.id);
+  const id = toastId(i.merged_from ?? i.id);
   if (i.status === 'preparation' && !i.pending?.error) {
     toast.progress(i.source === 'voice' ? `Transcribing your ${label(i).toLowerCase()}…` : `Analyzing your ${label(i).toLowerCase()}…`, { id });
   } else if (i.status === 'preparation') {
     toast.error(`${label(i)}: ${i.pending!.error}`, { id, sticky: true, action: { label: 'Try again', onClick: () => retry(i.id) } });
   } else if (i.status === 'in-progress') {
     toast.info(`${label(i)} is ready. One quick question on Today.`, { id });
+  } else if (i.merged_from) {
+    toast.success(`Added to your ${label(i).toLowerCase()} · now ${kcal(i.totals.ENERC_KCAL)} kcal`, { id });
   } else if (i.status === 'completed') {
     toast.success(`${label(i)} logged · ${kcal(i.totals.ENERC_KCAL)} kcal`, { id });
   }
@@ -43,7 +45,7 @@ async function tick() {
   for (const [id] of watching) {
     try {
       const i = await api.get<Intake>(`/intake/${id}`);
-      if (i.status === 'preparation' && !i.pending?.error) continue;
+      if (!i.merged_from && i.status === 'preparation' && !i.pending?.error) continue;
       watching.delete(id);
       report(i);
       listeners.forEach((f) => f(i));

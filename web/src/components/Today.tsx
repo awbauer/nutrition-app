@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import { api, type Day, type Intake, type MealType } from '../api';
 import { addDays, dayLabel, MEALS, MEAL_LABEL } from '../format';
-import { AddFood } from './AddFood';
 import { LogSheet } from './LogSheet';
 import { MealCard } from './MealCard';
 import { Sheet } from './Sheet';
@@ -113,20 +112,11 @@ export function Today(props: { today: string }) {
         +
       </button>
 
-      <Sheet open={!!adding} onClose={() => setAdding(null)} title={adding?.intake ? 'Add to meal' : 'Log food'}>
-        {adding?.intake && (
-          <AddFood
-            date={date}
-            intakeId={adding.intake.id}
-            onDone={() => {
-              setAdding(null);
-              load();
-            }}
-          />
-        )}
-        {adding && !adding.intake && (
+      <Sheet open={!!adding} onClose={() => setAdding(null)} title={adding?.intake ? `Add to ${MEAL_LABEL[adding.intake.meal_type].toLowerCase()}` : 'Log food'}>
+        {adding && (
           <LogSheet
             date={date}
+            target={adding.intake}
             defaultMeal={date === props.today ? guessMeal() : 'snack'}
             onDone={() => {
               setAdding(null);

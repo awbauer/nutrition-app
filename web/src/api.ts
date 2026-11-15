@@ -142,7 +142,9 @@ export interface Intake {
   confidence: number | null;
   items: Item[];
   totals: Record<string, number>;
-  pending?: { questions?: Question[]; error?: string };
+  pending?: { questions?: Question[]; error?: string; adding_to_meal?: boolean };
+  /** Present when this entry was merged into an existing meal (this object is that meal). */
+  merged_from?: string;
 }
 export interface Day {
   date: string;

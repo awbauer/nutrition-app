@@ -17,6 +17,7 @@ import {
   type Status,
 } from '../lib/intake';
 import { getFood } from '../lib/foods';
+import { assertAppendable, findMergeTarget, mergedInto, parseMergeSpec } from '../lib/merge';
 import { answer, createFromMedia, media, retry } from './log';
 
 export const intake = new Hono<AppEnv>();
@@ -26,6 +27,10 @@ interface ManualBody {
   occurrence_at?: string;
   note?: string;
   items: ItemRef[];
+  /** Add to this meal (its "Add item"). */
+  append_to?: string;
+  /** Main button: join the day's breakfast/lunch/dinner if there is one; snacks stay separate. */
+  merge?: boolean;
 }
 
 /** Manual entry: items reference a food_id or fdc_id with an amount. */
@@ -46,6 +51,23 @@ export async function createManual(c: { env: AppEnv['Bindings']; get: (k: 'user'
       confidence: 1,
       method: ref.estimation_method ?? (/^(g|kg|oz|lb)$/i.test(ref.unit) ? 'weighed' : 'described'),
     });
+  }
+  const spec = parseMergeSpec(body.append_to, body.merge);
+  let target: string | null = null;
+  if (spec?.mode === 'into') {
+    await assertAppendable(c.env.DB, user.id, spec.id);
+    target = spec.id;
+  } else if (spec?.mode === 'auto') {
+    const t = await intakeTiming(c.env.DB, user, body.occurrence_at, body.meal_type);
+    target = await findMergeTarget(c.env.DB, user.id, t.log_date, t.meal_type);
+  }
+  if (target) {
+    const pos = await c.env.DB.prepare('SELECT COALESCE(MAX(position), -1) + 1 AS next FROM consumed_item WHERE intake_id = ?').bind(target).first<{ next: number }>();
+    const stmts: D1PreparedStatement[] = [];
+    resolved.forEach((it, i) => stmts.push(...itemStatements(c.env.DB, user.id, target!, it, (pos?.next ?? 0) + i)));
+    stmts.push(refreshConfidence(c.env.DB, target));
+    await c.env.DB.batch(stmts);
+    return target;
   }
   return createIntake(c.env, user, { ...body, source: 'manual' }, resolved);
 }
@@ -70,10 +92,16 @@ intake.post('/:id/answers', answer);
 intake.post('/:id/retry', retry);
 intake.get('/:id/media', media);
 
+/** GET /api/intake/:id -> the meal; an entry merged into another meal returns that meal with `merged_from`. */
 intake.get('/:id', async (c) => {
-  const v = await getIntake(c.env.DB, c.get('user').id, c.req.param('id'));
-  if (!v) throw new HttpError(404, 'intake not found');
-  return c.json(v);
+  const user = c.get('user');
+  const id = c.req.param('id');
+  const v = await getIntake(c.env.DB, user.id, id);
+  if (v) return c.json(v);
+  const to = await mergedInto(c.env.DB, user.id, id);
+  const target = to && (await getIntake(c.env.DB, user.id, to));
+  if (!target) throw new HttpError(404, 'intake not found');
+  return c.json({ ...target, merged_from: id });
 });
 
 /** PATCH /api/intake/:id -> edit time, meal type, note, status. */

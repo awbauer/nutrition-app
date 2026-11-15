@@ -8,6 +8,7 @@ import { getFood, type FoodRecord } from './foods';
 import { HttpError, nowIso } from './ids';
 import { itemStatements, refreshConfidence, type EstimationMethod, type MealType, type ResolvedItem } from './intake';
 import { ESTIMATE_CONFIDENCE_CAP, matchFood, type MatchInfo } from './matcher';
+import { mergeDraft, resolveTarget, type MergeSpec } from './merge';
 import type { Settings } from './settings';
 import { toGrams } from './units';
 
@@ -43,6 +44,8 @@ export interface PendingQuestion {
 export interface Pending {
   base: BaseItem[];
   questions: PendingQuestion[];
+  /** Where the items go once the questions are answered (see merge.ts). */
+  merge?: MergeSpec | null;
 }
 
 const kcalPer100 = (f: FoodRecord) => f.nutrients.find((n) => n.code === 'ENERC_KCAL')?.value ?? 0;
@@ -229,8 +232,8 @@ export async function finishDraft(
   await env.DB.batch(stmts);
 }
 
-/** Apply answers to an in-progress draft and complete it. */
-export async function applyAnswers(env: Env, user: User, intakeId: string, answers: Record<string, string>): Promise<void> {
+/** Apply answers to an in-progress draft and complete it. Returns the id of the meal now holding the items. */
+export async function applyAnswers(env: Env, user: User, intakeId: string, answers: Record<string, string>): Promise<string> {
   const row = await env.DB.prepare('SELECT status, pending_json FROM nutrition_intake WHERE id = ? AND user_id = ?')
     .bind(intakeId, user.id)
     .first<{ status: string; pending_json: string | null }>();
@@ -255,4 +258,6 @@ export async function applyAnswers(env: Env, user: User, intakeId: string, answe
     refreshConfidence(env.DB, intakeId),
   );
   await env.DB.batch(stmts);
+  const target = await resolveTarget(env, user.id, intakeId, pending.merge);
+  return target ? mergeDraft(env, user.id, intakeId, target) : intakeId;
 }
