@@ -3,8 +3,8 @@ export interface Env {
   MEDIA: R2Bucket;
   AI: Ai;
   ASSETS: Fetcher;
-  ACCESS_TEAM_DOMAIN: string;
-  ACCESS_AUD: string;
+  ACCESS_TEAM_DOMAIN?: string;
+  ACCESS_AUD?: string;
   AI_GATEWAY_ID: string;
   /** Local development only: "1" bypasses Access and uses DEV_USER_EMAIL. */
   DEV_AUTH?: string;
