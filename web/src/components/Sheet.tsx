@@ -1,5 +1,6 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect } from 'preact/hooks';
+import { holdUpdates } from '../update';
 
 export function Sheet(props: { open: boolean; onClose: () => void; title: string; children: ComponentChildren }) {
   useEffect(() => {
@@ -7,7 +8,9 @@ export function Sheet(props: { open: boolean; onClose: () => void; title: string
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && props.onClose();
     document.addEventListener('keydown', onKey);
     document.body.style.overflow = 'hidden';
+    const release = holdUpdates(); // don't reload under an open sheet
     return () => {
+      release();
       document.removeEventListener('keydown', onKey);
       document.body.style.overflow = '';
     };

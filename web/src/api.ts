@@ -1,3 +1,5 @@
+import { holdUpdates } from './update';
+
 export class ApiError extends Error {
   constructor(
     public status: number,
@@ -8,6 +10,15 @@ export class ApiError extends Error {
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const release = method === 'GET' ? () => {} : holdUpdates();
+  try {
+    return await send<T>(method, path, body);
+  } finally {
+    release();
+  }
+}
+
+async function send<T>(method: string, path: string, body?: unknown): Promise<T> {
   const init: RequestInit = { method, credentials: 'same-origin', headers: {} };
   if (body instanceof FormData) init.body = body;
   else if (body !== undefined) {
