@@ -89,44 +89,115 @@ function Stat(props: { label: string; value: string; sub?: string }) {
   );
 }
 
+/** Macro energy (Atwater 4/4/9 kcal per g) and colours, shared by the bars and the legend. */
+const MACROS = [
+  { code: 'PROCNT', label: 'Protein', kcalPerG: 4, color: 'var(--sage)' },
+  { code: 'CHOCDF', label: 'Carbs', kcalPerG: 4, color: 'var(--mustard)' },
+  { code: 'FAT', label: 'Fat', kcalPerG: 9, color: 'var(--plum)' },
+] as const;
+
+/** Split a day's energy into macro segments (plus "other"), scaled to its total kcal. */
+function segments(totals: Record<string, number>) {
+  const kcal = totals.ENERC_KCAL ?? 0;
+  const parts = MACROS.map((m) => ({ ...m, kcal: (totals[m.code] ?? 0) * m.kcalPerG }));
+  const sum = parts.reduce((a, p) => a + p.kcal, 0);
+  // Macro kcal rarely add up exactly (fibre, alcohol, rounding): fit them to the day's total.
+  const scale = sum > kcal && sum > 0 ? kcal / sum : 1;
+  const out: { label: string; color: string; kcal: number }[] = parts.map((p) => ({ label: p.label, color: p.color, kcal: p.kcal * scale }));
+  const other = Math.max(0, kcal - sum * scale);
+  if (other > 1) out.push({ label: 'Other', color: 'var(--line)', kcal: other });
+  return out;
+}
+
 function Bars(props: { days: Summary['days']; target?: number; today: string }) {
   const W = 320;
-  const H = 160;
+  const H = 190;
   const pad = 20;
-  const max = Math.max(props.target ?? 0, ...props.days.map((d) => d.totals.ENERC_KCAL ?? 0), 1000) * 1.1;
+  const top = 22;
+  const max = Math.max(props.target ?? 0, ...props.days.map((d) => d.totals.ENERC_KCAL ?? 0), 1000) * 1.05;
   const bw = (W - 8) / 7;
-  const y = (v: number) => H - pad - (v / max) * (H - pad - 8);
+  const y = (v: number) => H - pad - (v / max) * (H - pad - top);
+  const logged = props.days.filter((d) => d.meals > 0);
+  const avg = MACROS.map((m) => {
+    const g = logged.length ? logged.reduce((a, d) => a + (d.totals[m.code] ?? 0), 0) / logged.length : 0;
+    return { ...m, g, kcal: g * m.kcalPerG };
+  });
+  const avgKcal = avg.reduce((a, m) => a + m.kcal, 0) || 1;
+
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} class="w-full" role="img" aria-label="Calories by day">
-      {props.days.map((d, i) => {
-        const v = d.totals.ENERC_KCAL ?? 0;
-        const over = props.target != null && v > props.target * 1.05;
-        return (
+    <div class="flex flex-col gap-3">
+      <svg viewBox={`0 0 ${W} ${H}`} class="w-full" role="img" aria-label="Calories by day, split by protein, carbs and fat">
+        {props.target != null && (
           <g>
-            <rect
-              x={4 + i * bw + 6}
-              y={y(v)}
-              width={bw - 12}
-              height={Math.max(0, H - pad - y(v))}
-              rx="4"
-              class={d.meals === 0 ? 'fill-[var(--sunken)]' : over ? 'fill-[var(--berry)]' : 'fill-[var(--accent)]'}
-            >
-              <title>{`${d.date}: ${Math.round(v)} kcal`}</title>
-            </rect>
-            <text x={4 + i * bw + bw / 2} y={H - 5} text-anchor="middle" class={`fill-[var(--faint)] text-[10px] ${d.date === props.today ? 'font-bold' : ''}`}>
-              {new Date(`${d.date}T12:00:00`).toLocaleDateString([], { weekday: 'narrow' })}
-            </text>
+            <line x1="4" x2={W - 4} y1={y(props.target)} y2={y(props.target)} stroke-dasharray="4 4" class="stroke-[var(--faint)]" stroke-width="1.2" />
           </g>
-        );
-      })}
-      {props.target != null && (
-        <g>
-          <line x1="4" x2={W - 4} y1={y(props.target)} y2={y(props.target)} stroke-dasharray="4 4" class="stroke-[var(--faint)]" stroke-width="1.5" />
-          <text x={6} y={y(props.target) - 5} text-anchor="start" class="fill-[var(--faint)] text-[10px]">
-            target {Math.round(props.target).toLocaleString()}
-          </text>
-        </g>
+        )}
+        {props.days.map((d, i) => {
+          const v = d.totals.ENERC_KCAL ?? 0;
+          const over = props.target != null && v > props.target * 1.05;
+          const x = 4 + i * bw + 7;
+          const w = bw - 14;
+          let acc = 0;
+          return (
+            <g>
+              <title>{`${d.date}: ${Math.round(v)} kcal · protein ${Math.round(d.totals.PROCNT ?? 0)} g, carbs ${Math.round(d.totals.CHOCDF ?? 0)} g, fat ${Math.round(d.totals.FAT ?? 0)} g`}</title>
+              {d.meals === 0 ? (
+                <rect x={x} y={H - pad - 3} width={w} height={3} rx="1.5" class="fill-[var(--sunken)]" />
+              ) : (
+                <>
+                  <clipPath id={`bar-${i}`}>
+                    <rect x={x} y={y(v)} width={w} height={Math.max(0, H - pad - y(v))} rx="5" />
+                  </clipPath>
+                  <g clip-path={`url(#bar-${i})`}>
+                    {segments(d.totals).map((sg) => {
+                      const y0 = y(acc + sg.kcal);
+                      const h = y(acc) - y0;
+                      acc += sg.kcal;
+                      return <rect x={x} y={y0} width={w} height={Math.max(0, h)} fill={sg.color} />;
+                    })}
+                  </g>
+                  {/* A card-coloured halo keeps the total legible where it crosses the target line. */}
+                  <text x={x + w / 2} y={y(v) - 5} text-anchor="middle" paint-order="stroke" stroke="var(--card)" stroke-width="4" stroke-linejoin="round" class={`num text-[10px] ${over ? 'fill-[var(--berry)] font-semibold' : 'fill-[var(--ink-2)]'}`}>
+                    {Math.round(v).toLocaleString()}
+                  </text>
+                </>
+              )}
+              <text x={4 + i * bw + bw / 2} y={H - 5} text-anchor="middle" class={`text-[10px] ${d.date === props.today ? 'fill-[var(--ink)] font-bold' : 'fill-[var(--faint)]'}`}>
+                {new Date(`${d.date}T12:00:00`).toLocaleDateString([], { weekday: 'narrow' })}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+      {logged.length > 0 && (
+        <div class="grid grid-cols-3 gap-2 border-t border-line pt-3">
+          {avg.map((m) => (
+            <div>
+              <p class="flex items-center gap-1.5 text-xs text-ink-2">
+                <span class="h-2.5 w-2.5 rounded-sm" style={{ background: m.color }} aria-hidden="true" />
+                {m.label}
+              </p>
+              <p class="mt-0.5">
+                <span class="num text-lg font-semibold">{Math.round((m.kcal / avgKcal) * 100)}%</span>
+                <span class="ml-1 text-xs text-faint">{Math.round(m.g)} g/day</span>
+              </p>
+            </div>
+          ))}
+          <p class="col-span-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-faint">
+            {props.target != null && (
+              <span class="flex items-center gap-1.5">
+                <span class="w-4 border-t-[1.5px] border-dashed border-faint" aria-hidden="true" />
+                Target {Math.round(props.target).toLocaleString()} kcal
+              </span>
+            )}
+            <span class="flex items-center gap-1.5">
+              <span class="h-2.5 w-2.5 rounded-sm bg-line" aria-hidden="true" />
+              Other (fibre, alcohol, rounding)
+            </span>
+            <span>Red totals are over target.</span>
+          </p>
+        </div>
       )}
-    </svg>
+    </div>
   );
 }
