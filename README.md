@@ -49,10 +49,14 @@ npm run typecheck
 1. `npx wrangler login`
 2. `npm run deploy` — wrangler provisions the D1 database and R2 bucket on first deploy.
 3. `npm run db:migrate:remote`
-4. Secrets: `npx wrangler secret put USDA_API_KEY` (free key from <https://fdc.nal.usda.gov/api-key-signup>). Phase 5 adds `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`.
+4. Secrets:
+   - `npx wrangler secret put USDA_API_KEY` (free key from <https://fdc.nal.usda.gov/api-key-signup>)
+   - Web Push: run `node scripts/vapid-keys.mjs`, then `wrangler secret put` each of `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `VAPID_SUBJECT` (a `mailto:` address)
 5. Create an AI Gateway named `nutrition` (or set `AI_GATEWAY_ID`), with log retention set — logs include meal photos.
 6. Create a Cloudflare Access self-hosted application for the Worker's hostname, then set `ACCESS_TEAM_DOMAIN` (e.g. `myteam.cloudflareaccess.com`) and `ACCESS_AUD` (the application's AUD tag) in `wrangler.jsonc` vars or the dashboard. **Without both, every API call returns 401** (unless `DEV_AUTH=1`, which must never be set in production).
-7. Open the site on iPhone in Safari → Share → Add to Home Screen.
+7. Open the site on iPhone in Safari → Share → Add to Home Screen, open it from the Home Screen, then Settings → Reminders → Turn on notifications.
+
+The Cron Trigger runs every 15 minutes and sends reminders that are due in each user's time zone.
 
 ## Data model
 
