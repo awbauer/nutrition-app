@@ -5,6 +5,9 @@
   "compatibility_date": "2026-11-01",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
+  // Served at nutrition-app.<subdomain>.workers.dev behind Cloudflare Access (worker-destination app).
+  "workers_dev": true,
+  "preview_urls": false,
   // The PWA is served as static assets from the same Worker (one origin, one Access app).
   "assets": {
     "directory": "./web/dist",
