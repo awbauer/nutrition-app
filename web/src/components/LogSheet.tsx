@@ -24,6 +24,7 @@ export function LogSheet(props: { date: string; defaultMeal: MealType; onDone: (
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState<Intake | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
 
   async function submit() {
     const f = new FormData();
@@ -59,7 +60,9 @@ export function LogSheet(props: { date: string; defaultMeal: MealType; onDone: (
   }
 
   async function onFile(e: Event) {
-    const file = (e.target as HTMLInputElement).files?.[0];
+    const input = e.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = ''; // so picking the same photo again still fires change
     if (!file) return;
     const blob = await resizeImage(file);
     if (photo) URL.revokeObjectURL(photo.url);
@@ -87,20 +90,26 @@ export function LogSheet(props: { date: string; defaultMeal: MealType; onDone: (
         <>
           {mode === 'photo' && (
             <>
-              <input ref={fileRef} type="file" accept="image/*" capture="environment" class="hidden" onChange={onFile} />
-              {photo ? (
-                <button onClick={() => fileRef.current?.click()} class="overflow-hidden rounded-xl">
-                  <img src={photo.url} alt="Meal photo" class="max-h-64 w-full object-cover" />
-                </button>
-              ) : (
+              {/* Two inputs: `capture` forces the camera on iOS, so the library needs its own input without it. */}
+              <input ref={cameraRef} type="file" accept="image/*" capture="environment" class="hidden" onChange={onFile} />
+              <input ref={fileRef} type="file" accept="image/*" class="hidden" onChange={onFile} />
+              {photo && <img src={photo.url} alt="Meal photo" class="max-h-64 w-full rounded-xl object-cover" />}
+              <div class="grid grid-cols-2 gap-2">
                 <button
-                  class="flex h-40 flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 text-slate-500 dark:border-slate-700"
+                  class={`flex flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-slate-300 text-slate-500 dark:border-slate-700 ${photo ? 'h-14' : 'h-32'}`}
+                  onClick={() => cameraRef.current?.click()}
+                >
+                  <span class="text-2xl" aria-hidden="true">📷</span>
+                  <span class="text-sm">{photo ? 'Retake' : 'Take photo'}</span>
+                </button>
+                <button
+                  class={`flex flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-slate-300 text-slate-500 dark:border-slate-700 ${photo ? 'h-14' : 'h-32'}`}
                   onClick={() => fileRef.current?.click()}
                 >
-                  <span class="text-3xl">📷</span>
-                  <span class="text-sm">Take or choose a photo</span>
+                  <span class="text-2xl" aria-hidden="true">🖼</span>
+                  <span class="text-sm">{photo ? 'Choose another' : 'Choose photo'}</span>
                 </button>
-              )}
+              </div>
             </>
           )}
           {mode === 'voice' && <Recorder onClip={setClip} />}
