@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { api, type Food, type Intake, type MealType, type UsdaHit } from '../api';
 import { MEALS, MEAL_LABEL } from '../format';
 import { submitMeal } from '../queue';
-import { AmountPicker } from './AmountPicker';
+import { AmountEditor } from './AmountEditor';
+import { toGrams } from '../../../src/worker/lib/units';
 
 type Hit = { kind: 'local'; food: Food } | { kind: 'usda'; hit: UsdaHit };
 
@@ -83,8 +84,7 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
   if (picked) {
     const kcal100 = per100(picked.nutrients, 'ENERC_KCAL');
     const prot100 = per100(picked.nutrients, 'PROCNT');
-    const portion = picked.portions.find((p) => p.unit === unit);
-    const g = unit === 'g' ? amount : portion ? (amount * portion.grams) / portion.amount : amount;
+    const g = toGrams(amount || 0, unit, { portions: picked.portions, default_serving_grams: picked.default_serving_grams }).grams;
     return (
       <div class="flex flex-col gap-4">
         <button class="self-start text-sm text-accent-ink" onClick={() => setPicked(null)}>
@@ -94,7 +94,14 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
           <h3 class="font-semibold">{picked.name}</h3>
           {picked.brand && <p class="text-sm text-ink-2">{picked.brand}</p>}
         </div>
-        <AmountPicker portions={picked.portions} amount={amount} unit={unit} onChange={(a, u) => (setAmount(a), setUnit(u))} />
+        <AmountEditor
+          portions={picked.portions}
+          defaultServingGrams={picked.default_serving_grams}
+          kcalPer100={kcal100 ?? null}
+          amount={amount}
+          unit={unit}
+          onChange={(a, u) => (setAmount(a), setUnit(u))}
+        />
         <div class="grid grid-cols-2 gap-2 text-center">
           <div class="rounded-xl bg-sunken p-3 ">
             <div class="num text-2xl font-semibold">{kcal100 != null ? Math.round((kcal100 * g) / 100) : '–'}</div>

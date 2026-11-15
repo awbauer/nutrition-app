@@ -35,10 +35,17 @@ const UNIT_LABEL: Record<string, string> = {
 };
 export const unitLabel = (u: string) => UNIT_LABEL[u] ?? u;
 
+const NO_PLURAL = new Set(['g', 'mL', 'kg', 'oz', 'lb', 'tbsp', 'tsp', 'fl oz', 'small', 'medium', 'large', 'L', 'ml']);
+const PLURAL: Record<string, string> = { glass: 'glasses', piece: 'pieces', slice: 'slices', serving: 'servings', handful: 'handfuls', bowl: 'bowls', cup: 'cups', mug: 'mugs', plate: 'plates', scoop: 'scoops', can: 'cans', bottle: 'bottles' };
+
+/** "1½ bowls", "2 handfuls", "170 g", "1 medium". */
 export function amountLabel(amount: number, unit: string): string {
   const u = unitLabel(unit);
-  const a = Number.isInteger(amount) ? amount : Math.round(amount * 100) / 100;
-  return u === 'g' || u === 'mL' ? `${a} ${u}` : `${a} ${u}`;
+  const whole = Math.floor(amount);
+  const frac = amount - whole;
+  const count = Math.abs(frac - 0.5) < 0.01 ? `${whole || ''}½` : Number.isInteger(amount) ? String(amount) : String(Math.round(amount * 100) / 100);
+  const word = amount > 1 && !NO_PLURAL.has(u) ? (PLURAL[u] ?? u) : u;
+  return `${count} ${word}`;
 }
 
 /** Confidence levels shown to the user; values are what gets stored (0 to 1). */

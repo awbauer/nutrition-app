@@ -2,6 +2,8 @@ import { useEffect, useState } from 'preact/hooks';
 import { api, type Intake, type ItemDetail, type MatchCandidate } from '../api';
 import { amountLabel, CONFIDENCE_LEVELS, confidenceLevel, kcal } from '../format';
 import { toast } from '../toast';
+import { fromUcum } from '../../../src/worker/lib/units';
+import { AmountEditor } from './AmountEditor';
 
 const SOURCE_LABEL: Record<string, string> = {
   usda: 'USDA',
@@ -41,7 +43,7 @@ function sourceLabel(source: string | null | undefined, dataType: string | null 
 /** Everything behind one item's numbers, plus other matches and a search to switch. */
 export function ItemSheet(props: { itemId: string; onChange: (m: Intake) => void; onClose: () => void }) {
   const [d, setD] = useState<ItemDetail | null>(null);
-  const [grams, setGrams] = useState<number>(0);
+  const [amt, setAmt] = useState<{ amount: number; unit: string }>({ amount: 0, unit: 'g' });
   const [q, setQ] = useState('');
   const [results, setResults] = useState<MatchCandidate[] | null>(null);
   const [searching, setSearching] = useState(false);
@@ -51,7 +53,7 @@ export function ItemSheet(props: { itemId: string; onChange: (m: Intake) => void
     try {
       const r = await api.get<ItemDetail>(`/item/${props.itemId}`);
       setD(r);
-      setGrams(Math.round(r.item.grams));
+      setAmt({ amount: r.item.amount_value, unit: fromUcum(r.item.amount_unit) });
       setQ((x) => x || r.match?.query || r.item.display_name);
     } catch (e) {
       toast.error(e);
@@ -147,10 +149,6 @@ export function ItemSheet(props: { itemId: string; onChange: (m: Intake) => void
       </section>
 
       <section class="flex flex-col gap-1 text-sm">
-        <p>
-          <span class="text-ink-2">Amount:</span> {item.display_name}, {amountLabel(item.amount_value, item.amount_unit)} → <b>{Math.round(item.grams)} g</b>
-        </p>
-        {conversion && <p class="text-xs text-ink-2">{CONVERSION_LABEL[conversion.method]}</p>}
         <div class="mt-2 rounded-2xl bg-sunken p-3">
           <p class="eyebrow mb-2">Per 100 g of the matched food</p>
           <div class="grid grid-cols-5 gap-2 text-center">
@@ -193,18 +191,23 @@ export function ItemSheet(props: { itemId: string; onChange: (m: Intake) => void
         <p class="text-xs text-ink-2">{confidenceLevel(item.confidence)?.hint}. Low-confidence items are flagged so you know which numbers to trust less.</p>
       </section>
 
-      {/* Edit amount */}
-      <section class="flex items-center gap-2">
-        <input
-          class="input w-24 py-1.5 text-center tabular-nums"
-          type="number"
-          inputMode="decimal"
-          value={grams}
-          onInput={(e) => setGrams(Number((e.target as HTMLInputElement).value))}
-          aria-label="Grams"
+      {/* Amount: relative size or exact grams */}
+      <section class="flex flex-col gap-3">
+        <p class="eyebrow">How much</p>
+        <AmountEditor
+          amount={amt.amount}
+          unit={amt.unit}
+          onChange={(amount, unit) => setAmt({ amount, unit })}
+          portions={food?.portions}
+          defaultServingGrams={food?.default_serving_grams}
+          kcalPer100={per100('ENERC_KCAL')}
         />
-        <span class="text-sm text-ink-2">g</span>
-        <button class="btn-primary ml-auto px-3 py-1.5" disabled={busy || !(grams > 0) || grams === Math.round(item.grams)} onClick={() => patch({ amount: grams, unit: 'g' }, 'Amount updated')}>
+        {conversion && <p class="text-xs text-faint">Saved as {amountLabel(item.amount_value, item.amount_unit)} = {Math.round(item.grams)} g. {CONVERSION_LABEL[conversion.method]}.</p>}
+        <button
+          class="btn-primary self-start"
+          disabled={busy || !(amt.amount > 0) || (amt.amount === item.amount_value && amt.unit === fromUcum(item.amount_unit))}
+          onClick={() => patch({ amount: amt.amount, unit: amt.unit }, 'Amount updated')}
+        >
           Save amount
         </button>
       </section>

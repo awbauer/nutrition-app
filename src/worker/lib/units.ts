@@ -35,6 +35,8 @@ const GENERIC_GRAMS: Record<string, number> = {
   bottle: 500,
   glass: 240,
   scoop: 30,
+  mug: 300,
+  plate: 350,
 };
 
 const ALIASES: Record<string, string> = {
@@ -50,6 +52,7 @@ const ALIASES: Record<string, string> = {
   'fluid ounce': 'fl oz', 'fluid ounces': 'fl oz',
   slices: 'slice', pieces: 'piece', pc: 'piece', pcs: 'piece', each: 'piece', whole: 'piece', item: 'piece',
   servings: 'serving', portion: 'serving',
+  handfuls: 'handful', bowls: 'bowl', bowlful: 'bowl', glasses: 'glass', mugs: 'mug', plates: 'plate', scoops: 'scoop', cans: 'can', bottles: 'bottle',
   sm: 'small', med: 'medium', lg: 'large',
 };
 
@@ -94,4 +97,30 @@ export function ucum(rawUnit: string): string {
   if (u === 'tbsp') return '[tbs_us]';
   if (u === 'tsp') return '[tsp_us]';
   return u;
+}
+
+/**
+ * Relative sizes offered in the amount editor, with what they mean in grams when the food
+ * has no portion of its own. The UI reads this table so its preview matches the server.
+ */
+export const RELATIVE_SIZES: { unit: string; label: string }[] = [
+  { unit: 'handful', label: 'Handful' },
+  { unit: 'bowl', label: 'Bowl' },
+  { unit: 'glass', label: 'Glass' },
+  { unit: 'mug', label: 'Mug' },
+  { unit: 'plate', label: 'Plate' },
+  { unit: 'cup', label: 'Cup' },
+  { unit: 'slice', label: 'Slice' },
+  { unit: 'piece', label: 'Piece' },
+  { unit: 'tbsp', label: 'Tablespoon' },
+  { unit: 'tsp', label: 'Teaspoon' },
+  { unit: 'small', label: 'Small' },
+  { unit: 'medium', label: 'Medium' },
+  { unit: 'large', label: 'Large' },
+];
+
+/** Stored UCUM unit back to the editor's unit name. */
+export function fromUcum(u: string): string {
+  const map: Record<string, string> = { '[cup_us]': 'cup', '[tbs_us]': 'tbsp', '[tsp_us]': 'tsp', '[oz_av]': 'oz', '[lb_av]': 'lb', '[foz_us]': 'fl oz', mL: 'ml', L: 'l' };
+  return map[u] ?? normaliseUnit(u);
 }
