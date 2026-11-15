@@ -1,0 +1,38 @@
+import { env } from 'cloudflare:workers';
+import { vi } from 'vitest';
+import { app } from '../src/worker/app';
+import type { Env } from '../src/worker/env';
+
+export const testEnv = env as unknown as Env;
+
+export async function api(path: string, init: RequestInit & { json?: unknown } = {}, e: Partial<Env> = {}) {
+  const headers = new Headers(init.headers);
+  let body = init.body;
+  if (init.json !== undefined) {
+    headers.set('Content-Type', 'application/json');
+    body = JSON.stringify(init.json);
+  }
+  const res = await app.request(`http://app.test/api${path}`, { ...init, headers, body }, { ...testEnv, ...e });
+  const text = await res.text();
+  let data: any = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text;
+  }
+  return { status: res.status, data, res };
+}
+
+/** Route outbound fetches to USDA (and others) through a handler. */
+export function mockFetch(handler: (url: URL, init?: RequestInit) => Response | Promise<Response> | undefined) {
+  const real = globalThis.fetch;
+  return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url);
+    const r = await handler(url, init);
+    if (r) return r;
+    return real(input, init);
+  });
+}
+
+export const json = (data: unknown, status = 200) =>
+  new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });

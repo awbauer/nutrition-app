@@ -1,0 +1,5 @@
+# Copy to .dev.vars for local development. Never commit .dev.vars.
+DEV_AUTH=1
+DEV_USER_EMAIL=me@example.test
+# DEMO_KEY works for light local use; get a real key at https://fdc.nal.usda.gov/api-key-signup
+USDA_API_KEY=DEMO_KEY

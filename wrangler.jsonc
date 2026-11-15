@@ -1,0 +1,30 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "nutrition-app",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-11-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  // The PWA is served as static assets from the same Worker (one origin, one Access app).
+  "assets": {
+    "directory": "./web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  // IDs are intentionally omitted: wrangler provisions the resources on first deploy.
+  "d1_databases": [
+    { "binding": "DB", "database_name": "nutrition", "migrations_dir": "migrations" }
+  ],
+  "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "nutrition-media" }],
+  "ai": { "binding": "AI", "remote": true },
+  "triggers": { "crons": ["*/15 * * * *"] },
+  "vars": {
+    // Cloudflare Access: set both to enforce JWT validation (required in production).
+    "ACCESS_TEAM_DOMAIN": "",
+    "ACCESS_AUD": "",
+    // AI Gateway id used for every Workers AI call.
+    "AI_GATEWAY_ID": "nutrition"
+  }
+  // Secrets (wrangler secret put): USDA_API_KEY, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT
+}
