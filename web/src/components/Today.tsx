@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import { api, type Day, type Intake, type MealType } from '../api';
-import { addDays, dayLabel, MEALS } from '../format';
+import { addDays, dayLabel, MEALS, MEAL_LABEL } from '../format';
 import { AddFood } from './AddFood';
 import { LogSheet } from './LogSheet';
 import { MealCard } from './MealCard';
@@ -20,6 +20,7 @@ export function Today(props: { today: string }) {
   const [day, setDay] = useState<Day | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [adding, setAdding] = useState<{ intake?: Intake } | null>(null);
+  const [yesterday, setYesterday] = useState<Intake[]>([]);
 
   const load = async (d = date) => {
     try {
@@ -32,7 +33,20 @@ export function Today(props: { today: string }) {
   useEffect(() => {
     setDay(null);
     load(date);
+    api.get<Day>(`/day/${addDays(date, -1)}`).then((d) => setYesterday(d.meals.filter((m) => m.status === 'completed')), () => setYesterday([]));
   }, [date]);
+
+  async function repeat(m: Intake) {
+    const at = date === props.today ? undefined : new Date(`${date}T12:00:00`).toISOString();
+    try {
+      await api.post(`/intake/${m.id}/copy`, { meal_type: m.meal_type, ...(at ? { occurrence_at: at } : {}) });
+      load();
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  }
+
+  const repeatable = day ? yesterday.filter((y) => !day.meals.some((m) => m.meal_type === y.meal_type)) : [];
 
   const onMealChange = () => load();
 
@@ -59,6 +73,15 @@ export function Today(props: { today: string }) {
       {day ? (
         <>
           <Summary totals={day.totals} targets={day.targets} remaining={day.remaining} />
+          {repeatable.length > 0 && (
+            <div class="flex gap-2 overflow-x-auto pb-1">
+              {repeatable.map((m) => (
+                <button class="chip shrink-0 bg-white dark:bg-slate-900" onClick={() => repeat(m)}>
+                  ↻ Same as yesterday's {MEAL_LABEL[m.meal_type].toLowerCase()}
+                </button>
+              ))}
+            </div>
+          )}
           {day.meals.length === 0 && <p class="py-8 text-center text-sm text-slate-500">Nothing logged yet.</p>}
           {MEALS.flatMap((mt) => day.meals.filter((m) => m.meal_type === mt)).map((m) => (
             <MealCard meal={m} onChange={onMealChange} onAdd={(intake) => setAdding({ intake })} />

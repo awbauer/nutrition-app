@@ -2,12 +2,14 @@ import { useEffect, useState } from 'preact/hooks';
 import { api, ApiError } from './api';
 import { SettingsView } from './components/SettingsView';
 import { Today } from './components/Today';
+import { Week } from './components/Week';
+import { Weight } from './components/Weight';
 
-type Tab = 'today' | 'settings';
+type Tab = 'today' | 'week' | 'weight' | 'settings';
 
 interface Me {
   timezone: string;
-  settings: { day_cutoff: string };
+  settings: { day_cutoff: string; weight_unit: 'kg' | 'lb' };
 }
 
 /** Today's log date in the user's zone with the configured cutoff. */
@@ -42,6 +44,11 @@ export function App() {
   useEffect(() => {
     history.replaceState(null, '', `#${tab}`);
   }, [tab]);
+  useEffect(() => {
+    const onHash = () => setTab((location.hash.slice(1) as Tab) || 'today');
+    addEventListener('hashchange', onHash);
+    return () => removeEventListener('hashchange', onHash);
+  }, []);
 
   const today = me ? logToday(me.timezone, me.settings.day_cutoff) : null;
 
@@ -57,6 +64,8 @@ export function App() {
           </div>
         )}
         {today && tab === 'today' && <Today key={today} today={today} />}
+        {today && tab === 'week' && <Week key={today} today={today} />}
+        {me && tab === 'weight' && <Weight unit={me.settings.weight_unit} />}
         {me && tab === 'settings' && <SettingsView onSaved={loadMe} />}
       </main>
       <nav class="safe-bottom fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/90 backdrop-blur dark:border-slate-800 dark:bg-slate-950/90">
@@ -64,6 +73,8 @@ export function App() {
           {(
             [
               ['today', 'Today', '◉'],
+              ['week', 'Week', '▤'],
+              ['weight', 'Weight', '⚖'],
               ['settings', 'Settings', '⚙'],
             ] as const
           ).map(([t, label, icon]) => (
