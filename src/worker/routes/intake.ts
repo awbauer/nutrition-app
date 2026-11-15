@@ -17,6 +17,7 @@ import {
   type Status,
 } from '../lib/intake';
 import { getFood } from '../lib/foods';
+import { answer, createFromMedia, media } from './log';
 
 export const intake = new Hono<AppEnv>();
 
@@ -52,7 +53,7 @@ export async function createManual(c: { env: AppEnv['Bindings']; get: (k: 'user'
 /**
  * POST /api/intake
  * - application/json: manual entry ({items:[{fdc_id|food_id, amount, unit}]})
- * - multipart/form-data: photo / audio / text (AI pipeline, phase 2+)
+ * - multipart/form-data: photo / audio / text (AI pipeline)
  */
 intake.post('/', async (c) => {
   const ct = c.req.header('Content-Type') ?? '';
@@ -61,8 +62,12 @@ intake.post('/', async (c) => {
     const id = await createManual(c, body);
     return c.json(await getIntake(c.env.DB, c.get('user').id, id), 201);
   }
-  throw new HttpError(415, 'photo, voice and text logging arrive in phase 2; send application/json');
+  if (ct.includes('multipart/form-data')) return createFromMedia(c);
+  throw new HttpError(415, 'send application/json or multipart/form-data');
 });
+
+intake.post('/:id/answers', answer);
+intake.get('/:id/media', media);
 
 intake.get('/:id', async (c) => {
   const v = await getIntake(c.env.DB, c.get('user').id, c.req.param('id'));
