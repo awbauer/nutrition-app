@@ -1,12 +1,12 @@
-import { ArrowUp, Camera, Mic, Search, X } from 'lucide-preact';
-import { useRef, useState } from 'preact/hooks';
+import { ArrowUp, Camera, Mic, Plus, Search, X } from 'lucide-preact';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { watch } from '../analysis';
-import { type Intake, type MealType } from '../api';
-import { kcal, MEALS, MEAL_LABEL } from '../format';
+import { api, type Intake, type MealType } from '../api';
+import { amountLabel, kcal, MEALS, MEAL_LABEL } from '../format';
 import { resizeImage } from '../image';
 import { submitMeal } from '../queue';
 import { toast } from '../toast';
-import { AddFood, occurrenceFor } from './AddFood';
+import { AddFood, occurrenceFor, type QuickPick } from './AddFood';
 import { Questions } from './Questions';
 import { Recorder } from './Recorder';
 
@@ -26,7 +26,9 @@ export function LogSheet(props: { date: string; defaultMeal: MealType; target?: 
   const [clip, setClip] = useState<{ blob: Blob; url: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState<Intake | null>(null);
+  const [quickPick, setQuickPick] = useState<QuickPick | undefined>();
   const fileRef = useRef<HTMLInputElement>(null);
+  const mealFor = props.target?.meal_type ?? meal;
 
   const ready = !!(photo || clip || text.trim());
 
@@ -79,10 +81,10 @@ export function LogSheet(props: { date: string; defaultMeal: MealType; target?: 
   if (view === 'search')
     return (
       <div class="flex flex-col gap-3">
-        <button class="self-start text-sm font-medium text-accent-ink" onClick={() => setView('compose')}>
+        <button class="self-start text-sm font-medium text-accent-ink" onClick={() => (setView('compose'), setQuickPick(undefined))}>
           ← Back
         </button>
-        <AddFood date={props.date} defaultMeal={meal} intakeId={props.target?.id} onDone={props.onDone} />
+        <AddFood date={props.date} defaultMeal={meal} intakeId={props.target?.id} initial={quickPick} onDone={props.onDone} />
       </div>
     );
 
@@ -150,10 +152,77 @@ export function LogSheet(props: { date: string; defaultMeal: MealType; target?: 
         </div>
       )}
 
+      {view === 'compose' && !text && !photo && !clip && (
+        <QuickAdd mealType={mealFor} onPick={(q) => (setQuickPick(q), setView('search'))} />
+      )}
+
       <p class="text-center text-xs text-faint">
         Describe it however you like. The AI finds the foods, and nutrition comes from USDA and the package label.
       </p>
     </div>
+  );
+}
+
+interface Quick {
+  name: string;
+  food_id: string;
+  amount: number;
+  unit: string;
+  kcal: number | null;
+  count: number;
+}
+
+/** Recent and frequent foods: tap one to log it again with the amount you used last time. */
+function QuickAdd(props: { mealType: MealType; onPick: (q: QuickPick) => void }) {
+  const [data, setData] = useState<{ recent: Quick[]; frequent: Quick[] } | null>(null);
+  const [tab, setTab] = useState<'frequent' | 'recent'>('frequent');
+  useEffect(() => {
+    api.get<{ recent: Quick[]; frequent: Quick[] }>(`/foods/quick?meal_type=${props.mealType}`).then(
+      (d) => {
+        setData(d);
+        if (!d.frequent.length) setTab('recent');
+      },
+      () => setData({ recent: [], frequent: [] }),
+    );
+  }, [props.mealType]);
+
+  if (!data || (!data.recent.length && !data.frequent.length)) return null;
+  const list = tab === 'frequent' ? data.frequent : data.recent;
+  return (
+    <section class="flex flex-col gap-2" aria-label="Quick add">
+      <div class="flex items-center justify-between">
+        <p class="eyebrow">Quick add</p>
+        <div class="segmented w-48 text-xs" role="tablist">
+          {data.frequent.length > 0 && (
+            <button class="seg py-1 text-xs" role="tab" aria-pressed={tab === 'frequent'} aria-selected={tab === 'frequent'} onClick={() => setTab('frequent')}>
+              Frequent
+            </button>
+          )}
+          <button class="seg py-1 text-xs" role="tab" aria-pressed={tab === 'recent'} aria-selected={tab === 'recent'} onClick={() => setTab('recent')}>
+            Recent
+          </button>
+        </div>
+      </div>
+      <ul class="card divide-y divide-line">
+        {list.map((q) => (
+          <li>
+            <button class="flex w-full items-center gap-3 px-4 py-2.5 text-left active:bg-sunken" onClick={() => props.onPick(q)}>
+              <div class="min-w-0 flex-1">
+                <p class="truncate text-[0.95rem]">{q.name}</p>
+                <p class="truncate text-xs text-faint">
+                  {amountLabel(q.amount, q.unit)}
+                  {tab === 'frequent' && ` · ${q.count}× lately`}
+                </p>
+              </div>
+              {q.kcal != null && <span class="num text-ink-2">{kcal(q.kcal)}</span>}
+              <span class="flex h-8 w-8 items-center justify-center rounded-full bg-accent-soft text-accent-ink" aria-hidden="true">
+                <Plus size={16} />
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

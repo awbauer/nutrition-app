@@ -4,7 +4,7 @@ import { api, type Food, type Intake, type MealType, type UsdaHit } from '../api
 import { MEALS, MEAL_LABEL } from '../format';
 import { submitMeal } from '../queue';
 import { AmountEditor } from './AmountEditor';
-import { toGrams } from '../../../src/worker/lib/units';
+import { fromUcum, toGrams } from '../../../src/worker/lib/units';
 
 type Hit = { kind: 'local'; food: Food } | { kind: 'usda'; hit: UsdaHit };
 
@@ -13,7 +13,14 @@ const per100 = (n: { code: string; value: number }[], code: string) => n.find((x
 /**
  * Manual food search + amount entry. Adds to `intakeId` when given, otherwise creates a meal.
  */
-export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: MealType; onDone: (i: Intake) => void }) {
+export interface QuickPick {
+  name: string;
+  food_id: string;
+  amount: number;
+  unit: string;
+}
+
+export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: MealType; initial?: QuickPick; onDone: (i: Intake) => void }) {
   const [q, setQ] = useState('');
   const [hits, setHits] = useState<Hit[]>([]);
   const [loading, setLoading] = useState(false);
@@ -23,6 +30,20 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
   const [meal, setMeal] = useState<MealType>(props.defaultMeal ?? 'snack');
   const [saving, setSaving] = useState(false);
   const seq = useRef(0);
+  // Opened from Recent / Frequent: start on that food with the amount used last time.
+  const [label, setLabel] = useState<string | undefined>(props.initial?.name);
+  useEffect(() => {
+    const init = props.initial;
+    if (!init) return;
+    api.get<Food>(`/foods/${init.food_id}`).then(
+      (food) => {
+        setPicked(food);
+        setAmount(init.amount);
+        setUnit(fromUcum(init.unit));
+      },
+      (e) => toast.error(e),
+    );
+  }, [props.initial?.food_id]);
 
   useEffect(() => {
     const term = q.trim();
@@ -47,6 +68,7 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
   async function choose(h: Hit) {
     try {
       const food = h.kind === 'local' ? h.food : await api.get<Food>(`/foods/fdc/${h.hit.sourceId}`);
+      setLabel(undefined);
       setPicked(food);
       const first = food.portions[0];
       if (first) {
@@ -65,7 +87,8 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
     if (!picked || !(amount > 0)) return;
     setSaving(true);
     try {
-      const item = { food_id: picked.id, amount, unit };
+      // Keep the user's own wording for a quick pick ("salmon sashimi" rather than the USDA name).
+      const item = { food_id: picked.id, amount, unit, ...(label ? { display_name: label } : {}) };
       // Into a specific meal (its Add item), or from the main button: breakfast/lunch/dinner join the day's meal.
       const at = occurrenceFor(props.date);
       const res = await submitMeal(
@@ -91,7 +114,8 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
           ← Back to results
         </button>
         <div>
-          <h3 class="font-semibold">{picked.name}</h3>
+          <h3 class="display text-lg font-semibold">{label ?? picked.name}</h3>
+          {label && label.toLowerCase() !== picked.name.toLowerCase() && <p class="text-sm text-ink-2">{picked.name}</p>}
           {picked.brand && <p class="text-sm text-ink-2">{picked.brand}</p>}
         </div>
         <AmountEditor
