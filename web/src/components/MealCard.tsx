@@ -1,5 +1,6 @@
 import { useState } from 'preact/hooks';
 import { api, type Intake, type Item } from '../api';
+import { Questions } from './Questions';
 import { amountLabel, confidenceTone, kcal, MEAL_LABEL, time } from '../format';
 
 export function MealCard(props: { meal: Intake; onChange: (m: Intake | null) => void; onAdd: (m: Intake) => void }) {
@@ -31,7 +32,10 @@ export function MealCard(props: { meal: Intake; onChange: (m: Intake | null) => 
     <article class="card overflow-hidden">
       <header class="flex items-center justify-between px-4 pt-3">
         <div>
-          <h3 class="font-semibold">{MEAL_LABEL[meal.meal_type]}</h3>
+          <h3 class="font-semibold">
+            {MEAL_LABEL[meal.meal_type]}
+            {meal.status === 'in-progress' && <span class="ml-2 rounded bg-brand-100 px-1.5 py-0.5 text-[10px] font-medium text-brand-700">draft</span>}
+          </h3>
           <p class="text-xs text-slate-500">
             {time(meal.occurrence_at)}
             {tone.label && (
@@ -47,6 +51,14 @@ export function MealCard(props: { meal: Intake; onChange: (m: Intake | null) => 
           <div class="text-xs text-slate-500 tabular-nums">{Math.round(meal.totals.PROCNT ?? 0)} g protein</div>
         </div>
       </header>
+      {meal.has_media && meal.source === 'photo' && (
+        <img src={`/api/intake/${meal.id}/media`} alt="" loading="lazy" class="mx-4 mt-2 h-32 w-[calc(100%-2rem)] rounded-xl object-cover" />
+      )}
+      {meal.status === 'in-progress' && (
+        <div class="mx-4 mt-2">
+          <Questions intake={meal} onDone={props.onChange} />
+        </div>
+      )}
       <ul class="mt-2 divide-y divide-slate-100 dark:divide-slate-800">
         {meal.items.map((it) => (
           <ItemRow item={it} editing={editing === it.id} onToggle={() => setEditing(editing === it.id ? null : it.id)} onChange={props.onChange} />

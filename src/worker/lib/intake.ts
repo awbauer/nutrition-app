@@ -253,9 +253,15 @@ export async function loadIntakes(db: D1Database, rows: IntakeRow[]): Promise<In
       has_media: !!media_r2_key,
       items: its,
       totals,
-      ...(pending_json ? { pending: JSON.parse(pending_json) } : {}),
+      ...(pending_json ? { pending: publicPending(pending_json) } : {}),
     };
   });
+}
+
+/** Clarifying questions as the client sees them (option effects stay server-side). */
+function publicPending(json: string) {
+  const p = JSON.parse(json) as { questions?: { id: string; item_index: number; text: string; options: string[]; default: string }[] };
+  return { questions: (p.questions ?? []).map(({ id, item_index, text, options, default: d }) => ({ id, item_index, text, options, default: d })) };
 }
 
 const INTAKE_COLS = `id, status, meal_type, occurrence_at, occurrence_tz, log_date, recorded_at, source, note, raw_input_text,
