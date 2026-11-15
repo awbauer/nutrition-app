@@ -15,7 +15,12 @@ const MODE_LABEL: Record<Mode, string> = { describe: 'Describe', voice: 'Voice',
 const AUDIO_EXT: Record<string, string> = { 'audio/mp4': 'm4a', 'audio/webm': 'webm', 'audio/ogg': 'ogg' };
 
 /** Log a meal by describing it, photographing it, or searching the food database. */
-export function LogSheet(props: { date: string; defaultMeal: MealType; onDone: () => void }) {
+/**
+ * Log a meal by describing it, recording it, photographing it, or searching.
+ * With `target` (a meal's Add item) everything goes into that meal; from the main button,
+ * breakfast/lunch/dinner join the day's existing meal of that type and snacks are new.
+ */
+export function LogSheet(props: { date: string; defaultMeal: MealType; target?: Intake; onDone: () => void }) {
   const [mode, setMode] = useState<Mode>('describe');
   const [text, setText] = useState('');
   const [meal, setMeal] = useState<MealType | null>(null);
@@ -38,14 +43,21 @@ export function LogSheet(props: { date: string; defaultMeal: MealType; onDone: (
       if (!text.trim()) return;
       f.append('text', text.trim());
     }
-    f.append('meal_type', meal ?? props.defaultMeal);
-    const at = occurrenceFor(props.date);
-    if (at) f.append('occurrence_at', at);
+    if (props.target) f.append('append_to', props.target.id);
+    else {
+      f.append('meal_type', meal ?? props.defaultMeal);
+      f.append('merge', '1');
+      const at = occurrenceFor(props.date);
+      if (at) f.append('occurrence_at', at);
+    }
     setBusy(true);
     try {
       const r = await submitMeal('/intake', f);
       // Saved (or queued offline): the AI fills it in in the background and Today shows progress.
-      if (r && r.status !== 'preparation') setDraft(r);
+      if (r?.merged_from) {
+        toast.success(`Added to your ${MEAL_LABEL[r.meal_type].toLowerCase()}`);
+        props.onDone();
+      } else if (r && r.status !== 'preparation') setDraft(r);
       else {
         if (r) watch(r);
         else toast.info("You're offline. The meal will sync when you're back online.");
@@ -84,7 +96,7 @@ export function LogSheet(props: { date: string; defaultMeal: MealType; onDone: (
       </div>
 
       {mode === 'search' ? (
-        <AddFood date={props.date} defaultMeal={props.defaultMeal} onDone={props.onDone} />
+        <AddFood date={props.date} defaultMeal={props.defaultMeal} intakeId={props.target?.id} onDone={props.onDone} />
       ) : (
         <>
           {mode === 'photo' && (
@@ -117,6 +129,9 @@ export function LogSheet(props: { date: string; defaultMeal: MealType; onDone: (
             enterkeyhint="send"
           />
           )}
+          {props.target ? (
+            <p class="text-sm text-slate-500">Adding to your {MEAL_LABEL[props.target.meal_type].toLowerCase()}.</p>
+          ) : (
           <div class="flex flex-wrap gap-2">
             {MEALS.map((m) => (
               <button class={m === (meal ?? props.defaultMeal) ? 'chip-on' : 'chip'} onClick={() => setMeal(m)}>
@@ -124,6 +139,7 @@ export function LogSheet(props: { date: string; defaultMeal: MealType; onDone: (
               </button>
             ))}
           </div>
+          )}
           <button class="btn-primary w-full py-3" disabled={busy || (mode === 'photo' ? !photo : mode === 'voice' ? !clip : !text.trim())} onClick={submit}>
             {busy ? 'Saving…' : 'Log meal'}
           </button>

@@ -5,6 +5,7 @@ import { HttpError, newId } from '../lib/ids';
 import { createIntake, getIntake, MEAL_TYPES, type MealType, type Source } from '../lib/intake';
 import { enqueue, type JobState } from '../lib/jobs';
 import { applyAnswers } from '../lib/pipeline';
+import { assertAppendable, mergedInto, parseMergeSpec } from '../lib/merge';
 
 const MAX_PHOTO = 8 * 1024 * 1024;
 const MAX_AUDIO = 10 * 1024 * 1024;
@@ -68,15 +69,20 @@ export async function createFromMedia(c: Context<AppEnv>): Promise<Response> {
     await c.env.MEDIA.put(mediaKey, await file.arrayBuffer(), { httpMetadata: { contentType: mime } });
   }
 
-  const state: JobState = { job: { meal_explicit: !!meal_type, hint: source === 'photo' && text ? text : null } };
+  // append_to: from a meal's "Add item"; merge: from the main button (breakfast/lunch/dinner join the day's meal).
+  const merge = parseMergeSpec(form.get('append_to'), form.get('merge'));
+  // Adding to a specific meal: the draft takes that meal's type and time, so progress and
+  // any questions are shown for the right meal and day.
+  const into = merge?.mode === 'into' ? await assertAppendable(c.env.DB, user.id, merge.id) : null;
+  const state: JobState = { job: { meal_explicit: !!(meal_type || into), hint: source === 'photo' && text ? text : null, merge } };
   const id = await createIntake(
     c.env,
     user,
     {
       source,
       status: 'preparation',
-      meal_type,
-      occurrence_at,
+      meal_type: into?.meal_type ?? meal_type,
+      occurrence_at: into?.occurrence_at ?? occurrence_at,
       note,
       raw_input_text: source === 'text' ? text : null,
       media_r2_key: mediaKey,
@@ -85,7 +91,16 @@ export async function createFromMedia(c: Context<AppEnv>): Promise<Response> {
     [],
   );
   await enqueue(c.env, { intakeId: id, userId: user.id }, waitUntil(c));
-  return c.json(await getIntake(c.env.DB, user.id, id), 202);
+  return c.json(await currentView(c.env.DB, user.id, id), 202);
+}
+
+/** The entry, or the meal it was already merged into (when the job ran inline). */
+async function currentView(db: D1Database, userId: string, id: string) {
+  const v = await getIntake(db, userId, id);
+  if (v) return v;
+  const to = await mergedInto(db, userId, id);
+  const target = to && (await getIntake(db, userId, to));
+  return target ? { ...target, merged_from: id } : null;
 }
 
 /** The request's waitUntil, when running inside a real request context. */
@@ -111,15 +126,15 @@ export async function retry(c: Context<AppEnv>): Promise<Response> {
   const { error: _drop, ...rest } = state;
   await c.env.DB.prepare('UPDATE nutrition_intake SET pending_json = ? WHERE id = ?').bind(JSON.stringify(rest), id).run();
   await enqueue(c.env, { intakeId: id, userId: user.id }, waitUntil(c));
-  return c.json(await getIntake(c.env.DB, user.id, id), 202);
+  return c.json(await currentView(c.env.DB, user.id, id), 202);
 }
 
 /** POST /api/intake/:id/answers  { answers: { q1: "1 tbsp oil" } }  — unanswered questions take the default. */
 export async function answer(c: Context<AppEnv>): Promise<Response> {
   const user = c.get('user');
   const body = await c.req.json<{ answers?: Record<string, string> }>();
-  await applyAnswers(c.env, user, c.req.param('id')!, body.answers ?? {});
-  return c.json(await getIntake(c.env.DB, user.id, c.req.param('id')!));
+  const id = await applyAnswers(c.env, user, c.req.param('id')!, body.answers ?? {});
+  return c.json(await getIntake(c.env.DB, user.id, id));
 }
 
 /** GET /api/intake/:id/media -> the meal's photo or clip, only to its owner. */

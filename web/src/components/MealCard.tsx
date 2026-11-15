@@ -2,6 +2,7 @@ import { useState } from 'preact/hooks';
 import { api, type Intake, type Item } from '../api';
 import { Questions } from './Questions';
 import { ItemSheet } from './ItemSheet';
+import { MealEdit } from './MealEdit';
 import { Sheet } from './Sheet';
 import { watch } from '../analysis';
 import { toast } from '../toast';
@@ -10,6 +11,7 @@ import { amountLabel, confidenceTone, kcal, MEAL_LABEL, time } from '../format';
 export function MealCard(props: { meal: Intake; onChange: (m: Intake | null) => void; onAdd: (m: Intake) => void }) {
   const { meal } = props;
   const [openItem, setOpenItem] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
   const tone = confidenceTone(meal.confidence);
 
@@ -48,6 +50,7 @@ export function MealCard(props: { meal: Intake; onChange: (m: Intake | null) => 
           <h3 class="font-semibold">
             {MEAL_LABEL[meal.meal_type]}
             {meal.status === 'in-progress' && <span class="ml-2 rounded bg-brand-100 px-1.5 py-0.5 text-[10px] font-medium text-brand-700">draft</span>}
+            {meal.pending?.adding_to_meal && <span class="ml-2 text-xs font-normal text-slate-500">will be added to your {MEAL_LABEL[meal.meal_type].toLowerCase()}</span>}
           </h3>
           <p class="text-xs text-slate-500">
             {time(meal.occurrence_at)}
@@ -66,6 +69,7 @@ export function MealCard(props: { meal: Intake; onChange: (m: Intake | null) => 
           </div>
         )}
       </header>
+      {meal.note && <p class="mx-4 mt-1 text-sm text-slate-600 italic dark:text-slate-300">{meal.note}</p>}
       {meal.has_media && meal.source === 'photo' && (
         <img src={`/api/intake/${meal.id}/media`} alt="" loading="lazy" class="mx-4 mt-2 h-32 w-[calc(100%-2rem)] rounded-xl object-cover" />
       )}
@@ -100,7 +104,7 @@ export function MealCard(props: { meal: Intake; onChange: (m: Intake | null) => 
         ))}
       </ul>
       <footer class="flex gap-1 border-t border-slate-100 px-2 py-1.5 text-sm dark:border-slate-800">
-        {meal.status !== 'preparation' && (
+        {meal.status === 'completed' && (
           <>
             <button class="rounded-lg px-3 py-1.5 text-brand-700 hover:bg-slate-100 dark:text-brand-500 dark:hover:bg-slate-800" onClick={() => props.onAdd(meal)} disabled={busy}>
               + Add item
@@ -110,12 +114,28 @@ export function MealCard(props: { meal: Intake; onChange: (m: Intake | null) => 
             </button>
           </>
         )}
+        {meal.status !== 'preparation' && (
+          <button class="rounded-lg px-3 py-1.5 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800" onClick={() => setEditing(true)} disabled={busy}>
+            Edit
+          </button>
+        )}
         <button class="ml-auto rounded-lg px-3 py-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950" onClick={remove} disabled={busy}>
           Delete
         </button>
       </footer>
       <Sheet open={!!openItem} onClose={() => setOpenItem(null)} title="Food details">
         {openItem && <ItemSheet itemId={openItem} onChange={props.onChange} onClose={() => setOpenItem(null)} />}
+      </Sheet>
+      <Sheet open={editing} onClose={() => setEditing(false)} title={`Edit ${MEAL_LABEL[meal.meal_type].toLowerCase()}`}>
+        {editing && (
+          <MealEdit
+            meal={meal}
+            onSaved={(m) => {
+              setEditing(false);
+              props.onChange(m);
+            }}
+          />
+        )}
       </Sheet>
     </article>
   );
