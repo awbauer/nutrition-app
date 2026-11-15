@@ -27,7 +27,7 @@ export const normName = (s: string): string =>
 
 export function usdaClient(env: Env, fetcher?: typeof fetch): UsdaClient {
   if (!env.USDA_API_KEY) throw new HttpError(503, 'USDA_API_KEY is not configured');
-  return new UsdaClient(env.USDA_API_KEY, fetcher);
+  return new UsdaClient(env.USDA_API_KEY, fetcher, env.USDA_BASE_URL || undefined);
 }
 
 interface FoodRow {

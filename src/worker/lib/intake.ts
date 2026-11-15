@@ -4,6 +4,7 @@ import { getFood, resolveFdc, type FoodRecord } from './foods';
 import { HttpError, newId, nowIso } from './ids';
 import { round, sumNutrients } from './nutrients';
 import { getSettings } from './settings';
+import type { MatchInfo } from './matcher';
 import { toGrams, ucum } from './units';
 
 export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
@@ -24,6 +25,8 @@ export interface ResolvedItem {
   confidence: number;
   method: EstimationMethod;
   estimated?: boolean;
+  /** How the food was matched (AI-logged items); shown and editable in the item sheet. */
+  match?: MatchInfo | null;
 }
 
 /** Item reference as sent by clients. */
@@ -59,8 +62,8 @@ export function itemStatements(db: D1Database, userId: string, intakeId: string,
   const stmts = [
     db
       .prepare(
-        `INSERT INTO consumed_item (id, intake_id, user_id, position, food_id, display_name, amount_value, amount_unit, grams, confidence, estimation_method, estimated)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO consumed_item (id, intake_id, user_id, position, food_id, display_name, amount_value, amount_unit, grams, confidence, estimation_method, estimated, match_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .bind(
         id,
@@ -75,6 +78,7 @@ export function itemStatements(db: D1Database, userId: string, intakeId: string,
         round(item.confidence, 2),
         item.method,
         item.estimated || item.food.source === 'estimate' ? 1 : 0,
+        item.match ? JSON.stringify(item.match) : null,
       ),
   ];
   for (const n of item.food.nutrients) {
@@ -171,6 +175,12 @@ export interface ItemView {
   estimated: boolean;
   fdc_id: string | null;
   food_source: string | null;
+  food_name: string | null;
+  food_data_type: string | null;
+  /** Candidates exist: the item sheet can offer other matches. */
+  has_match_details: boolean;
+  /** kcal/100 g of the chosen food is far from the model's estimate: worth checking. */
+  check_match: boolean;
   nutrients: Record<string, number>;
 }
 
@@ -207,7 +217,9 @@ export async function loadIntakes(db: D1Database, rows: IntakeRow[]): Promise<In
   const [items, nutrients] = await db.batch([
     db
       .prepare(
-        `SELECT ci.*, f.source_id AS fdc_source_id, f.source AS food_source FROM consumed_item ci
+        `SELECT ci.*, f.source_id AS fdc_source_id, f.source AS food_source, f.name AS food_name, f.data_type AS food_data_type,
+           (SELECT value_per_100g FROM food_nutrient fn WHERE fn.food_id = ci.food_id AND fn.nutrient_code = 'ENERC_KCAL') AS food_kcal100
+         FROM consumed_item ci
          LEFT JOIN food f ON f.id = ci.food_id WHERE ci.intake_id IN (${ph}) ORDER BY ci.position`,
       )
       .bind(...ids),
@@ -238,6 +250,10 @@ export async function loadIntakes(db: D1Database, rows: IntakeRow[]): Promise<In
       estimated: r.estimated === 1,
       fdc_id: r.food_source === 'usda' ? (r.fdc_source_id as string) : null,
       food_source: (r.food_source as string) ?? null,
+      food_name: (r.food_name as string) ?? null,
+      food_data_type: (r.food_data_type as string) ?? null,
+      has_match_details: !!r.match_json,
+      check_match: needsCheck(r.match_json as string | null, r.food_kcal100 as number | null),
       nutrients: sumNutrients(nByItem.get(r.id as string) ?? []),
     };
     const l = iByIntake.get(r.intake_id as string) ?? [];
@@ -265,6 +281,19 @@ function publicPending(json: string) {
     questions: (p.questions ?? []).map(({ id, item_index, text, options, default: d }) => ({ id, item_index, text, options, default: d })),
     ...(p.error ? { error: p.error } : {}),
   };
+}
+
+/** Flag items whose matched food is far (2x either way) from the model's own kcal estimate. */
+function needsCheck(matchJson: string | null, kcal100: number | null): boolean {
+  if (!matchJson || kcal100 == null) return false;
+  try {
+    const m = JSON.parse(matchJson) as MatchInfo;
+    if (m.via === 'alias' || m.via === 'custom' || m.estimate_kcal_100g == null || m.estimate_kcal_100g <= 0) return false;
+    const ratio = (kcal100 + 10) / (m.estimate_kcal_100g + 10);
+    return ratio > 2 || ratio < 0.5;
+  } catch {
+    return false;
+  }
 }
 
 const INTAKE_COLS = `id, status, meal_type, occurrence_at, occurrence_tz, log_date, recorded_at, source, note, raw_input_text,

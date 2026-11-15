@@ -24,7 +24,6 @@ export function LogSheet(props: { date: string; defaultMeal: MealType; onDone: (
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState<Intake | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const cameraRef = useRef<HTMLInputElement>(null);
 
   async function submit() {
     const f = new FormData();
@@ -90,26 +89,22 @@ export function LogSheet(props: { date: string; defaultMeal: MealType; onDone: (
         <>
           {mode === 'photo' && (
             <>
-              {/* Two inputs: `capture` forces the camera on iOS, so the library needs its own input without it. */}
-              <input ref={cameraRef} type="file" accept="image/*" capture="environment" class="hidden" onChange={onFile} />
+              {/* No `capture`: iOS then offers Take Photo, Photo Library and Choose File from one button. */}
               <input ref={fileRef} type="file" accept="image/*" class="hidden" onChange={onFile} />
-              {photo && <img src={photo.url} alt="Meal photo" class="max-h-64 w-full rounded-xl object-cover" />}
-              <div class="grid grid-cols-2 gap-2">
-                <button
-                  class={`flex flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-slate-300 text-slate-500 dark:border-slate-700 ${photo ? 'h-14' : 'h-32'}`}
-                  onClick={() => cameraRef.current?.click()}
-                >
-                  <span class="text-2xl" aria-hidden="true">📷</span>
-                  <span class="text-sm">{photo ? 'Retake' : 'Take photo'}</span>
+              {photo ? (
+                <button onClick={() => fileRef.current?.click()} class="relative overflow-hidden rounded-xl" aria-label="Change photo">
+                  <img src={photo.url} alt="Meal photo" class="max-h-64 w-full object-cover" />
+                  <span class="absolute right-2 bottom-2 rounded-full bg-slate-900/70 px-2.5 py-1 text-xs text-white">Change</span>
                 </button>
+              ) : (
                 <button
-                  class={`flex flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-slate-300 text-slate-500 dark:border-slate-700 ${photo ? 'h-14' : 'h-32'}`}
+                  class="flex h-36 flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 text-slate-500 dark:border-slate-700"
                   onClick={() => fileRef.current?.click()}
                 >
-                  <span class="text-2xl" aria-hidden="true">🖼</span>
-                  <span class="text-sm">{photo ? 'Choose another' : 'Choose photo'}</span>
+                  <span class="text-3xl" aria-hidden="true">📷</span>
+                  <span class="text-sm">Choose photo</span>
                 </button>
-              </div>
+              )}
             </>
           )}
           {mode === 'voice' && <Recorder onClip={setClip} />}

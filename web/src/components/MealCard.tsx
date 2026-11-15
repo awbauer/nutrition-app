@@ -1,13 +1,15 @@
 import { useState } from 'preact/hooks';
 import { api, type Intake, type Item } from '../api';
 import { Questions } from './Questions';
+import { ItemSheet } from './ItemSheet';
+import { Sheet } from './Sheet';
 import { watch } from '../analysis';
 import { toast } from '../toast';
 import { amountLabel, confidenceTone, kcal, MEAL_LABEL, time } from '../format';
 
 export function MealCard(props: { meal: Intake; onChange: (m: Intake | null) => void; onAdd: (m: Intake) => void }) {
   const { meal } = props;
-  const [editing, setEditing] = useState<string | null>(null);
+  const [openItem, setOpenItem] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const tone = confidenceTone(meal.confidence);
 
@@ -94,7 +96,7 @@ export function MealCard(props: { meal: Intake; onChange: (m: Intake | null) => 
       )}
       <ul class="mt-2 divide-y divide-slate-100 dark:divide-slate-800">
         {meal.items.map((it) => (
-          <ItemRow item={it} editing={editing === it.id} onToggle={() => setEditing(editing === it.id ? null : it.id)} onChange={props.onChange} />
+          <ItemRow item={it} onOpen={() => setOpenItem(it.id)} />
         ))}
       </ul>
       <footer class="flex gap-1 border-t border-slate-100 px-2 py-1.5 text-sm dark:border-slate-800">
@@ -112,62 +114,37 @@ export function MealCard(props: { meal: Intake; onChange: (m: Intake | null) => 
           Delete
         </button>
       </footer>
+      <Sheet open={!!openItem} onClose={() => setOpenItem(null)} title="Food details">
+        {openItem && <ItemSheet itemId={openItem} onChange={props.onChange} onClose={() => setOpenItem(null)} />}
+      </Sheet>
     </article>
   );
 }
 
-function ItemRow(props: { item: Item; editing: boolean; onToggle: () => void; onChange: (m: Intake) => void }) {
+function ItemRow(props: { item: Item; onOpen: () => void }) {
   const it = props.item;
-  const [grams, setGrams] = useState(it.grams);
-  const [busy, setBusy] = useState(false);
-
-  async function save(body: unknown, method: 'patch' | 'del' = 'patch') {
-    setBusy(true);
-    try {
-      const m = method === 'patch' ? await api.patch<Intake>(`/item/${it.id}`, body) : await api.del<Intake>(`/item/${it.id}`);
-      props.onChange(m);
-      props.onToggle();
-    } catch (e) {
-      toast.error(e);
-    } finally {
-      setBusy(false);
-    }
-  }
-
+  const showMatch = it.food_name && it.food_name.toLowerCase() !== it.display_name.toLowerCase();
   return (
-    <li class="px-4 py-2.5">
-      <button class="flex w-full items-center gap-3 text-left" onClick={props.onToggle}>
+    <li>
+      <button class="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-slate-50 dark:hover:bg-slate-800/50" onClick={props.onOpen}>
         <div class="min-w-0 flex-1">
           <p class="truncate text-sm">
             {it.display_name}
-            {it.estimated && <span class="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-900 dark:text-amber-200">estimated</span>}
+            {it.check_match ? (
+              <span class="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-900 dark:text-amber-200">check match</span>
+            ) : (
+              it.estimated && <span class="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-900 dark:text-amber-200">estimated</span>
+            )}
           </p>
-          <p class="text-xs text-slate-500">
+          <p class="truncate text-xs text-slate-500">
             {amountLabel(it.amount_value, it.amount_unit)}
             {it.amount_unit !== 'g' && ` · ${Math.round(it.grams)} g`}
+            {showMatch && ` · ${it.food_name}`}
           </p>
         </div>
         <span class="text-sm tabular-nums text-slate-600 dark:text-slate-300">{kcal(it.nutrients.ENERC_KCAL)}</span>
+        <span class="text-slate-300 dark:text-slate-600" aria-hidden="true">›</span>
       </button>
-      {props.editing && (
-        <div class="mt-2 flex items-center gap-2">
-          <input
-            class="input w-24 py-1.5 text-center tabular-nums"
-            type="number"
-            inputMode="decimal"
-            value={grams}
-            onInput={(e) => setGrams(Number((e.target as HTMLInputElement).value))}
-            aria-label="Grams"
-          />
-          <span class="text-sm text-slate-500">g</span>
-          <button class="btn-primary ml-auto px-3 py-1.5" disabled={busy || !(grams > 0)} onClick={() => save({ amount: grams, unit: 'g' })}>
-            Save
-          </button>
-          <button class="btn-ghost px-3 py-1.5 text-rose-600" disabled={busy} onClick={() => save(null, 'del')}>
-            Remove
-          </button>
-        </div>
-      )}
     </li>
   );
 }

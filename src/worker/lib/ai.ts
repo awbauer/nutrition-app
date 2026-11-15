@@ -4,7 +4,7 @@
  */
 import type { Env } from '../env';
 
-export const PROMPT_VERSION = 'parse-v1';
+export const PROMPT_VERSION = 'parse-v2';
 export const PIPELINE_VERSION = '2.0';
 
 export interface QuestionEffect {
@@ -17,6 +17,8 @@ export interface ModelItem {
   amount: number;
   unit: string;
   confidence: number;
+  /** The model's estimate of the item's weight; used when a household unit has no known portion size. */
+  grams?: number;
   search_terms: string[];
   barcode: string | null;
   /** Rough per-100 g estimate used only when no database match exists. */
@@ -44,6 +46,7 @@ const SCHEMA_TEXT = `Return ONLY a JSON object, no prose:
   "items": [{
     "name": "grilled chicken breast",          // generic food name, cooking method included
     "amount": 150, "unit": "g",                // unit: g, ml, cup, tbsp, tsp, oz, slice, piece, small, medium, large, serving, can, bottle
+    "grams": 150,                               // your best estimate of the item's weight in grams, always
     "confidence": 0.7,                          // 0-1: how sure you are of food AND amount
     "search_terms": ["chicken breast roasted"],// 1-3 phrases for the USDA FoodData Central search
     "barcode": null,                            // GTIN if visible/stated, else null
@@ -151,6 +154,7 @@ export function validateOutput(raw: unknown): ModelOutput {
       amount,
       unit: typeof it.unit === 'string' && it.unit.trim() ? it.unit.trim() : 'g',
       confidence: clamp01(it.confidence),
+      ...(typeof it.grams === 'number' && it.grams > 0 && it.grams < 5000 ? { grams: it.grams } : {}),
       search_terms: (Array.isArray(it.search_terms) ? it.search_terms : [])
         .filter((t: unknown): t is string => typeof t === 'string' && !!t.trim())
         .slice(0, 3),

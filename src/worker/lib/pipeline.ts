@@ -7,7 +7,7 @@ import { PIPELINE_VERSION, PROMPT_VERSION, type ModelOutput, type QuestionEffect
 import { getFood, type FoodRecord } from './foods';
 import { HttpError, nowIso } from './ids';
 import { itemStatements, refreshConfidence, type EstimationMethod, type MealType, type ResolvedItem } from './intake';
-import { ESTIMATE_CONFIDENCE_CAP, matchFood } from './matcher';
+import { ESTIMATE_CONFIDENCE_CAP, matchFood, type MatchInfo } from './matcher';
 import type { Settings } from './settings';
 import { toGrams } from './units';
 
@@ -20,11 +20,14 @@ export interface BaseItem {
   confidence: number;
   method: EstimationMethod;
   estimated: boolean;
+  match?: MatchInfo;
+  /** Model's weight estimate, used instead of the generic size table for household units. */
+  grams_estimate?: number;
 }
 
 export interface StoredEffect {
   set_amount?: { amount: number; unit: string };
-  add_item?: { name: string; amount: number; unit: string; food_id: string; estimated: boolean };
+  add_item?: { name: string; amount: number; unit: string; food_id: string; estimated: boolean; match?: MatchInfo };
 }
 
 export interface PendingQuestion {
@@ -62,9 +65,12 @@ export async function buildPending(env: Env, user: User, out: ModelOutput, setti
       via: m.via,
       amount: it.amount,
       unit: it.unit,
-      confidence: estimated ? Math.min(it.confidence, ESTIMATE_CONFIDENCE_CAP) : it.confidence,
+      // The model's confidence covers the amount; the match score covers whether it's the right food.
+      confidence: Math.min(it.confidence, m.matchConfidence, estimated ? ESTIMATE_CONFIDENCE_CAP : 1),
       method,
       estimated,
+      match: m.match,
+      ...(it.grams ? { grams_estimate: it.grams } : {}),
     };
   });
   const addOns = new Map<string, ReturnType<typeof matchFood>>();
@@ -92,7 +98,7 @@ export async function buildPending(env: Env, user: User, out: ModelOutput, setti
       if (e.add_item) {
         const m = await addOnFood(e.add_item);
         effects[opt] = {
-          add_item: { name: e.add_item.name, amount: e.add_item.amount, unit: e.add_item.unit, food_id: m.food.id, estimated: m.via === 'estimate' },
+          add_item: { name: e.add_item.name, amount: e.add_item.amount, unit: e.add_item.unit, food_id: m.food.id, estimated: m.via === 'estimate', match: m.match },
         };
         kcals.push(itemKcal(foods.get(target.food_id)!, target.amount, target.unit) + itemKcal(m.food, e.add_item.amount, e.add_item.unit));
       } else if (e.set_amount) {
@@ -154,20 +160,31 @@ export async function materialise(db: D1Database, userId: string, p: Pending, an
         confidence: answered ? 0.8 : 0.5,
         method: 'described',
         estimated: e.add_item.estimated,
+        match: e.add_item.match,
       });
     }
   }
   const out: ResolvedItem[] = [];
-  for (const b of items)
+  for (const b of items) {
+    const food = await load(b.food_id);
+    // "1 medium croissant" with no portion data would hit the generic table (medium = 150 g);
+    // the model's own weight estimate is much closer. Scale it if a question changed the amount.
+    const conv = toGrams(b.amount, b.unit, food);
+    const base = p.base.find((x) => x.food_id === b.food_id && x.name === b.name);
+    const grams =
+      conv.method === 'generic' && b.grams_estimate && base && base.unit === b.unit ? (b.grams_estimate * b.amount) / base.amount : undefined;
     out.push({
-      food: await load(b.food_id),
+      food,
       display_name: b.name,
       amount: b.amount,
       unit: b.unit,
       confidence: b.estimated ? Math.min(b.confidence, ESTIMATE_CONFIDENCE_CAP) : b.confidence,
       method: b.method,
       estimated: b.estimated,
+      match: b.match,
+      ...(grams ? { grams } : {}),
     });
+  }
   return [...out, ...extra];
 }
 

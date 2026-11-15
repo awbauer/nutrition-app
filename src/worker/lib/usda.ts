@@ -24,10 +24,11 @@ export class UsdaClient {
   constructor(
     private apiKey: string,
     private fetcher: Fetch = (input, init) => fetch(input, init),
+    private base: string = BASE,
   ) {}
 
   private async get<T>(path: string, params: Record<string, string>): Promise<T> {
-    const url = new URL(BASE + path);
+    const url = new URL(this.base + path);
     for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
     url.searchParams.set('api_key', this.apiKey);
     const res = await this.fetcher(url.toString(), { headers: { Accept: 'application/json' } });

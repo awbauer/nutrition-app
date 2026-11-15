@@ -12,6 +12,8 @@ export interface Env {
   DEV_AUTH?: string;
   DEV_USER_EMAIL?: string;
   USDA_API_KEY?: string;
+  /** Development only: point the USDA client at a mock server. */
+  USDA_BASE_URL?: string;
   VAPID_PUBLIC_KEY?: string;
   VAPID_PRIVATE_KEY?: string;
   VAPID_SUBJECT?: string;
