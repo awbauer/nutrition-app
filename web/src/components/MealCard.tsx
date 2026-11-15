@@ -26,6 +26,10 @@ export function MealCard(props: { meal: Intake; onChange: (m: Intake | null) => 
       await api.del(`/intake/${meal.id}`);
       props.onChange(null);
     });
+  const retry = () => run(async () => props.onChange(await api.post<Intake>(`/intake/${meal.id}/retry`)));
+  const analyzing = meal.status === 'preparation' && !meal.pending?.error;
+  const failed = meal.status === 'preparation' && !!meal.pending?.error;
+
   const copy = () => run(async () => props.onChange(await api.post<Intake>(`/intake/${meal.id}/copy`, {})));
 
   return (
@@ -46,13 +50,34 @@ export function MealCard(props: { meal: Intake; onChange: (m: Intake | null) => 
             )}
           </p>
         </div>
-        <div class="text-right">
-          <div class="font-semibold tabular-nums">{kcal(meal.totals.ENERC_KCAL)} kcal</div>
-          <div class="text-xs text-slate-500 tabular-nums">{Math.round(meal.totals.PROCNT ?? 0)} g protein</div>
-        </div>
+        {meal.status === 'preparation' ? null : (
+          <div class="text-right">
+            <div class="font-semibold tabular-nums">{kcal(meal.totals.ENERC_KCAL)} kcal</div>
+            <div class="text-xs text-slate-500 tabular-nums">{Math.round(meal.totals.PROCNT ?? 0)} g protein</div>
+          </div>
+        )}
       </header>
       {meal.has_media && meal.source === 'photo' && (
         <img src={`/api/intake/${meal.id}/media`} alt="" loading="lazy" class="mx-4 mt-2 h-32 w-[calc(100%-2rem)] rounded-xl object-cover" />
+      )}
+      {meal.status === 'preparation' && (
+        <div class="mx-4 mt-2 flex flex-col gap-2 rounded-xl bg-slate-100 p-3 text-sm dark:bg-slate-800/60">
+          {meal.raw_input_text && meal.source === 'text' && <p class="text-slate-600 italic dark:text-slate-300">“{meal.raw_input_text}”</p>}
+          {analyzing && (
+            <p class="flex items-center gap-2 text-slate-600 dark:text-slate-300" aria-live="polite">
+              <span class="inline-block h-4 w-4 animate-spin rounded-full border-2 border-brand-600 border-t-transparent" />
+              {meal.source === 'voice' ? 'Transcribing and analyzing…' : 'Analyzing…'} You can keep using the app.
+            </p>
+          )}
+          {failed && (
+            <>
+              <p class="text-rose-600">{meal.pending!.error}</p>
+              <button class="btn-primary self-start px-3 py-1.5" onClick={retry} disabled={busy}>
+                Try again
+              </button>
+            </>
+          )}
+        </div>
       )}
       {meal.status === 'in-progress' && (
         <div class="mx-4 mt-2">
@@ -65,12 +90,16 @@ export function MealCard(props: { meal: Intake; onChange: (m: Intake | null) => 
         ))}
       </ul>
       <footer class="flex gap-1 border-t border-slate-100 px-2 py-1.5 text-sm dark:border-slate-800">
-        <button class="rounded-lg px-3 py-1.5 text-brand-700 hover:bg-slate-100 dark:text-brand-500 dark:hover:bg-slate-800" onClick={() => props.onAdd(meal)} disabled={busy}>
-          + Add item
-        </button>
-        <button class="rounded-lg px-3 py-1.5 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800" onClick={copy} disabled={busy}>
-          Copy to now
-        </button>
+        {meal.status !== 'preparation' && (
+          <>
+            <button class="rounded-lg px-3 py-1.5 text-brand-700 hover:bg-slate-100 dark:text-brand-500 dark:hover:bg-slate-800" onClick={() => props.onAdd(meal)} disabled={busy}>
+              + Add item
+            </button>
+            <button class="rounded-lg px-3 py-1.5 text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800" onClick={copy} disabled={busy}>
+              Copy to now
+            </button>
+          </>
+        )}
         <button class="ml-auto rounded-lg px-3 py-1.5 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950" onClick={remove} disabled={busy}>
           Delete
         </button>

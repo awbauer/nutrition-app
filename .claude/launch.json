@@ -4,7 +4,14 @@
     {
       "name": "nutrition-app",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["wrangler", "dev", "--port", "8788"],
+      "runtimeArgs": [
+        "wrangler",
+        "dev",
+        "--name",
+        "nutrition-app-dev",
+        "--port",
+        "8788"
+      ],
       "port": 8788
     }
   ]

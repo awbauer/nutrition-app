@@ -44,8 +44,9 @@ export function LogSheet(props: { date: string; defaultMeal: MealType; onDone: (
     setErr(null);
     try {
       const r = await submitMeal('/intake', f);
-      if (r) setDraft(r);
-      else props.onDone(); // queued offline
+      // Saved (or queued offline): the AI fills it in in the background and Today shows progress.
+      if (r && r.status !== 'preparation') setDraft(r);
+      else props.onDone();
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -117,7 +118,7 @@ export function LogSheet(props: { date: string; defaultMeal: MealType; onDone: (
           </div>
           {err && <p class="text-sm text-rose-600">{err}</p>}
           <button class="btn-primary w-full py-3" disabled={busy || (mode === 'photo' ? !photo : mode === 'voice' ? !clip : !text.trim())} onClick={submit}>
-            {busy ? 'Reading your meal…' : 'Log meal'}
+            {busy ? 'Saving…' : 'Log meal'}
           </button>
         </>
       )}

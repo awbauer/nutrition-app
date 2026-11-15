@@ -108,7 +108,7 @@ export interface Intake {
   confidence: number | null;
   items: Item[];
   totals: Record<string, number>;
-  pending?: { questions?: Question[] };
+  pending?: { questions?: Question[]; error?: string };
 }
 export interface Day {
   date: string;

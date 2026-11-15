@@ -17,7 +17,7 @@ import {
   type Status,
 } from '../lib/intake';
 import { getFood } from '../lib/foods';
-import { answer, createFromMedia, media } from './log';
+import { answer, createFromMedia, media, retry } from './log';
 
 export const intake = new Hono<AppEnv>();
 
@@ -67,6 +67,7 @@ intake.post('/', async (c) => {
 });
 
 intake.post('/:id/answers', answer);
+intake.post('/:id/retry', retry);
 intake.get('/:id/media', media);
 
 intake.get('/:id', async (c) => {

@@ -57,6 +57,14 @@ export function Today(props: { today: string }) {
     }
   }
 
+  // Poll while the AI is working on a meal; stop once nothing is processing.
+  const processing = !!day?.meals.some((m) => m.status === 'preparation' && !m.pending?.error);
+  useEffect(() => {
+    if (!processing) return;
+    const t = setInterval(() => document.visibilityState === 'visible' && load(), 3000);
+    return () => clearInterval(t);
+  }, [processing, date]);
+
   const repeatable = day ? yesterday.filter((y) => !day.meals.some((m) => m.meal_type === y.meal_type)) : [];
 
   const onMealChange = () => load();
