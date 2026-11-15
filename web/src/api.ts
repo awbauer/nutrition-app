@@ -109,7 +109,7 @@ export interface MatchCandidate {
 
 export interface MatchInfo {
   query: string;
-  via: 'alias' | 'custom' | 'cache' | 'usda' | 'off' | 'estimate';
+  via: 'alias' | 'custom' | 'cache' | 'barcode' | 'label' | 'usda' | 'off' | 'estimate';
   estimate_kcal_100g: number | null;
   candidates: MatchCandidate[];
   chosen: string | null;

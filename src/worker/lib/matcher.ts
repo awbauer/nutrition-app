@@ -1,7 +1,8 @@
 /**
  * Food matching cascade (spec §4):
  * 1. the user's own corrections (food_alias) and exact custom foods / recipes
- * 2. Open Food Facts by barcode
+ * 2. barcode: Open Food Facts, then USDA Branded by GTIN
+ * 2b. nutrition printed on the package (read from a photo): saved as the user's own food
  * 3. local food cache, accepted only if it scores well
  * 4. USDA FoodData Central: one search across Foundation, SR Legacy, FNDDS and Branded,
  *    re-ranked by `scoring.ts` (word coverage, main word, product type, kcal plausibility)
@@ -11,7 +12,8 @@
  * and the user can switch to another.
  */
 import type { Env } from '../env';
-import { cacheFood, exactCustom, findCachedBySource, getFood, normName, searchLocal, usdaClient, type FoodRecord } from './foods';
+import type { LabelFacts } from './ai';
+import { cacheFood, createCustomFood, exactCustom, findCachedBySource, getFood, normName, searchLocal, usdaClient, type FoodRecord } from './foods';
 import { newId } from './ids';
 import { NUTRIENT_BY_CODE } from './nutrients';
 import { offByBarcode } from './off';
@@ -22,10 +24,33 @@ export interface MatchRequest {
   name: string;
   search_terms?: string[];
   barcode?: string | null;
+  brand?: string | null;
+  label?: LabelFacts | null;
   estimate_per_100g?: { kcal?: number; protein?: number; fat?: number; carbs?: number };
 }
 
-export type Via = 'alias' | 'custom' | 'cache' | 'usda' | 'off' | 'estimate';
+export type Via = 'alias' | 'custom' | 'cache' | 'barcode' | 'label' | 'usda' | 'off' | 'estimate';
+
+/** Grams in one labelled serving, when the serving is given in a unit we can convert. */
+export function labelServingGrams(l: LabelFacts): number | null {
+  const u = l.serving_unit.toLowerCase().replace(/\.$/, '');
+  if (u === 'g' || u === 'ml' || u === 'gram' || u === 'grams') return l.serving_amount;
+  if (u === 'fl oz' || u === 'floz' || u === 'fluid ounce' || u === 'fluid ounces') return l.serving_amount * 29.5735;
+  if (u === 'oz') return l.serving_amount * 28.3495;
+  return null;
+}
+
+/** Per-100 g values from a package label (transcribed, so far better than an estimate). */
+export function labelPer100(l: LabelFacts): Record<string, number> | null {
+  const g = labelServingGrams(l);
+  if (!g) return null;
+  const f = 100 / g;
+  const out: Record<string, number> = { ENERC_KCAL: l.kcal * f };
+  if (l.protein != null) out.PROCNT = l.protein * f;
+  if (l.fat != null) out.FAT = l.fat * f;
+  if (l.carbs != null) out.CHOCDF = l.carbs * f;
+  return out;
+}
 
 /** One option the matcher considered, as stored on the item and shown in the UI. */
 export interface MatchCandidate {
@@ -56,6 +81,8 @@ export interface MatchResult {
   match: MatchInfo;
   /** How sure we are the food is right (independent of the amount). */
   matchConfidence: number;
+  /** Values come from the actual product (barcode or printed label), not a generic food. */
+  fromPackage?: boolean;
 }
 
 export const ESTIMATE_CONFIDENCE_CAP = 0.4;
@@ -100,8 +127,12 @@ export async function rankedUsda(env: Env, query: string, estimateKcal: number |
 
 export async function matchFood(env: Env, userId: string, req: MatchRequest): Promise<MatchResult> {
   const db = env.DB;
-  const query = req.search_terms?.[0] || req.name;
-  const est = req.estimate_per_100g?.kcal ?? null;
+  const base = req.search_terms?.[0] || req.name;
+  // Brand-aware search: "fairlife" + "chocolate protein shake" finds the branded product.
+  const query = req.brand && !normName(base).includes(normName(req.brand)) ? `${req.brand} ${base}` : base;
+  const fromLabel = req.label ? labelPer100(req.label) : null;
+  // A printed label beats the model's guess as the plausibility reference.
+  const est = fromLabel?.ENERC_KCAL ?? req.estimate_per_100g?.kcal ?? null;
   const info = (via: Via, candidates: MatchCandidate[], chosen: string | null): MatchInfo => ({
     query,
     via,
@@ -122,19 +153,44 @@ export async function matchFood(env: Env, userId: string, req: MatchRequest): Pr
   const custom = await exactCustom(db, userId, req.name);
   if (custom) return { food: custom, via: 'custom', match: info('custom', [localCandidate(custom, 9, ['your food'])], custom.id), matchConfidence: 1 };
 
-  // 2. Barcode.
+  // 2. Barcode: Open Food Facts, then USDA Branded by GTIN.
   if (req.barcode) {
     const cached = await findCachedBySource(db, 'off', req.barcode);
-    if (cached) return { food: cached, via: 'cache', match: info('cache', [localCandidate(cached, 9, ['barcode'])], cached.id), matchConfidence: 0.95 };
+    if (cached) return { food: cached, via: 'barcode', match: info('barcode', [localCandidate(cached, 9, ['barcode'])], cached.id), matchConfidence: 0.95, fromPackage: true };
     try {
       const off = await offByBarcode(req.barcode);
-      if (off) {
+      if (off && off.nutrients.some((n) => n.code === 'ENERC_KCAL')) {
         const food = await cacheFood(db, off);
-        return { food, via: 'off', match: info('off', [localCandidate(food, 9, ['barcode'])], food.id), matchConfidence: 0.95 };
+        return { food, via: 'barcode', match: info('barcode', [localCandidate(food, 9, ['barcode, Open Food Facts'])], food.id), matchConfidence: 0.95, fromPackage: true };
       }
     } catch (e) {
       console.warn('OFF lookup failed', e);
     }
+    if (env.USDA_API_KEY) {
+      try {
+        const want = req.barcode.replace(/^0+/, '');
+        const hit = (await usdaClient(env).searchAll(req.barcode, 10)).find((h) => (h.gtin ?? '').replace(/^0+/, '') === want);
+        if (hit) {
+          const food = await cacheFood(db, hit);
+          return { food, via: 'barcode', match: info('barcode', [usdaCandidate(hit, 9, ['barcode, USDA Branded'])], hit.sourceId), matchConfidence: 0.95, fromPackage: true };
+        }
+      } catch (e) {
+        console.warn('USDA barcode search failed', e);
+      }
+    }
+  }
+
+  // 2b. Nutrition printed on the package: that's this exact product, so use it and remember it.
+  if (fromLabel && req.label) {
+    const grams = labelServingGrams(req.label)!;
+    const food = await createCustomFood(db, userId, {
+      name: req.name,
+      brand: req.brand ?? null,
+      serving_grams: grams,
+      serving_label: `1 serving (${req.label.serving_amount} ${req.label.serving_unit})`,
+      per_100g: fromLabel,
+    });
+    return { food, via: 'label', match: info('label', [localCandidate(food, 9, ['from the package label'])], food.id), matchConfidence: 0.95, fromPackage: true };
   }
 
   // 3 + 4. Rank local cache and USDA together so a cached food only wins on merit.

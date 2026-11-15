@@ -10,6 +10,8 @@ export interface NormalisedFood {
   name: string;
   brand: string | null;
   dataType: string;
+  /** Branded foods: UPC/GTIN, used to match a scanned or photographed barcode. */
+  gtin?: string | null;
   defaultServingGrams: number | null;
   portions: Portion[];
   nutrients: NutrientValue[];
@@ -75,6 +77,7 @@ interface UsdaSearchFood {
   dataType: string;
   brandOwner?: string;
   brandName?: string;
+  gtinUpc?: string;
   servingSize?: number;
   servingSizeUnit?: string;
   householdServingFullText?: string;
@@ -146,6 +149,7 @@ export function normaliseSearchFood(f: UsdaSearchFood): NormalisedFood {
     name: f.description,
     brand: f.brandName || f.brandOwner || null,
     dataType: f.dataType,
+    gtin: f.gtinUpc ?? null,
     defaultServingGrams: branded.grams ?? measures[0]?.grams ?? null,
     portions: [...branded.portions, ...measures],
     nutrients,

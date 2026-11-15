@@ -40,14 +40,22 @@ const DETAIL: Record<string, unknown> = {
   },
 };
 
+const FAIRLIFE = [
+  food(170883, 'Milk shakes, thick chocolate', 'SR Legacy', 119, 3),
+  { ...food(2345678, 'NUTRITION PLAN CHOCOLATE PROTEIN SHAKE', 'Branded', 44, 8.8), brandName: 'FAIRLIFE', gtinUpc: '811620022118' },
+];
 let searches = 0;
 beforeEach(() => {
   searches = 0;
   mockFetch((url) => {
+    if (url.hostname === 'world.openfoodfacts.org') return json({ status: 0 });
     if (url.hostname !== 'api.nal.usda.gov') return undefined;
     if (url.pathname.endsWith('/foods/search')) {
       searches++;
-      return json({ foods: /salmon/i.test(url.searchParams.get('query') ?? '') ? SALMON : [] });
+      const q = url.searchParams.get('query') ?? '';
+      if (/salmon/i.test(q)) return json({ foods: SALMON });
+      if (/811620022118|fairlife/i.test(q)) return json({ foods: FAIRLIFE });
+      return json({ foods: [] });
     }
     const m = /\/food\/(\d+)$/.exec(url.pathname);
     return m && DETAIL[m[1]!] ? json(DETAIL[m[1]!]) : json({}, 404);
@@ -133,5 +141,48 @@ describe('matching with candidates', () => {
     expect(r.data.items[0].grams).toBe(60); // generic "medium" would be 150 g
     const d = await api(`/item/${r.data.items[0].id}`, {}, { DEV_USER_EMAIL: 'grams@example.test' });
     expect(d.data.conversion).toMatchObject({ method: 'ai-estimate', stored_grams: 60 });
+  });
+
+  it('reads printed label values and saves the product as your food', async () => {
+    const out = {
+      items: [{ name: 'fairlife nutrition plan chocolate protein shake', brand: 'fairlife', amount: 340, unit: 'ml', grams: 340, confidence: 0.95,
+        label: { serving_amount: 340, serving_unit: 'ml', kcal: 150, protein: 30, fat: 2.5, carbs: 4 }, estimate_per_100g: { kcal: 60 } }],
+      questions: [],
+    };
+    const E = { DEV_USER_EMAIL: 'label@example.test', AI: ai(out) };
+    const f = new FormData();
+    f.append('photo', new File([new Uint8Array([0xff, 0xd8])], 'p.jpg', { type: 'image/jpeg' }));
+    const r = await api('/intake', { method: 'POST', body: f }, E);
+    const item = r.data.items[0];
+    expect(item).toMatchObject({ estimation_method: 'label', food_source: 'custom', grams: 340 });
+    expect(item.nutrients.ENERC_KCAL).toBe(150);
+    expect(item.nutrients.PROCNT).toBe(30);
+    expect(item.confidence).toBeGreaterThanOrEqual(0.9);
+    const d = await api(`/item/${item.id}`, {}, E);
+    expect(d.data.match.via).toBe('label');
+
+    // Next time the same product is logged it matches your saved food without a search.
+    searches = 0;
+    const again = await api('/intake', { method: 'POST', body: form('x') }, { ...E, AI: ai({ ...out, items: [{ ...out.items[0], label: null }] }) });
+    expect(again.data.items[0].food_name).toBe('fairlife nutrition plan chocolate protein shake');
+    expect(again.data.items[0].nutrients.ENERC_KCAL).toBe(150);
+    expect(searches).toBe(0);
+  });
+
+  it('matches a barcode to USDA Branded when Open Food Facts has nothing', async () => {
+    const out = { items: [{ name: 'fairlife chocolate milk', brand: 'fairlife', amount: 340, unit: 'ml', confidence: 0.8, barcode: '8 11620 02211 8', estimate_per_100g: { kcal: 60 } }], questions: [] };
+    const E = { DEV_USER_EMAIL: 'barcode@example.test', AI: ai(out) };
+    const r = await api('/intake', { method: 'POST', body: form('x') }, E);
+    const item = r.data.items[0];
+    expect(item.food_name).toBe('NUTRITION PLAN CHOCOLATE PROTEIN SHAKE');
+    expect(item).toMatchObject({ estimation_method: 'label' });
+    expect(item.nutrients.PROCNT).toBeCloseTo(29.9, 0);
+    expect((await api(`/item/${item.id}`, {}, E)).data.match.via).toBe('barcode');
+  });
+
+  it('uses the brand to prefer the branded product over a generic food', async () => {
+    const out = { items: [{ name: 'chocolate protein shake', brand: 'fairlife', amount: 340, unit: 'ml', confidence: 0.8, search_terms: ['chocolate protein shake'], estimate_per_100g: { kcal: 50 } }], questions: [] };
+    const r = await api('/intake', { method: 'POST', body: form('x') }, { DEV_USER_EMAIL: 'brand@example.test', AI: ai(out) });
+    expect(r.data.items[0].food_name).toBe('NUTRITION PLAN CHOCOLATE PROTEIN SHAKE');
   });
 });

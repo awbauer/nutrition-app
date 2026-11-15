@@ -67,7 +67,8 @@ export async function buildPending(env: Env, user: User, out: ModelOutput, setti
       unit: it.unit,
       // The model's confidence covers the amount; the match score covers whether it's the right food.
       confidence: Math.min(it.confidence, m.matchConfidence, estimated ? ESTIMATE_CONFIDENCE_CAP : 1),
-      method,
+      // Values from the actual product (barcode or printed label) count as label-based.
+      method: m.fromPackage ? 'label' : method,
       estimated,
       match: m.match,
       ...(it.grams ? { grams_estimate: it.grams } : {}),

@@ -15,6 +15,8 @@ const VIA_LABEL: Record<string, string> = {
   alias: 'Your earlier choice for this food',
   custom: 'Matched your saved food',
   cache: 'Matched a food you logged before',
+  barcode: 'Matched the exact product by its barcode',
+  label: 'Read from the nutrition label on the package, and saved as your food',
   usda: 'Best match from a USDA search',
   off: 'Matched by barcode',
   estimate: 'No good database match, so this uses the AI estimate',
