@@ -10,7 +10,7 @@
     "test": "vitest run",
     "db:migrate:local": "wrangler d1 migrations apply nutrition --local",
     "db:migrate:remote": "wrangler d1 migrations apply nutrition --remote",
-    "deploy": "vite build && wrangler deploy",
+    "deploy": "vite build && wrangler d1 migrations apply nutrition --remote && wrangler deploy",
     "pretest": "vite build --logLevel warn"
   },
   "dependencies": {

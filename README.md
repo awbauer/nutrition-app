@@ -58,6 +58,17 @@ npm run typecheck
 
 The Cron Trigger runs every 15 minutes and sends reminders that are due in each user's time zone.
 
+## How updates reach the installed app
+
+`npm run deploy` builds, applies pending D1 migrations, then deploys the Worker. Each build is stamped with a version (git SHA + build time) that is written to `/version.json` and into `sw.js`.
+
+- A changed `sw.js` makes the browser install a new service worker, which precaches the new shell and deletes old caches.
+- The app checks `/version.json` when it returns to the foreground and every 15 minutes. If the version changed, it reloads at once, unless a sheet is open, a save is in flight or text is being typed. Then it shows an "A new version is ready" banner and reloads at the next quiet moment.
+- Meals waiting in the offline queue live in IndexedDB and survive the reload.
+- Migrations run before the new Worker goes live, and old clients may still call the API for a few minutes, so keep schema changes additive (add columns/tables; drop only in a later release).
+
+The running version is shown at the bottom of Settings.
+
 ## Data model
 
 Tables mirror FHIR resources so a FHIR export is a mapping, not a redesign. See [docs/fhir-mapping.md](docs/fhir-mapping.md).

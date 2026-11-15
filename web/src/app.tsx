@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { api, ApiError } from './api';
 import { isIOS, isStandalone } from './push';
+import { applyUpdate, onUpdateAvailable } from './update';
 import { SettingsView } from './components/SettingsView';
 import { Today } from './components/Today';
 import { Week } from './components/Week';
@@ -24,6 +25,8 @@ export function App() {
   const [tab, setTab] = useState<Tab>(() => (location.hash.slice(1) as Tab) || 'today');
   const [me, setMe] = useState<Me | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [update, setUpdate] = useState<string | null>(null);
+  useEffect(() => onUpdateAvailable(setUpdate), []);
 
   const loadMe = () =>
     api.get<Me>('/me').then(
@@ -77,6 +80,13 @@ export function App() {
               Reload
             </button>
           </div>
+        )}
+        {update && (
+          <button class="card mb-4 flex w-full items-center gap-3 p-3 text-left text-sm" onClick={() => applyUpdate()}>
+            <span class="text-xl">✨</span>
+            <span class="flex-1">A new version is ready.</span>
+            <span class="font-semibold text-brand-700 dark:text-brand-500">Reload</span>
+          </button>
         )}
         {installHint && (
           <div class="card mb-4 flex items-start gap-3 p-3 text-sm">

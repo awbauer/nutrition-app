@@ -1,10 +1,23 @@
-// Service worker: caches the app shell (network-first for HTML, cache-first for hashed assets).
-// API requests are never cached here.
-const CACHE = 'shell-v2';
-const SHELL = ['/', '/manifest.webmanifest', '/icon.svg', '/apple-touch-icon.png'];
+// Service worker. The build replaces __APP_VERSION__, so every deploy produces a new file
+// and the browser installs a new worker, which precaches the new shell and drops old caches.
+const VERSION = '__APP_VERSION__';
+const CACHE = `shell-${VERSION}`;
+const STATIC = ['/manifest.webmanifest', '/icon.svg', '/icon-192.png', '/apple-touch-icon.png'];
+
+/** Fetch the current index.html and every hashed asset it references. */
+async function precache() {
+  const cache = await caches.open(CACHE);
+  const res = await fetch('/', { cache: 'no-store' });
+  if (!res.ok) throw new Error(`shell fetch failed: ${res.status}`);
+  const html = await res.clone().text();
+  const assets = [...new Set(html.match(/\/assets\/[^"' )]+/g) || [])];
+  await cache.put('/', res);
+  await cache.addAll([...assets, ...STATIC]);
+}
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // Activate as soon as the new shell is cached; the page decides when to reload.
+  e.waitUntil(precache().then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {
@@ -16,29 +29,42 @@ self.addEventListener('activate', (e) => {
   );
 });
 
+self.addEventListener('message', (e) => {
+  if (e.data === 'version') e.source && e.source.postMessage({ type: 'version', version: VERSION });
+});
+
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
-  if (e.request.method !== 'GET' || url.origin !== location.origin || url.pathname.startsWith('/api/')) return;
+  if (e.request.method !== 'GET' || url.origin !== location.origin) return;
+  if (url.pathname.startsWith('/api/') || url.pathname === '/version.json' || url.pathname === '/sw.js') return;
+
   if (e.request.mode === 'navigate') {
+    // Network first so a fresh launch always gets the latest deploy; cached shell when offline.
     e.respondWith(
       fetch(e.request)
         .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put('/', copy));
+          if (res.ok) {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put('/', copy));
+          }
           return res;
         })
         .catch(() => caches.match('/')),
     );
     return;
   }
-  if (url.pathname.startsWith('/assets/')) {
+
+  if (url.pathname.startsWith('/assets/') || STATIC.includes(url.pathname)) {
+    // Hashed assets never change, so cache first.
     e.respondWith(
       caches.match(e.request).then(
         (hit) =>
           hit ||
           fetch(e.request).then((res) => {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(e.request, copy));
+            if (res.ok) {
+              const copy = res.clone();
+              caches.open(CACHE).then((c) => c.put(e.request, copy));
+            }
             return res;
           }),
       ),

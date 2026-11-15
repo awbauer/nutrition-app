@@ -3,6 +3,7 @@ import { api, type Settings } from '../api';
 import { Export } from './Export';
 import { Reminders } from './Reminders';
 import { Targets } from './Targets';
+import { APP_VERSION } from '../update';
 
 export function SettingsView(props: { today: string; onSaved: () => void }) {
   const [s, setS] = useState<Settings | null>(null);
@@ -66,6 +67,7 @@ export function SettingsView(props: { today: string; onSaved: () => void }) {
       <Targets weightUnit={s.weight_unit} />
       <Reminders />
       <Export today={props.today} />
+      <p class="pb-2 text-center text-xs text-slate-400">Version {APP_VERSION}</p>
     </div>
   );
 }
