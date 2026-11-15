@@ -12,7 +12,8 @@ export async function api(path: string, init: RequestInit & { json?: unknown } =
     headers.set('Content-Type', 'application/json');
     body = JSON.stringify(init.json);
   }
-  const res = await app.request(`http://app.test/api${path}`, { ...init, headers, body }, { ...testEnv, ...e });
+  // By default no queue is bound, so AI jobs run inline and the response reflects the finished meal.
+  const res = await app.request(`http://app.test/api${path}`, { ...init, headers, body }, { ...testEnv, JOBS: undefined, ...e });
   const text = await res.text();
   let data: any = null;
   try {

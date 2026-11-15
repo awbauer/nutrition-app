@@ -1,12 +1,10 @@
-/** AI logging routes: photo / voice / text intake, clarifying answers, media access. */
+/** AI logging routes: photo / voice / text intake (processed in the background), clarifying answers, media access. */
 import type { Context } from 'hono';
 import type { AppEnv } from '../env';
-import { parsePhoto, parseText, transcribe, type ModelOutput } from '../lib/ai';
-import { localParts } from '../lib/dates';
 import { HttpError, newId } from '../lib/ids';
-import { getIntake, MEAL_TYPES, type MealType, type Source } from '../lib/intake';
-import { applyAnswers, buildPending, saveDraft } from '../lib/pipeline';
-import { getSettings } from '../lib/settings';
+import { createIntake, getIntake, MEAL_TYPES, type MealType, type Source } from '../lib/intake';
+import { enqueue, type JobState } from '../lib/jobs';
+import { applyAnswers } from '../lib/pipeline';
 
 const MAX_PHOTO = 8 * 1024 * 1024;
 const MAX_AUDIO = 10 * 1024 * 1024;
@@ -26,7 +24,10 @@ const EXT: Record<string, string> = {
   'audio/wav': 'wav',
 };
 
-/** POST /api/intake with multipart form: one of photo | audio | text, plus meal_type?, occurrence_at?, note?. */
+/**
+ * POST /api/intake with multipart form: one of photo | audio | text, plus meal_type?, occurrence_at?, note?.
+ * Saves the meal right away as `preparation` (202) and hands the AI work to a background job.
+ */
 export async function createFromMedia(c: Context<AppEnv>): Promise<Response> {
   const user = c.get('user');
   const form = await c.req.formData();
@@ -41,60 +42,76 @@ export async function createFromMedia(c: Context<AppEnv>): Promise<Response> {
   const occurrence_at = typeof occRaw === 'string' && occRaw ? occRaw : undefined;
   const noteRaw = form.get('note');
   const note = typeof noteRaw === 'string' && noteRaw.trim() ? noteRaw.trim().slice(0, 500) : null;
-
-  const settings = await getSettings(c.env.DB, user.id);
-  const at = occurrence_at ? new Date(occurrence_at) : new Date();
-  if (Number.isNaN(at.getTime())) throw new HttpError(400, 'occurrence_at is not a valid date');
-  const lp = localParts(at, user.timezone);
-  const localTime = `${lp.date} ${lp.time} (${user.timezone})`;
+  if (text.length > MAX_TEXT) throw new HttpError(413, 'text is too long');
 
   let source: Source;
-  let out: ModelOutput;
-  let model: string;
-  let mediaKey: string | null = null;
-  let rawText: string | null = text || null;
-
-  try {
-    if (photo instanceof File) {
-      if (photo.size > MAX_PHOTO) throw new HttpError(413, 'photo is too large (max 8 MB)');
-      const mime = photo.type || 'image/jpeg';
-      if (!mime.startsWith('image/')) throw new HttpError(415, 'photo must be an image');
-      const bytes = new Uint8Array(await photo.arrayBuffer());
-      mediaKey = `media/${user.id}/${newId()}.${EXT[mime] ?? 'bin'}`;
-      await c.env.MEDIA.put(mediaKey, bytes, { httpMetadata: { contentType: mime } });
-      source = 'photo';
-      model = settings.model_vision;
-      out = await parsePhoto(c.env, model, bytes, mime, localTime, text || undefined);
-    } else if (audio instanceof File) {
-      if (audio.size > MAX_AUDIO) throw new HttpError(413, 'audio is too large (max 10 MB)');
-      const mime = (audio.type || 'audio/mp4').split(';')[0]!;
-      const bytes = new Uint8Array(await audio.arrayBuffer());
-      mediaKey = `media/${user.id}/${newId()}.${EXT[mime] ?? 'bin'}`;
-      await c.env.MEDIA.put(mediaKey, bytes, { httpMetadata: { contentType: mime } });
-      source = 'voice';
-      rawText = await transcribe(c.env, settings.model_speech, bytes);
-      if (!rawText) throw new HttpError(422, "couldn't hear any speech in that clip");
-      model = settings.model_parser;
-      out = await parseText(c.env, model, rawText, localTime);
-    } else if (text) {
-      if (text.length > MAX_TEXT) throw new HttpError(413, 'text is too long');
-      source = 'text';
-      model = settings.model_parser;
-      out = await parseText(c.env, model, text, localTime);
-    } else {
-      throw new HttpError(400, 'send a photo, audio or text');
-    }
-    if (!out.items.length) throw new HttpError(422, "couldn't find any food in that");
-
-    const pending = await buildPending(c.env, user, out, settings, source === 'photo' ? 'photo-estimate' : 'described');
-    const id = await saveDraft(c.env, user, { source, meal_type, occurrence_at, note, raw_input_text: rawText, media_r2_key: mediaKey, model_id: model }, out, pending);
-    return c.json(await getIntake(c.env.DB, user.id, id), 201);
-  } catch (e) {
-    if (mediaKey) await c.env.MEDIA.delete(mediaKey).catch(() => {});
-    if (e instanceof HttpError) throw e;
-    console.error('AI intake failed', e);
-    throw new HttpError(502, `couldn't read that meal: ${(e as Error).message}`);
+  let file: File | null = null;
+  if (photo instanceof File) {
+    if (photo.size > MAX_PHOTO) throw new HttpError(413, 'photo is too large (max 8 MB)');
+    if (!(photo.type || 'image/jpeg').startsWith('image/')) throw new HttpError(415, 'photo must be an image');
+    source = 'photo';
+    file = photo;
+  } else if (audio instanceof File) {
+    if (audio.size > MAX_AUDIO) throw new HttpError(413, 'audio is too large (max 10 MB)');
+    source = 'voice';
+    file = audio;
+  } else if (text) {
+    source = 'text';
+  } else {
+    throw new HttpError(400, 'send a photo, audio or text');
   }
+
+  let mediaKey: string | null = null;
+  if (file) {
+    const mime = (file.type || (source === 'photo' ? 'image/jpeg' : 'audio/mp4')).split(';')[0]!;
+    mediaKey = `media/${user.id}/${newId()}.${EXT[mime] ?? 'bin'}`;
+    await c.env.MEDIA.put(mediaKey, await file.arrayBuffer(), { httpMetadata: { contentType: mime } });
+  }
+
+  const state: JobState = { job: { meal_explicit: !!meal_type, hint: source === 'photo' && text ? text : null } };
+  const id = await createIntake(
+    c.env,
+    user,
+    {
+      source,
+      status: 'preparation',
+      meal_type,
+      occurrence_at,
+      note,
+      raw_input_text: source === 'text' ? text : null,
+      media_r2_key: mediaKey,
+      pending_json: JSON.stringify(state),
+    },
+    [],
+  );
+  await enqueue(c.env, { intakeId: id, userId: user.id }, waitUntil(c));
+  return c.json(await getIntake(c.env.DB, user.id, id), 202);
+}
+
+/** The request's waitUntil, when running inside a real request context. */
+function waitUntil(c: Context<AppEnv>): ((p: Promise<unknown>) => void) | undefined {
+  try {
+    const ctx = c.executionCtx;
+    return (p) => ctx.waitUntil(p);
+  } catch {
+    return undefined;
+  }
+}
+
+/** POST /api/intake/:id/retry -> run the AI step again for a meal whose processing failed. */
+export async function retry(c: Context<AppEnv>): Promise<Response> {
+  const user = c.get('user');
+  const id = c.req.param('id')!;
+  const row = await c.env.DB.prepare('SELECT status, pending_json FROM nutrition_intake WHERE id = ? AND user_id = ?')
+    .bind(id, user.id)
+    .first<{ status: string; pending_json: string | null }>();
+  if (!row) throw new HttpError(404, 'intake not found');
+  if (row.status !== 'preparation') throw new HttpError(409, 'this meal is not waiting on the AI');
+  const state = (row.pending_json ? JSON.parse(row.pending_json) : { job: { meal_explicit: false, hint: null } }) as JobState;
+  const { error: _drop, ...rest } = state;
+  await c.env.DB.prepare('UPDATE nutrition_intake SET pending_json = ? WHERE id = ?').bind(JSON.stringify(rest), id).run();
+  await enqueue(c.env, { intakeId: id, userId: user.id }, waitUntil(c));
+  return c.json(await getIntake(c.env.DB, user.id, id), 202);
 }
 
 /** POST /api/intake/:id/answers  { answers: { q1: "1 tbsp oil" } }  — unanswered questions take the default. */

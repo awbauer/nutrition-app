@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { extractJson, validateOutput } from '../src/worker/lib/ai';
-import { api, json, mockFetch } from './helpers';
+import { api, json, mockFetch, testEnv } from './helpers';
 import { DETAILS } from './fixtures/usda';
 
 const oilSearch = {
@@ -140,7 +140,7 @@ describe('text logging', () => {
       { method: 'POST', body: form({ text: 'chicken breast with some sauce', occurrence_at: '2026-11-14T19:00:00Z' }) },
       { AI: ai.AI },
     );
-    expect(r.status).toBe(201);
+    expect(r.status).toBe(202);
     expect(ai.calls[0]!.opts).toEqual({ gateway: { id: 'nutrition' } });
     expect(r.data).toMatchObject({ source: 'text', status: 'in-progress', meal_type: 'dinner', prompt_version: 'parse-v1', pipeline_version: '2.0' });
     expect(r.data.model_id).toMatch(/llama/);
@@ -201,15 +201,24 @@ describe('text logging', () => {
     const out = { items: [{ name: 'chicken breast', amount: 100, unit: 'g', confidence: 0.9 }], questions: [] };
     const ai = fakeAI([{ response: 'I think it is chicken' }, { response: out }]);
     const r = await api('/intake', { method: 'POST', body: form({ text: 'chicken' }) }, { AI: ai.AI });
-    expect(r.status).toBe(201);
+    expect(r.status).toBe(202);
     expect(ai.calls).toHaveLength(2);
   });
 
-  it('fails cleanly after two bad outputs', async () => {
+  it('records a readable error on the meal after two bad outputs, and can retry', async () => {
     const ai = fakeAI([{ response: 'nope' }, { response: '{"items": "x"}' }]);
     const r = await api('/intake', { method: 'POST', body: form({ text: 'chicken' }) }, { AI: ai.AI });
-    expect(r.status).toBe(502);
+    expect(r.status).toBe(202);
     expect(ai.calls).toHaveLength(2);
+    expect(r.data.status).toBe('preparation');
+    expect(r.data.pending.error).toMatch(/couldn't read that meal/);
+
+    const out = { items: [{ name: 'chicken breast', amount: 100, unit: 'g', confidence: 0.9 }], questions: [] };
+    const again = await api(`/intake/${r.data.id}/retry`, { method: 'POST' }, { AI: fakeAI([{ response: out }]).AI });
+    expect(again.status).toBe(202);
+    expect(again.data.status).toBe('completed');
+    expect(again.data.pending).toBeUndefined();
+    expect((await api(`/intake/${r.data.id}/retry`, { method: 'POST' })).status).toBe(409);
   });
 
   it('matches barcodes through Open Food Facts', async () => {
@@ -225,7 +234,7 @@ describe('photo logging', () => {
     const ai = fakeAI([{ response: JSON.stringify(out) }]);
     const jpeg = new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3])], { type: 'image/jpeg' });
     const r = await api('/intake', { method: 'POST', body: form({ photo: new File([jpeg], 'meal.jpg', { type: 'image/jpeg' }) }) }, { AI: ai.AI });
-    expect(r.status).toBe(201);
+    expect(r.status).toBe(202);
     expect(r.data).toMatchObject({ source: 'photo', has_media: true, status: 'completed' });
     expect(r.data.items[0].estimation_method).toBe('photo-estimate');
     const msg = ai.calls[0]!.inputs.messages[0].content;
@@ -238,12 +247,14 @@ describe('photo logging', () => {
     expect(other.status).toBe(404);
   });
 
-  it('rejects non-image uploads and removes media when the model fails', async () => {
+  it('rejects non-image uploads and keeps the photo for a retry when the model fails', async () => {
     const bad = await api('/intake', { method: 'POST', body: form({ photo: new File(['hi'], 'a.txt', { type: 'text/plain' }) }) });
     expect(bad.status).toBe(415);
     const ai = fakeAI([new Error('gateway down')]);
     const r = await api('/intake', { method: 'POST', body: form({ photo: new File([new Uint8Array([1])], 'a.jpg', { type: 'image/jpeg' }) }) }, { AI: ai.AI });
-    expect(r.status).toBe(502);
+    expect(r.status).toBe(202);
+    expect(r.data.pending.error).toMatch(/gateway down/);
+    expect((await api(`/intake/${r.data.id}/media`)).status).toBe(200);
   });
 });
 
@@ -252,7 +263,7 @@ describe('voice logging', () => {
     const out = { items: [{ name: 'chicken breast', amount: 100, unit: 'g', confidence: 0.8 }], questions: [] };
     const ai = fakeAI([{ text: ' I had a hundred grams of chicken breast ' }, { response: out }]);
     const r = await api('/intake', { method: 'POST', body: form({ audio: new File([new Uint8Array([1, 2, 3])], 'clip.m4a', { type: 'audio/mp4' }) }) }, { AI: ai.AI });
-    expect(r.status).toBe(201);
+    expect(r.status).toBe(202);
     expect(r.data).toMatchObject({ source: 'voice', raw_input_text: 'I had a hundred grams of chicken breast', has_media: true });
     expect(ai.calls[0]!.model).toBe('@cf/openai/whisper-large-v3-turbo');
     expect(typeof ai.calls[0]!.inputs.audio).toBe('string');
@@ -265,12 +276,58 @@ describe('voice logging', () => {
       { method: 'POST', body: form({ audio: new File([new Uint8Array([1])], 'v.webm', { type: 'audio/webm;codecs=opus' }) }) },
       { AI: fakeAI([{ text: 'an apple' }, { response: out }]).AI },
     );
-    expect(ok.status).toBe(201);
+    expect(ok.status).toBe(202);
     const silent = await api(
       '/intake',
       { method: 'POST', body: form({ audio: new File([new Uint8Array([1])], 'v.m4a', { type: 'audio/mp4' }) }) },
       { AI: fakeAI([{ text: '   ' }]).AI },
     );
-    expect(silent.status).toBe(422);
+    expect(silent.status).toBe(202);
+    expect(silent.data.pending.error).toBe("couldn't hear any speech in that clip");
+  });
+});
+
+describe('background processing', () => {
+  it('returns the saved meal immediately and fills it in from the queue', async () => {
+    const sent: any[] = [];
+    const JOBS = { send: async (m: unknown) => void sent.push(m) } as unknown as Queue<any>;
+    const r = await api('/intake', { method: 'POST', body: form({ text: 'chicken breast', meal_type: 'lunch' }) }, { JOBS });
+    expect(r.status).toBe(202);
+    expect(r.data).toMatchObject({ status: 'preparation', meal_type: 'lunch', raw_input_text: 'chicken breast', items: [] });
+    expect(sent).toEqual([{ intakeId: r.data.id, userId: expect.any(String) }]);
+
+    // Drafts in preparation don't count toward totals.
+    const day = await api(`/day/${r.data.log_date}`);
+    expect(day.data.meals.find((m: any) => m.id === r.data.id).status).toBe('preparation');
+
+    const { consume } = await import('../src/worker/lib/jobs');
+    const out = { meal_type_guess: 'dinner', items: [{ name: 'chicken breast', amount: 120, unit: 'g', confidence: 0.9, search_terms: ['chicken breast roasted'] }], questions: [] };
+    const acks: string[] = [];
+    const msg = { body: sent[0], attempts: 1, ack: () => acks.push('ack'), retry: () => acks.push('retry') };
+    await consume({ messages: [msg] } as never, { ...testEnv, AI: fakeAI([{ response: out }]).AI } as never, 2);
+    expect(acks).toEqual(['ack']);
+    const done = await api(`/intake/${r.data.id}`);
+    expect(done.data.status).toBe('completed');
+    expect(done.data.meal_type).toBe('lunch'); // user's choice beats the model's guess
+    expect(done.data.items[0].grams).toBe(120);
+
+    // A second delivery of the same message is a no-op.
+    await consume({ messages: [{ ...msg }] } as never, { ...testEnv, AI: fakeAI([new Error('should not be called')]).AI } as never, 2);
+    expect(acks).toEqual(['ack', 'ack']);
+  });
+
+  it('retries transient failures and records the error on the last attempt', async () => {
+    const sent: any[] = [];
+    const JOBS = { send: async (m: unknown) => void sent.push(m) } as unknown as Queue<any>;
+    const r = await api('/intake', { method: 'POST', body: form({ text: 'toast' }) }, { JOBS });
+    const { consume } = await import('../src/worker/lib/jobs');
+    const env2 = { ...testEnv, AI: fakeAI([new Error('timeout')]).AI } as never;
+    const acks: string[] = [];
+    const mk = (attempts: number) => ({ body: sent[0], attempts, ack: () => acks.push(`ack${attempts}`), retry: () => acks.push(`retry${attempts}`) });
+    await consume({ messages: [mk(1)] } as never, env2, 2);
+    expect((await api(`/intake/${r.data.id}`)).data.pending.error).toBeUndefined();
+    await consume({ messages: [mk(3)] } as never, env2, 2);
+    expect(acks).toEqual(['retry1', 'ack3']);
+    expect((await api(`/intake/${r.data.id}`)).data.pending.error).toMatch(/timeout/);
   });
 });

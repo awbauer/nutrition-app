@@ -3,6 +3,8 @@ export interface Env {
   MEDIA: R2Bucket;
   AI: Ai;
   ASSETS: Fetcher;
+  /** Background AI jobs (optional: without it, jobs run in waitUntil). */
+  JOBS?: Queue<{ intakeId: string; userId: string }>;
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;
   AI_GATEWAY_ID: string;

@@ -6,7 +6,7 @@ import type { Env, User } from '../env';
 import { PIPELINE_VERSION, PROMPT_VERSION, type ModelOutput, type QuestionEffect } from './ai';
 import { getFood, type FoodRecord } from './foods';
 import { HttpError, nowIso } from './ids';
-import { createIntake, itemStatements, refreshConfidence, type EstimationMethod, type MealType, type ResolvedItem, type Source } from './intake';
+import { itemStatements, refreshConfidence, type EstimationMethod, type MealType, type ResolvedItem } from './intake';
 import { ESTIMATE_CONFIDENCE_CAP, matchFood } from './matcher';
 import type { Settings } from './settings';
 import { toGrams } from './units';
@@ -50,12 +50,13 @@ export const SKIP_PENALTY = 0.15;
 /** Resolve model items and question effects against food databases, then pick which questions to ask. */
 export async function buildPending(env: Env, user: User, out: ModelOutput, settings: Settings, method: EstimationMethod): Promise<Pending> {
   const foods = new Map<string, FoodRecord>();
-  const base: BaseItem[] = [];
-  for (const it of out.items) {
-    const m = await matchFood(env, user.id, it);
+  // Match every item (and every add-on in question options) in parallel; these are independent lookups.
+  const matches = await Promise.all(out.items.map((it) => matchFood(env, user.id, it)));
+  const base: BaseItem[] = out.items.map((it, i) => {
+    const m = matches[i]!;
     foods.set(m.food.id, m.food);
     const estimated = m.via === 'estimate';
-    base.push({
+    return {
       name: it.name,
       food_id: m.food.id,
       via: m.via,
@@ -64,8 +65,20 @@ export async function buildPending(env: Env, user: User, out: ModelOutput, setti
       confidence: estimated ? Math.min(it.confidence, ESTIMATE_CONFIDENCE_CAP) : it.confidence,
       method,
       estimated,
-    });
-  }
+    };
+  });
+  const addOns = new Map<string, ReturnType<typeof matchFood>>();
+  for (const q of out.questions)
+    for (const e of Object.values(q.effects))
+      if (e.add_item) {
+        const key = (e.add_item.search_terms?.[0] ?? e.add_item.name).toLowerCase();
+        if (!addOns.has(key)) addOns.set(key, matchFood(env, user.id, e.add_item));
+      }
+  const addOnFood = async (a: NonNullable<QuestionEffect['add_item']>) => {
+    const m = await addOns.get((a.search_terms?.[0] ?? a.name).toLowerCase())!;
+    foods.set(m.food.id, m.food);
+    return m;
+  };
 
   const mealKcal = base.reduce((s, b) => s + itemKcal(foods.get(b.food_id)!, b.amount, b.unit), 0);
   const candidates: PendingQuestion[] = [];
@@ -77,8 +90,7 @@ export async function buildPending(env: Env, user: User, out: ModelOutput, setti
     for (const opt of q.options) {
       const e: QuestionEffect = q.effects[opt] ?? {};
       if (e.add_item) {
-        const m = await matchFood(env, user.id, e.add_item);
-        foods.set(m.food.id, m.food);
+        const m = await addOnFood(e.add_item);
         effects[opt] = {
           add_item: { name: e.add_item.name, amount: e.add_item.amount, unit: e.add_item.unit, food_id: m.food.id, estimated: m.via === 'estimate' },
         };
@@ -159,43 +171,44 @@ export async function materialise(db: D1Database, userId: string, p: Pending, an
   return [...out, ...extra];
 }
 
-export interface DraftInput {
-  source: Source;
-  meal_type?: MealType;
-  occurrence_at?: string;
-  note?: string | null;
-  raw_input_text?: string | null;
-  media_r2_key?: string | null;
-  model_id: string;
-}
-
 /**
- * Persist a draft. With no questions the intake is completed right away;
- * otherwise it is `in-progress` with defaults applied so totals are visible.
+ * Fill a `preparation` intake with matched items. With no questions it is completed;
+ * otherwise it becomes `in-progress` with defaults applied so totals are visible.
  */
-export async function saveDraft(env: Env, user: User, input: DraftInput, out: ModelOutput, pending: Pending): Promise<string> {
+export async function finishDraft(
+  env: Env,
+  user: User,
+  intakeId: string,
+  input: { model_id: string; raw_input_text: string | null; meal_type?: MealType },
+  pending: Pending,
+): Promise<void> {
   const asking = pending.questions.length > 0;
-  // With open questions, show the defaults applied (capped confidence) until the user answers.
   const items = await materialise(env.DB, user.id, pending, asking ? Object.fromEntries(pending.questions.map((q) => [q.id, q.default])) : {});
   if (asking) for (const it of items) it.confidence = Math.min(it.confidence, 0.79);
-  return createIntake(
-    env,
-    user,
-    {
-      source: input.source,
-      status: asking ? 'in-progress' : 'completed',
-      meal_type: input.meal_type ?? out.meal_type_guess ?? undefined,
-      occurrence_at: input.occurrence_at,
-      note: input.note,
-      raw_input_text: input.raw_input_text,
-      media_r2_key: input.media_r2_key,
-      model_id: input.model_id,
-      prompt_version: PROMPT_VERSION,
-      pipeline_version: PIPELINE_VERSION,
-      pending_json: asking ? JSON.stringify(pending) : null,
-    },
-    items,
+  const stmts: D1PreparedStatement[] = [
+    env.DB.prepare('DELETE FROM intake_nutrient WHERE consumed_item_id IN (SELECT id FROM consumed_item WHERE intake_id = ?)').bind(intakeId),
+    env.DB.prepare('DELETE FROM consumed_item WHERE intake_id = ?').bind(intakeId),
+  ];
+  items.forEach((it, i) => stmts.push(...itemStatements(env.DB, user.id, intakeId, it, i)));
+  stmts.push(
+    env.DB.prepare(
+      `UPDATE nutrition_intake SET status = ?, meal_type = COALESCE(?, meal_type), raw_input_text = ?, model_id = ?, prompt_version = ?,
+       pipeline_version = ?, pending_json = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+       WHERE id = ? AND user_id = ? AND status = 'preparation'`,
+    ).bind(
+      asking ? 'in-progress' : 'completed',
+      input.meal_type ?? null,
+      input.raw_input_text,
+      input.model_id,
+      PROMPT_VERSION,
+      PIPELINE_VERSION,
+      asking ? JSON.stringify(pending) : null,
+      intakeId,
+      user.id,
+    ),
+    refreshConfidence(env.DB, intakeId),
   );
+  await env.DB.batch(stmts);
 }
 
 /** Apply answers to an in-progress draft and complete it. */

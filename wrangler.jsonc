@@ -21,6 +21,11 @@
   ],
   "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "nutrition-media" }],
   "ai": { "binding": "AI", "remote": true },
+  // AI processing runs in the background so logging returns immediately.
+  "queues": {
+    "producers": [{ "binding": "JOBS", "queue": "nutrition-jobs" }],
+    "consumers": [{ "queue": "nutrition-jobs", "max_batch_size": 5, "max_batch_timeout": 1, "max_retries": 2 }]
+  },
   "triggers": { "crons": ["*/15 * * * *"] },
   "vars": {
     // AI Gateway id used for every Workers AI call.
