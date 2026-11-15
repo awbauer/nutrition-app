@@ -201,8 +201,14 @@ export function ItemSheet(props: { itemId: string; onChange: (m: Intake) => void
           portions={food?.portions}
           defaultServingGrams={food?.default_serving_grams}
           kcalPer100={per100('ENERC_KCAL')}
+          hint={false}
         />
-        {conversion && <p class="text-xs text-faint">Saved as {amountLabel(item.amount_value, item.amount_unit)} = {Math.round(item.grams)} g. {CONVERSION_LABEL[conversion.method]}.</p>}
+        {/* How a household amount became grams; nothing to explain when it's already grams. */}
+        {conversion && item.amount_unit !== 'g' && (
+          <p class="text-xs text-faint">
+            Saved as {amountLabel(item.amount_value, item.amount_unit)} = {Math.round(item.grams)} g. {CONVERSION_LABEL[conversion.method]}.
+          </p>
+        )}
         <button
           class="btn-primary self-start"
           disabled={busy || !(amt.amount > 0) || (amt.amount === item.amount_value && amt.unit === fromUcum(item.amount_unit))}

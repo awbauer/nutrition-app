@@ -1,4 +1,5 @@
 import { Minus, Plus } from 'lucide-preact';
+import { useEffect, useRef } from 'preact/hooks';
 import { RELATIVE_SIZES, toGrams, type Portion } from '../../../src/worker/lib/units';
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -21,7 +22,16 @@ export function AmountEditor(props: {
   portions?: Portion[];
   defaultServingGrams?: number | null;
   kcalPer100?: number | null;
+  /** Show the "typical size" note under the preview (Food details explains it separately). */
+  hint?: boolean;
 }) {
+  const row = useRef<HTMLDivElement>(null);
+  // Keep the selected size visible in the scrolling row (e.g. "Piece" sits far to the right).
+  useEffect(() => {
+    const chip = row.current?.querySelector<HTMLElement>('[aria-checked="true"]');
+    const r = row.current;
+    if (chip && r) r.scrollTo({ left: Math.max(0, chip.offsetLeft - r.clientWidth / 2 + chip.offsetWidth / 2), behavior: 'smooth' });
+  }, [props.unit]);
   const food = { portions: props.portions ?? [], default_serving_grams: props.defaultServingGrams ?? null };
   const grams = props.unit === 'g';
   const estimate = toGrams(props.amount || 0, props.unit, food);
@@ -38,7 +48,7 @@ export function AmountEditor(props: {
 
   return (
     <div class="flex flex-col gap-3">
-      <div class="-mx-5 flex gap-2 overflow-x-auto px-5 pb-1" role="radiogroup" aria-label="Size">
+      <div ref={row} class="-mx-5 flex gap-2 overflow-x-auto px-5 pb-1" role="radiogroup" aria-label="Size">
         <SizeChip on={grams} onClick={() => pick('g')} label="Grams" />
         {own.map((p) => (
           <SizeChip on={props.unit === p.unit} onClick={() => pick(p.unit)} label={cap(p.label.replace(/^1\s+/, ''))} sub={`${Math.round(p.grams / p.amount)} g`} />
@@ -77,14 +87,15 @@ export function AmountEditor(props: {
           </div>
         )}
         <p class="text-sm text-ink-2">
-          ≈ <span class="num text-ink">{Math.round(estimate.grams)}</span> g
+          {/* With grams the weight is already in the box; just show the energy. */}
+          {grams ? '=' : <>≈ <span class="num text-ink">{Math.round(estimate.grams)}</span> g</>}
           {props.kcalPer100 != null && (
             <>
-              {' · '}
+              {grams ? ' ' : ' · '}
               <span class="num text-ink">{Math.round((props.kcalPer100 * estimate.grams) / 100)}</span> kcal
             </>
           )}
-          {!grams && estimate.method === 'generic' && <span class="block text-xs text-faint">typical size; switch to grams for an exact amount</span>}
+          {props.hint !== false && !grams && estimate.method === 'generic' && <span class="block text-xs text-faint">typical size; switch to grams for an exact amount</span>}
         </p>
       </div>
     </div>
