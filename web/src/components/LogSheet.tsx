@@ -2,6 +2,7 @@ import { useRef, useState } from 'preact/hooks';
 import { api, type Intake, type MealType } from '../api';
 import { MEALS, MEAL_LABEL, kcal } from '../format';
 import { resizeImage } from '../image';
+import { submitMeal } from '../queue';
 import { AddFood, occurrenceFor } from './AddFood';
 import { Questions } from './Questions';
 import { Recorder } from './Recorder';
@@ -42,8 +43,9 @@ export function LogSheet(props: { date: string; defaultMeal: MealType; onDone: (
     setBusy(true);
     setErr(null);
     try {
-      const r = await api.post<Intake>('/intake', f);
-      setDraft(r);
+      const r = await submitMeal('/intake', f);
+      if (r) setDraft(r);
+      else props.onDone(); // queued offline
     } catch (e) {
       setErr((e as Error).message);
     } finally {
