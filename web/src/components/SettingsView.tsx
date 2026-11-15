@@ -1,3 +1,4 @@
+import { toast } from '../toast';
 import { useEffect, useState } from 'preact/hooks';
 import { api, type Settings } from '../api';
 import { Export } from './Export';
@@ -7,20 +8,18 @@ import { APP_VERSION } from '../update';
 
 export function SettingsView(props: { today: string; onSaved: () => void }) {
   const [s, setS] = useState<Settings | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    api.get<Settings>('/settings').then(setS, (e) => setMsg(e.message));
+    api.get<Settings>('/settings').then(setS, (e) => toast.error(e));
   }, []);
 
   async function save(patch: Partial<Settings>) {
     try {
       setS(await api.put<Settings>('/settings', patch));
-      setMsg('Saved');
+      toast.success('Saved', { id: 'settings' });
       props.onSaved();
-      setTimeout(() => setMsg(null), 1500);
     } catch (e) {
-      setMsg((e as Error).message);
+      toast.error(e);
     }
   }
 
@@ -63,7 +62,6 @@ export function SettingsView(props: { today: string; onSaved: () => void }) {
           </label>
         </div>
       </section>
-      {msg && <p class="text-center text-sm text-slate-500">{msg}</p>}
       <Targets weightUnit={s.weight_unit} />
       <Reminders />
       <Export today={props.today} />

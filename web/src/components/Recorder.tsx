@@ -1,3 +1,4 @@
+import { toast } from '../toast';
 import { useEffect, useRef, useState } from 'preact/hooks';
 
 const MAX_SECONDS = 60;
@@ -17,7 +18,6 @@ type State = 'idle' | 'recording' | 'done' | 'error';
 export function Recorder(props: { onClip: (clip: Blob | null) => void }) {
   const [state, setState] = useState<State>('idle');
   const [seconds, setSeconds] = useState(0);
-  const [err, setErr] = useState<string | null>(null);
   const [url, setUrl] = useState<string | null>(null);
   const rec = useRef<MediaRecorder | null>(null);
   const timer = useRef<number | undefined>(undefined);
@@ -33,17 +33,18 @@ export function Recorder(props: { onClip: (clip: Blob | null) => void }) {
   );
 
   async function start() {
-    setErr(null);
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       setState('error');
-      return setErr('Recording is not supported in this browser.');
+      toast.error('Recording is not supported in this browser.');
+      return;
     }
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch {
       setState('error');
-      return setErr('Microphone access was denied. Allow it in Settings → Safari (or the app) → Microphone.');
+      toast.error('Microphone access was denied. Allow it in Settings → Safari (or the app) → Microphone.', { sticky: true });
+      return;
     }
     const mime = pickMime();
     const r = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
@@ -92,7 +93,6 @@ export function Recorder(props: { onClip: (clip: Blob | null) => void }) {
             : 'Tap and say what you ate.'}
       </p>
       {url && state === 'done' && <audio src={url} controls class="w-full" />}
-      {err && <p class="text-center text-sm text-rose-600">{err}</p>}
     </div>
   );
 }

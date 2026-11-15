@@ -6,7 +6,9 @@ import { LogSheet } from './LogSheet';
 import { MealCard } from './MealCard';
 import { Sheet } from './Sheet';
 import { Summary } from './Summary';
-import { discard, flush, onQueueChange, pending, type QueuedMeal } from '../queue';
+import { onIntakeSettled, watch } from '../analysis';
+import { onQueueChange } from '../queue';
+import { toast } from '../toast';
 
 function guessMeal(): MealType {
   const h = new Date().getHours() + new Date().getMinutes() / 60;
@@ -19,26 +21,23 @@ function guessMeal(): MealType {
 export function Today(props: { today: string }) {
   const [date, setDate] = useState(props.today);
   const [day, setDay] = useState<Day | null>(null);
-  const [err, setErr] = useState<string | null>(null);
   const [adding, setAdding] = useState<{ intake?: Intake } | null>(null);
   const [yesterday, setYesterday] = useState<Intake[]>([]);
-  const [queued, setQueued] = useState<QueuedMeal[]>([]);
-
   useEffect(() => {
-    const refresh = () => {
-      pending().then(setQueued);
-      load();
+    const offQueue = onQueueChange(() => load());
+    const offSettled = onIntakeSettled(() => load());
+    return () => {
+      offQueue();
+      offSettled();
     };
-    pending().then(setQueued);
-    return onQueueChange(refresh);
   }, []);
+
 
   const load = async (d = date) => {
     try {
       setDay(await api.get<Day>(`/day/${d}`));
-      setErr(null);
     } catch (e) {
-      setErr((e as Error).message);
+      toast.error(e, { id: 'day' });
     }
   };
   useEffect(() => {
@@ -53,17 +52,13 @@ export function Today(props: { today: string }) {
       await api.post(`/intake/${m.id}/copy`, { meal_type: m.meal_type, ...(at ? { occurrence_at: at } : {}) });
       load();
     } catch (e) {
-      setErr((e as Error).message);
+      toast.error(e, { id: 'day' });
     }
   }
 
-  // Poll while the AI is working on a meal; stop once nothing is processing.
-  const processing = !!day?.meals.some((m) => m.status === 'preparation' && !m.pending?.error);
   useEffect(() => {
-    if (!processing) return;
-    const t = setInterval(() => document.visibilityState === 'visible' && load(), 3000);
-    return () => clearInterval(t);
-  }, [processing, date]);
+    day?.meals.forEach(watch);
+  }, [day]);
 
   const repeatable = day ? yesterday.filter((y) => !day.meals.some((m) => m.meal_type === y.meal_type)) : [];
 
@@ -88,32 +83,9 @@ export function Today(props: { today: string }) {
         </button>
       </nav>
 
-      {err && <p class="card p-4 text-sm text-rose-600">{err}</p>}
       {day ? (
         <>
           <Summary totals={day.totals} targets={day.targets} remaining={day.remaining} />
-          {queued.length > 0 && (
-            <div class="card flex flex-col gap-2 p-3 text-sm">
-              <div class="flex items-center justify-between">
-                <span>
-                  {queued.filter((q) => !q.error).length > 0 && `${queued.filter((q) => !q.error).length} meal(s) waiting to sync`}
-                </span>
-                <button class="text-brand-700 dark:text-brand-500" onClick={() => flush()}>
-                  Retry now
-                </button>
-              </div>
-              {queued
-                .filter((q) => q.error)
-                .map((q) => (
-                  <div class="flex items-center justify-between gap-2 text-rose-600">
-                    <span class="truncate">Couldn't save a meal from {new Date(q.created_at).toLocaleString()}: {q.error}</span>
-                    <button class="shrink-0 text-slate-500" onClick={() => discard(q.id!)}>
-                      Discard
-                    </button>
-                  </div>
-                ))}
-            </div>
-          )}
           {repeatable.length > 0 && (
             <div class="flex gap-2 overflow-x-auto pb-1">
               {repeatable.map((m) => (
@@ -129,7 +101,7 @@ export function Today(props: { today: string }) {
           ))}
         </>
       ) : (
-        !err && <div class="card h-40 animate-pulse" />
+        <div class="card h-40 animate-pulse" />
       )}
 
       <button

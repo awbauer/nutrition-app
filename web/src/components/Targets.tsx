@@ -1,3 +1,4 @@
+import { toast } from '../toast';
 import { useEffect, useState } from 'preact/hooks';
 import { api } from '../api';
 
@@ -35,7 +36,6 @@ export function Targets(props: { weightUnit: 'kg' | 'lb' }) {
   const [edit, setEdit] = useState<Record<string, string>>({});
   const [p, setP] = useState<Profile>({ height_cm: 175, weight_kg: 75, age: 35, sex: 'male', activity: 'light', goal_rate_kg_per_week: -0.25 });
   const [suggestion, setSuggestion] = useState<{ bmr: number; tdee: number; energy: number; protein: number; floored: boolean } | null>(null);
-  const [msg, setMsg] = useState<string | null>(null);
   const lb = props.weightUnit === 'lb';
 
   const load = () =>
@@ -59,10 +59,10 @@ export function Targets(props: { weightUnit: 'kg' | 'lb' }) {
     if (!Object.keys(body).length) return;
     try {
       await api.put('/goals', body);
-      setMsg('Targets saved');
+      toast.success('Targets saved');
       load();
     } catch (e) {
-      setMsg((e as Error).message);
+      toast.error(e);
     }
   }
 
@@ -71,11 +71,11 @@ export function Targets(props: { weightUnit: 'kg' | 'lb' }) {
       const s = await api.post<typeof suggestion>('/goals/suggest', { profile: p, apply });
       setSuggestion(s);
       if (apply) {
-        setMsg('Targets updated from your profile');
+        toast.success('Targets updated from your profile');
         load();
       }
     } catch (e) {
-      setMsg((e as Error).message);
+      toast.error(e);
     }
   }
 
@@ -175,7 +175,6 @@ export function Targets(props: { weightUnit: 'kg' | 'lb' }) {
           </div>
         )}
       </section>
-      {msg && <p class="text-center text-sm text-slate-500">{msg}</p>}
     </div>
   );
 }

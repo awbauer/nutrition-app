@@ -1,3 +1,4 @@
+import { toast } from '../toast';
 import { useEffect, useState } from 'preact/hooks';
 import { api } from '../api';
 import { addDays, kcal } from '../format';
@@ -15,11 +16,10 @@ interface Summary {
 export function Week(props: { today: string }) {
   const [end, setEnd] = useState(props.today);
   const [s, setS] = useState<Summary | null>(null);
-  const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
     setS(null);
-    api.get<Summary>(`/summary?end=${end}`).then(setS, (e) => setErr(e.message));
+    api.get<Summary>(`/summary?end=${end}`).then(setS, (e) => toast.error(e));
   }, [end]);
 
   const range = s ? `${fmt(s.start)} – ${fmt(s.end)}` : '';
@@ -34,7 +34,6 @@ export function Week(props: { today: string }) {
           ›
         </button>
       </nav>
-      {err && <p class="card p-4 text-sm text-rose-600">{err}</p>}
       {!s ? (
         <div class="card h-64 animate-pulse" />
       ) : (
