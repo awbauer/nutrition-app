@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import { api, type Settings } from '../api';
+import { Reminders } from './Reminders';
 import { Targets } from './Targets';
 
 export function SettingsView(props: { onSaved: () => void }) {
@@ -62,6 +63,7 @@ export function SettingsView(props: { onSaved: () => void }) {
       </section>
       {msg && <p class="text-center text-sm text-slate-500">{msg}</p>}
       <Targets weightUnit={s.weight_unit} />
+      <Reminders />
     </div>
   );
 }

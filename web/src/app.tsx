@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import { api, ApiError } from './api';
+import { isIOS, isStandalone } from './push';
 import { SettingsView } from './components/SettingsView';
 import { Today } from './components/Today';
 import { Week } from './components/Week';
@@ -50,6 +51,20 @@ export function App() {
     return () => removeEventListener('hashchange', onHash);
   }, []);
 
+  const [installHint, setInstallHint] = useState(() => {
+    try {
+      return isIOS() && !isStandalone() && localStorage.getItem('install-hint-dismissed') !== '1';
+    } catch {
+      return false;
+    }
+  });
+  const dismissHint = () => {
+    setInstallHint(false);
+    try {
+      localStorage.setItem('install-hint-dismissed', '1');
+    } catch {}
+  };
+
   const today = me ? logToday(me.timezone, me.settings.day_cutoff) : null;
 
   return (
@@ -60,6 +75,17 @@ export function App() {
             <p class="text-sm">{err}</p>
             <button class="btn-primary mt-4" onClick={() => location.reload()}>
               Reload
+            </button>
+          </div>
+        )}
+        {installHint && (
+          <div class="card mb-4 flex items-start gap-3 p-3 text-sm">
+            <span class="text-xl">📲</span>
+            <p class="flex-1">
+              Add Meals to your Home Screen for full-screen use and reminders: tap <b>Share</b>, then <b>Add to Home Screen</b>.
+            </p>
+            <button class="text-slate-400" onClick={dismissHint} aria-label="Dismiss">
+              ✕
             </button>
           </div>
         )}

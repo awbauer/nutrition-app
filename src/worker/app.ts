@@ -7,6 +7,7 @@ import { foods } from './routes/foods';
 import { intake } from './routes/intake';
 import { items } from './routes/items';
 import { progress } from './routes/progress';
+import { push } from './routes/push';
 import { settings } from './routes/settings';
 
 export const app = new Hono<AppEnv>();
@@ -23,6 +24,7 @@ api.use('*', requireUser);
 api.route('/', settings);
 api.route('/', day);
 api.route('/', progress);
+api.route('/', push);
 api.route('/foods', foods);
 api.route('/intake', intake);
 api.route('/item', items);
