@@ -4,7 +4,15 @@
   "main": "src/worker/index.ts",
   "compatibility_date": "2026-11-01",
   "compatibility_flags": ["nodejs_compat"],
-  "observability": { "enabled": true },
+  "upload_source_maps": true,
+  // Logs, traces (every request: personal-scale traffic) and Issues (grouped errors).
+  // Keep these here: a deploy without them turns them off again.
+  "observability": {
+    "enabled": true,
+    "logs": { "enabled": true, "head_sampling_rate": 1 },
+    "traces": { "enabled": true, "head_sampling_rate": 1 },
+    "issues": { "enabled": true }
+  },
   // Served at nutrition-app.<subdomain>.workers.dev behind Cloudflare Access (worker-destination app).
   "workers_dev": true,
   "preview_urls": false,
