@@ -248,6 +248,21 @@ describe('text logging', () => {
     expect((await api(`/intake/${r.data.id}/retry`, { method: 'POST' })).status).toBe(409);
   });
 
+  it('falls back to a second model when the configured one is out of capacity', async () => {
+    const out = { items: [{ name: 'chicken breast', amount: 100, unit: 'g', confidence: 0.9 }], questions: [] };
+    const ai = fakeAI([new Error('3040: Capacity temporarily exceeded, please try again.'), { response: out }]);
+    const r = await api('/intake', { method: 'POST', body: form({ text: 'chicken' }) }, { AI: ai.AI });
+    expect(r.data.status).toBe('completed');
+    expect(ai.calls.map((c) => c.model)).toEqual(['@cf/meta/llama-3.3-70b-instruct-fp8-fast', '@cf/meta/llama-4-scout-17b-16e-instruct']);
+  });
+
+  it('records a plain "busy" error when every model is out of capacity', async () => {
+    const ai = fakeAI([new Error('3040: Capacity temporarily exceeded, please try again.')]);
+    const r = await api('/intake', { method: 'POST', body: form({ text: 'chicken' }) }, { AI: ai.AI });
+    expect(r.data.status).toBe('preparation');
+    expect(r.data.pending.error).toBe('the AI service is busy right now, try again in a minute');
+  });
+
   it('matches barcodes through Open Food Facts', async () => {
     const out = { items: [{ name: 'lime sparkling water', amount: 1, unit: 'can', confidence: 0.9, barcode: '012345678905' }], questions: [] };
     const r = await api('/intake', { method: 'POST', body: form({ text: 'a can of lime fizz 012345678905' }) }, { AI: fakeAI([{ response: out }]).AI });

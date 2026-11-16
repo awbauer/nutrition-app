@@ -4,7 +4,7 @@
  * models, matches foods and fills the meal in.
  */
 import type { Env, User } from '../env';
-import { parsePhoto, parseText, transcribe, type ModelOutput } from './ai';
+import { FALLBACK_MODELS, isCapacityError, parsePhoto, parseText, transcribe, withCapacityFallback, type ModelOutput } from './ai';
 import { localParts } from './dates';
 import { HttpError } from './ids';
 import type { MealType } from './intake';
@@ -75,18 +75,20 @@ export async function processIntake(env: Env, msg: JobMessage, final: boolean): 
       if (!obj) throw new HttpError(410, 'the uploaded media is missing');
       const bytes = new Uint8Array(await obj.arrayBuffer());
       if (row.source === 'photo') {
-        model = settings.model_vision;
-        out = await parsePhoto(env, model, bytes, obj.httpMetadata?.contentType ?? 'image/jpeg', localTime, state.job.hint ?? undefined);
+        const mime = obj.httpMetadata?.contentType ?? 'image/jpeg';
+        ({ out, model } = await withCapacityFallback(settings.model_vision, FALLBACK_MODELS.vision, (m) =>
+          parsePhoto(env, m, bytes, mime, localTime, state.job.hint ?? undefined),
+        ));
       } else {
         rawText = await transcribe(env, settings.model_speech, bytes);
         if (!rawText) throw new HttpError(422, "couldn't hear any speech in that clip");
-        model = settings.model_parser;
-        out = await parseText(env, model, rawText, localTime);
+        const text = rawText;
+        ({ out, model } = await withCapacityFallback(settings.model_parser, FALLBACK_MODELS.parser, (m) => parseText(env, m, text, localTime)));
       }
     } else {
       if (!rawText) throw new HttpError(400, 'nothing to read');
-      model = settings.model_parser;
-      out = await parseText(env, model, rawText, localTime);
+      const text = rawText;
+      ({ out, model } = await withCapacityFallback(settings.model_parser, FALLBACK_MODELS.parser, (m) => parseText(env, m, text, localTime)));
     }
     if (!out.items.length) throw new HttpError(422, "couldn't find any food in that");
 
@@ -104,7 +106,12 @@ export async function processIntake(env: Env, msg: JobMessage, final: boolean): 
     // Input problems won't fix themselves on retry; record them right away.
     const permanent = e instanceof HttpError && e.status < 500;
     if (final || permanent) {
-      const message = e instanceof HttpError ? e.message : `couldn't read that meal (${(e as Error).message})`;
+      const message =
+        e instanceof HttpError
+          ? e.message
+          : isCapacityError(e)
+            ? 'the AI service is busy right now, try again in a minute'
+            : `couldn't read that meal (${(e as Error).message})`;
       await env.DB.prepare(`UPDATE nutrition_intake SET pending_json = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ? AND status = 'preparation'`)
         .bind(JSON.stringify({ ...state, error: message, attempts: (state.attempts ?? 0) + 1 } satisfies JobState), msg.intakeId)
         .run();
@@ -124,7 +131,7 @@ export async function consume(batch: MessageBatch<JobMessage>, env: Env, maxRetr
       } catch (e) {
         console.error('intake job error', m.body.intakeId, e);
         if (m.attempts > maxRetries) m.ack();
-        else m.retry({ delaySeconds: 5 * m.attempts });
+        else m.retry({ delaySeconds: 15 * m.attempts });
       }
     }),
   );

@@ -318,6 +318,41 @@ async function withRetry(call: (attempt: number) => Promise<unknown>): Promise<M
   throw lastErr;
 }
 
+/** Workers AI 3040: the model has no free capacity right now. Transient, and specific to that model. */
+export function isCapacityError(e: unknown): boolean {
+  return e instanceof Error && /\b3040\b|capacity temporarily exceeded/i.test(e.message);
+}
+
+/** Second-choice models, used only when the configured one is out of capacity. */
+export const FALLBACK_MODELS = {
+  vision: '@cf/meta/llama-4-scout-17b-16e-instruct',
+  parser: '@cf/meta/llama-4-scout-17b-16e-instruct',
+} as const;
+
+/**
+ * Runs `call` with `model`; if Workers AI says that model is out of capacity, runs it once more
+ * with `fallback`. Returns the output and the model that produced it. If the fallback fails too,
+ * the original capacity error is thrown so the caller can retry later.
+ */
+export async function withCapacityFallback(
+  model: string,
+  fallback: string,
+  call: (model: string) => Promise<ModelOutput>,
+): Promise<{ out: ModelOutput; model: string }> {
+  try {
+    return { out: await call(model), model };
+  } catch (e) {
+    if (!isCapacityError(e) || fallback === model) throw e;
+    console.warn('model out of capacity, falling back', model, '->', fallback);
+    try {
+      return { out: await call(fallback), model: fallback };
+    } catch (e2) {
+      console.error('fallback model failed', fallback, e2);
+      throw e;
+    }
+  }
+}
+
 const RETRY_NOTE = 'Your previous answer was not valid JSON matching the schema. Reply with the JSON object only.';
 
 export function parseText(env: Env, model: string, text: string, localTime: string): Promise<ModelOutput> {
