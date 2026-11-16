@@ -4,6 +4,7 @@ import { api, ApiError } from './api';
 import { isIOS, isStandalone } from './push';
 import { applyUpdate, onUpdateAvailable } from './update';
 import { toast } from './toast';
+import { useRefreshOnReturn } from './refresh';
 import { Toaster } from './components/Toaster';
 import { SettingsView } from './components/SettingsView';
 import { Today } from './components/Today';
@@ -57,6 +58,8 @@ export function App() {
   useEffect(() => {
     loadMe();
   }, []);
+  // Settings (time zone, day cutoff, units) may have changed on another device.
+  useRefreshOnReturn(() => loadMe());
   useEffect(() => {
     history.replaceState(null, '', `#${tab}`);
   }, [tab]);
@@ -91,19 +94,66 @@ export function App() {
     setTimeout(() => dispatchEvent(new CustomEvent('open-log')), tab === 'today' ? 0 : 50);
   };
 
+  // Keyboard: N opens the log (desktop), unless you're typing somewhere.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement;
+      if (e.key.toLowerCase() !== 'n' || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (t.closest('input, textarea, select, [contenteditable], [role=dialog]')) return;
+      e.preventDefault();
+      openLog();
+    };
+    addEventListener('keydown', onKey);
+    return () => removeEventListener('keydown', onKey);
+  });
+
+  const tabs: [Tab, string, preact.ComponentChildren][] = [
+    ['today', 'Today', <NotebookPen size={22} strokeWidth={1.75} />],
+    ['week', 'Week', <ChartColumn size={22} strokeWidth={1.75} />],
+    ['weight', 'Weight', <Scale size={22} strokeWidth={1.75} />],
+    ['settings', 'Settings', <Settings2 size={22} strokeWidth={1.75} />],
+  ];
+
   return (
-    <div class="mx-auto flex min-h-dvh max-w-lg flex-col">
+    <div class="min-h-dvh">
       <Toaster />
-      <main class="safe-top flex-1 px-5 pb-32">
-        {today && tab === 'today' && <Today key={today} today={today} />}
-        {today && tab === 'week' && <Week key={today} today={today} />}
-        {me && tab === 'weight' && <Weight unit={me.settings.weight_unit} />}
-        {today && tab === 'settings' && <SettingsView today={today} onSaved={loadMe} />}
+
+      {/* Tablet and desktop: sidebar */}
+      <aside class="fixed inset-y-0 left-0 z-20 hidden w-56 flex-col gap-1 border-r border-line bg-paper px-4 py-6 md:flex" aria-label="Main">
+        <p class="display px-3 pb-5 text-2xl font-semibold">
+          Meals<span class="text-accent">.</span>
+        </p>
+        <button class="btn-primary mb-4 w-full justify-start px-4 py-3" onClick={openLog}>
+          <Plus size={20} strokeWidth={2.25} /> Log food
+          <kbd class="ml-auto rounded-md bg-white/20 px-1.5 text-xs font-medium">N</kbd>
+        </button>
+        {tabs.map(([t, label, icon]) => (
+          <button
+            class={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-[0.95rem] font-medium transition ${tab === t ? 'bg-card text-ink shadow-sm ring-1 ring-line' : 'text-ink-2 hover:bg-sunken'}`}
+            onClick={() => setTab(t)}
+            aria-current={tab === t ? 'page' : undefined}
+          >
+            {icon}
+            {label}
+          </button>
+        ))}
+      </aside>
+
+      {/* Content is centred in the space beside the sidebar. */}
+      <main class="safe-top px-5 pb-32 md:pt-8 md:pr-10 md:pb-16 md:pl-[calc(14rem+2.5rem)]">
+        <div class={`mx-auto ${tab === 'settings' ? 'max-w-lg md:max-w-3xl lg:max-w-5xl' : 'max-w-lg md:max-w-3xl lg:max-w-6xl'}`}>
+          {today && tab === 'today' && <Today key={today} today={today} />}
+          {today && tab === 'week' && <Week key={today} today={today} />}
+          {me && tab === 'weight' && <Weight unit={me.settings.weight_unit} />}
+          {today && tab === 'settings' && <SettingsView today={today} onSaved={loadMe} />}
+        </div>
       </main>
-      <nav class="safe-bottom fixed inset-x-0 bottom-0 z-20 border-t border-line bg-paper/90 backdrop-blur-md" aria-label="Main">
+
+      {/* Phone: bottom bar with the raised log button */}
+      <nav class="safe-bottom fixed inset-x-0 bottom-0 z-20 border-t border-line bg-paper/90 backdrop-blur-md md:hidden" aria-label="Main">
         <div class="mx-auto grid max-w-lg grid-cols-5 items-end px-2">
-          <NavItem tab="today" current={tab} onSelect={setTab} label="Today" icon={<NotebookPen size={22} strokeWidth={1.75} />} />
-          <NavItem tab="week" current={tab} onSelect={setTab} label="Week" icon={<ChartColumn size={22} strokeWidth={1.75} />} />
+          <NavItem tab="today" current={tab} onSelect={setTab} label="Today" icon={tabs[0][2]} />
+          <NavItem tab="week" current={tab} onSelect={setTab} label="Week" icon={tabs[1][2]} />
           <div class="flex justify-center">
             <button
               class="flex h-16 w-16 -translate-y-4 items-center justify-center rounded-full bg-accent text-white shadow-lg shadow-accent/30 ring-[6px] ring-paper transition active:scale-95"
@@ -113,8 +163,8 @@ export function App() {
               <Plus size={30} strokeWidth={2.25} />
             </button>
           </div>
-          <NavItem tab="weight" current={tab} onSelect={setTab} label="Weight" icon={<Scale size={22} strokeWidth={1.75} />} />
-          <NavItem tab="settings" current={tab} onSelect={setTab} label="Settings" icon={<Settings2 size={22} strokeWidth={1.75} />} />
+          <NavItem tab="weight" current={tab} onSelect={setTab} label="Weight" icon={tabs[2][2]} />
+          <NavItem tab="settings" current={tab} onSelect={setTab} label="Settings" icon={tabs[3][2]} />
         </div>
       </nav>
     </div>

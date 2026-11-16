@@ -206,7 +206,7 @@ function QuickAdd(props: { mealType: MealType; onPick: (q: QuickPick) => void })
       <ul class="card divide-y divide-line">
         {list.map((q) => (
           <li>
-            <button class="flex w-full items-center gap-3 px-4 py-2.5 text-left active:bg-sunken" onClick={() => props.onPick(q)}>
+            <button class="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-sunken/70 active:bg-sunken" onClick={() => props.onPick(q)}>
               <div class="min-w-0 flex-1">
                 <p class="truncate text-[0.95rem]">{q.name}</p>
                 <p class="truncate text-xs text-faint">

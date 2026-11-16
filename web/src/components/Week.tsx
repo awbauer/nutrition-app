@@ -1,6 +1,7 @@
 import { toast } from '../toast';
 import { ChevronLeft, ChevronRight } from 'lucide-preact';
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
+import { useRefreshOnReturn } from '../refresh';
 import { api } from '../api';
 import { addDays, kcal } from '../format';
 
@@ -18,9 +19,11 @@ export function Week(props: { today: string }) {
   const [end, setEnd] = useState(props.today);
   const [s, setS] = useState<Summary | null>(null);
 
+  const load = () => api.get<Summary>(`/summary?end=${end}`).then(setS, (e) => toast.error(e));
+  useRefreshOnReturn(() => load());
   useEffect(() => {
     setS(null);
-    api.get<Summary>(`/summary?end=${end}`).then(setS, (e) => toast.error(e));
+    load();
   }, [end]);
 
   return (
@@ -42,7 +45,8 @@ export function Week(props: { today: string }) {
       {!s ? (
         <div class="card h-64 animate-pulse" />
       ) : (
-        <>
+        // Desktop: summary and chart side by side.
+        <div class="flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)] lg:items-start lg:gap-6">
           <section class="card p-5">
             <p class="text-sm text-ink-2">Daily average · {s.days_logged} of 7 days logged</p>
             <div class="mt-1 flex items-baseline gap-2">
@@ -59,8 +63,8 @@ export function Week(props: { today: string }) {
           <section class="card p-4">
             <Bars days={s.days} target={s.targets.ENERC_KCAL} today={props.today} />
           </section>
-          <p class="px-2 text-center text-xs text-ink-2">The weekly average is what matters. One big day is noise.</p>
-        </>
+          <p class="px-2 text-center text-xs text-ink-2 lg:col-span-2">The weekly average is what matters. One big day is noise.</p>
+        </div>
       )}
     </div>
   );
@@ -110,12 +114,22 @@ function segments(totals: Record<string, number>) {
 }
 
 function Bars(props: { days: Summary['days']; target?: number; today: string }) {
-  const W = 320;
-  const H = 190;
+  // Draw at the container's real width so text stays 10px and bars widen on big screens.
+  const box = useRef<HTMLDivElement>(null);
+  const [W, setW] = useState(320);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([e]) => e && setW(Math.max(280, Math.round(e.contentRect.width))));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const H = W > 500 ? 260 : 190;
   const pad = 20;
   const top = 22;
   const max = Math.max(props.target ?? 0, ...props.days.map((d) => d.totals.ENERC_KCAL ?? 0), 1000) * 1.05;
   const bw = (W - 8) / 7;
+  const barW = Math.min(bw - 14, 56);
   const y = (v: number) => H - pad - (v / max) * (H - pad - top);
   const logged = props.days.filter((d) => d.meals > 0);
   const avg = MACROS.map((m) => {
@@ -125,8 +139,8 @@ function Bars(props: { days: Summary['days']; target?: number; today: string }) 
   const avgKcal = avg.reduce((a, m) => a + m.kcal, 0) || 1;
 
   return (
-    <div class="flex flex-col gap-3">
-      <svg viewBox={`0 0 ${W} ${H}`} class="w-full" role="img" aria-label="Calories by day, split by protein, carbs and fat">
+    <div class="flex flex-col gap-3" ref={box}>
+      <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} class="block max-w-full" role="img" aria-label="Calories by day, split by protein, carbs and fat">
         {props.target != null && (
           <g>
             <line x1="4" x2={W - 4} y1={y(props.target)} y2={y(props.target)} stroke-dasharray="4 4" class="stroke-[var(--faint)]" stroke-width="1.2" />
@@ -135,8 +149,8 @@ function Bars(props: { days: Summary['days']; target?: number; today: string }) 
         {props.days.map((d, i) => {
           const v = d.totals.ENERC_KCAL ?? 0;
           const over = props.target != null && v > props.target * 1.05;
-          const x = 4 + i * bw + 7;
-          const w = bw - 14;
+          const w = barW;
+          const x = 4 + i * bw + (bw - w) / 2;
           let acc = 0;
           return (
             <g>

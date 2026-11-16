@@ -26,8 +26,9 @@ export function SettingsView(props: { today: string; onSaved: () => void }) {
   if (!s) return <div class="card h-40 animate-pulse" />;
   const deviceTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   return (
-    <div class="flex flex-col gap-4">
-      <h1 class="display pt-2 text-[2.1rem] leading-none font-semibold">Settings</h1>
+    // Desktop: cards flow into two columns.
+    <div class="flex flex-col gap-4 lg:block lg:columns-2 lg:gap-6 lg:[&>*]:mb-6 lg:[&>*]:break-inside-avoid">
+      <h1 class="display pt-2 text-[2.1rem] leading-none font-semibold lg:[column-span:all]">Settings</h1>
       <section class="card flex flex-col gap-4 p-4">
         <h2 class="display text-xl font-semibold">Your day</h2>
         <label class="flex flex-col gap-1">
