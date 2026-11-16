@@ -48,6 +48,12 @@ describe('foods', () => {
     expect(s.data.usda[0]).toMatchObject({ sourceId: '171477', source: 'usda' });
     const f = await api('/foods/fdc/171477');
     expect(f.data.portions.length).toBe(2);
+    expect(f.data.category).toBe('Poultry Products');
+    // The full USDA record is kept as received, including fields the app doesn't map.
+    const src = await api(`/foods/${f.data.id}/source`);
+    expect(src.data.kind).toBe('detail');
+    expect(src.data.data).toMatchObject({ fdcId: 171477, foodCategory: { description: 'Poultry Products' } });
+    expect(src.data.data.foodPortions).toHaveLength(2);
     const again = await api('/foods?q=chicken breast');
     expect(again.data.local[0].source_id).toBe('171477');
     expect(again.data.usda.find((u: any) => u.sourceId === '171477')).toBeUndefined();

@@ -10,11 +10,15 @@ export interface NormalisedFood {
   name: string;
   brand: string | null;
   dataType: string;
+  /** USDA's category: SR/Foundation food group, WWEIA category (FNDDS) or branded category. */
+  category: string | null;
   /** Branded foods: UPC/GTIN, used to match a scanned or photographed barcode. */
   gtin?: string | null;
   defaultServingGrams: number | null;
   portions: Portion[];
   nutrients: NutrientValue[];
+  /** The record as FoodData Central sent it, less lab-sample detail (see snapshotOf); kept in food_source_snapshot. */
+  raw: { kind: 'search' | 'detail'; data: unknown };
 }
 
 /** Search tiers in spec order: whole foods first, then mixed dishes, then branded. */
@@ -118,6 +122,7 @@ interface UsdaSearchFood {
   brandOwner?: string;
   brandName?: string;
   gtinUpc?: string;
+  foodCategory?: string;
   servingSize?: number;
   servingSizeUnit?: string;
   householdServingFullText?: string;
@@ -131,6 +136,9 @@ interface UsdaDetailFood {
   dataType: string;
   brandOwner?: string;
   brandName?: string;
+  foodCategory?: { description?: string };
+  brandedFoodCategory?: string;
+  wweiaFoodCategory?: { wweiaFoodCategoryDescription?: string };
   servingSize?: number;
   servingSizeUnit?: string;
   householdServingFullText?: string;
@@ -152,6 +160,41 @@ function brandedServing(f: { servingSize?: number; servingSizeUnit?: string; hou
     ? [{ label: f.householdServingFullText || 'serving', unit: 'serving', amount: 1, grams }]
     : [];
   return { grams, portions };
+}
+
+/**
+ * The record to keep: everything FoodData Central sent that describes the food, unused fields
+ * included, without what no food log needs:
+ * - per-nutrient lab sample details on Foundation foods (store, purchase date and lab method for
+ *   every sample; ~80% of their size) and branded foods' log of earlier versions;
+ * - per-row bookkeeping: row ids, the "FoodNutrient" type tag, display ranks and the ids inside
+ *   derivation codes (their codes and descriptions stay), and heading rows with no value.
+ * Kept per nutrient: id, number, name, unit, amount, min/max/median, data points and derivation.
+ */
+export function snapshotOf<T extends object>(f: T): T {
+  const { foodUpdateLog: _log, ...rest } = f as T & { foodUpdateLog?: unknown };
+  const nutrients = (rest as { foodNutrients?: unknown }).foodNutrients;
+  if (!Array.isArray(nutrients)) return rest as T;
+  const strip = (o: unknown, ...keys: string[]) => {
+    if (!o || typeof o !== 'object') return o;
+    const copy = { ...(o as Record<string, unknown>) };
+    for (const k of keys) delete copy[k];
+    return copy;
+  };
+  return {
+    ...rest,
+    foodNutrients: nutrients
+      .filter((n) => !n || typeof n !== 'object' || 'amount' in n || 'value' in n)
+      .map((n) => {
+        if (!n || typeof n !== 'object') return n;
+        // Detail rows nest the nutrient; search-result rows are flat (nutrientId, rank, indentLevel).
+        const keep = strip(n, 'nutrientAnalysisDetails', 'type', 'id', 'foodNutrientId', 'rank', 'indentLevel') as Record<string, unknown>;
+        if (keep.nutrient) keep.nutrient = strip(keep.nutrient, 'rank');
+        const der = keep.foodNutrientDerivation as Record<string, unknown> | undefined;
+        if (der && typeof der === 'object') keep.foodNutrientDerivation = { ...(strip(der, 'id') as object), ...(der.foodNutrientSource ? { foodNutrientSource: strip(der.foodNutrientSource, 'id') } : {}) };
+        return keep;
+      }),
+  } as T;
 }
 
 /** Parse "1 cup, chopped" / "2 slices" into {amount, unit}. */
@@ -189,10 +232,12 @@ export function normaliseSearchFood(f: UsdaSearchFood): NormalisedFood {
     name: f.description,
     brand: f.brandName || f.brandOwner || null,
     dataType: f.dataType,
+    category: f.foodCategory || null,
     gtin: f.gtinUpc ?? null,
     defaultServingGrams: branded.grams ?? measures[0]?.grams ?? null,
     portions: [...branded.portions, ...measures],
     nutrients,
+    raw: { kind: 'search', data: snapshotOf(f) },
   };
 }
 
@@ -221,8 +266,10 @@ export function normaliseDetailFood(f: UsdaDetailFood): NormalisedFood {
     name: f.description,
     brand: f.brandName || f.brandOwner || null,
     dataType: f.dataType,
+    category: f.foodCategory?.description || f.brandedFoodCategory || f.wweiaFoodCategory?.wweiaFoodCategoryDescription || null,
     defaultServingGrams: branded.grams ?? (portions[0] ? portions[0].grams / portions[0].amount : null),
     portions: [...branded.portions, ...portions],
     nutrients,
+    raw: { kind: 'detail', data: snapshotOf(f) },
   };
 }

@@ -2,7 +2,7 @@
 import type { ExternalFood } from './foods';
 import type { NutrientValue } from './nutrients';
 
-const FIELDS = 'code,product_name,brands,serving_quantity,serving_size,nutriments';
+const FIELDS = 'code,product_name,brands,serving_quantity,serving_size,nutriments,categories_hierarchy';
 
 export async function offByBarcode(gtin: string, fetcher: typeof fetch = (i, n) => fetch(i, n)): Promise<ExternalFood | null> {
   if (!/^\d{8,14}$/.test(gtin)) return null;
@@ -36,6 +36,12 @@ export function normaliseOff(gtin: string, p: Record<string, any>): ExternalFood
     name: p.product_name || `Product ${gtin}`,
     brand: typeof p.brands === 'string' ? p.brands.split(',')[0]!.trim() || null : null,
     dataType: 'Open Food Facts',
+    // English category tags, broadest first ("beverages > carbonated drinks > sodas").
+    category:
+      (Array.isArray(p.categories_hierarchy) ? (p.categories_hierarchy as unknown[]) : [])
+        .filter((t): t is string => typeof t === 'string' && t.startsWith('en:'))
+        .map((t) => t.slice(3).replace(/-/g, ' '))
+        .join(' > ') || null,
     defaultServingGrams: serving,
     portions: serving ? [{ label: p.serving_size || 'serving', unit: 'serving', amount: 1, grams: serving }] : [],
     nutrients,

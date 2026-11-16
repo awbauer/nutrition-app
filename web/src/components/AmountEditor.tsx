@@ -1,6 +1,6 @@
 import { Minus, Plus } from 'lucide-preact';
 import { useEffect, useRef } from 'preact/hooks';
-import { RELATIVE_SIZES, toGrams, type Portion } from '../../../src/worker/lib/units';
+import { EXACT_UNITS, SIZE_LABEL, sizesFor, toGrams, type Portion } from '../../../src/worker/lib/units';
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -10,9 +10,14 @@ const fmtCount = (n: number) => {
   return whole === 0 && half ? '½' : `${whole}${half ? '½' : ''}`;
 };
 
+/** The food's own portions shown as chips; USDA can list many near-duplicates. */
+const MAX_OWN = 4;
+
 /**
  * Pick an amount the way people think about food: a relative size ("1 handful", "1½ bowls",
- * the food's own "1 slice") with a count, or an exact weight in grams.
+ * the food's own "1 slice") with a count, or an exact amount typed in (grams or ounces; ml or
+ * fl oz for drinks). Only sizes that suit the food are offered, chosen from its USDA / Open Food
+ * Facts category (see sizesFor).
  * Uses the server's conversion table, so the preview is what gets saved.
  */
 export function AmountEditor(props: {
@@ -20,6 +25,10 @@ export function AmountEditor(props: {
   unit: string;
   onChange: (amount: number, unit: string) => void;
   portions?: Portion[];
+  /** The food's database category, which picks the sizes on offer... */
+  category?: string | null;
+  /** ...or, without a usable one, its name (and the user's wording). */
+  name?: string | string[];
   defaultServingGrams?: number | null;
   kcalPer100?: number | null;
   /** Show the "typical size" note under the preview (Food details explains it separately). */
@@ -33,33 +42,46 @@ export function AmountEditor(props: {
     if (chip && r) r.scrollTo({ left: Math.max(0, chip.offsetLeft - r.clientWidth / 2 + chip.offsetWidth / 2), behavior: 'smooth' });
   }, [props.unit]);
   const food = { portions: props.portions ?? [], default_serving_grams: props.defaultServingGrams ?? null };
+  const exactUnit = EXACT_UNITS[props.unit];
   const grams = props.unit === 'g';
   const estimate = toGrams(props.amount || 0, props.unit, food);
-  const own = (props.portions ?? []).filter((p, i, a) => a.findIndex((x) => x.unit === p.unit) === i);
-  const ownUnits = new Set(own.map((p) => p.unit));
-  const generic = RELATIVE_SIZES.filter((s) => !ownUnits.has(s.unit));
+  const fit = sizesFor({ name: props.name, category: props.category, portions: props.portions });
+  // The food's own portions (exact units already have their own chip), then the sizes that suit it.
+  const own = (props.portions ?? [])
+    .filter((p, i, a) => !(p.unit in EXACT_UNITS) && a.findIndex((x) => x.unit === p.unit) === i)
+    .filter((p, i) => i < MAX_OWN || p.unit === props.unit);
+  const shown = new Set([...fit.exact, ...own.map((p) => p.unit)]);
+  const generic = fit.sizes.filter((u) => !shown.has(u));
+  // An amount saved in a unit we no longer suggest (e.g. "plate" from a voice note) still shows, selected.
+  const current = shown.has(props.unit) || generic.includes(props.unit) ? null : props.unit;
 
   const pick = (unit: string) => {
     if (unit === props.unit) return;
-    if (unit === 'g') props.onChange(Math.round(estimate.grams) || 100, 'g');
-    else props.onChange(1, unit);
+    const ex = EXACT_UNITS[unit];
+    if (ex) {
+      const n = estimate.grams / ex.grams;
+      props.onChange(Math.max(ex.step, Math.round(n / ex.step) * ex.step), unit);
+    } else props.onChange(1, unit);
   };
   const step = (d: number) => props.onChange(Math.max(0.5, Math.round(((props.amount || 0) + d) * 2) / 2), props.unit);
 
   return (
     <div class="flex flex-col gap-3">
       <div ref={row} class="-mx-5 flex gap-2 overflow-x-auto px-5 pb-1" role="radiogroup" aria-label="Size">
-        <SizeChip on={grams} onClick={() => pick('g')} label="Grams" />
+        {fit.exact.map((u) => (
+          <SizeChip on={props.unit === u} onClick={() => pick(u)} label={EXACT_UNITS[u]!.label} />
+        ))}
+        {current && <SizeChip on onClick={() => {}} label={EXACT_UNITS[current]?.label ?? SIZE_LABEL[current] ?? cap(current)} />}
         {own.map((p) => (
           <SizeChip on={props.unit === p.unit} onClick={() => pick(p.unit)} label={cap(p.label.replace(/^1\s+/, ''))} sub={`${Math.round(p.grams / p.amount)} g`} />
         ))}
-        {generic.map((s) => (
-          <SizeChip on={props.unit === s.unit} onClick={() => pick(s.unit)} label={s.label} />
+        {generic.map((u) => (
+          <SizeChip on={props.unit === u} onClick={() => pick(u)} label={SIZE_LABEL[u] ?? cap(u)} />
         ))}
       </div>
 
       <div class="flex items-center gap-3">
-        {grams ? (
+        {exactUnit ? (
           <label class="flex items-center gap-2">
             <input
               class="input w-28 text-center text-lg"
@@ -68,10 +90,10 @@ export function AmountEditor(props: {
               min="0"
               step="any"
               value={props.amount}
-              onInput={(e) => props.onChange(Number((e.target as HTMLInputElement).value), 'g')}
-              aria-label="Grams"
+              onInput={(e) => props.onChange(Number((e.target as HTMLInputElement).value), props.unit)}
+              aria-label={exactUnit.label}
             />
-            <span class="text-ink-2">g</span>
+            <span class="text-ink-2">{exactUnit.suffix}</span>
           </label>
         ) : (
           <div class="flex items-center gap-1 rounded-full bg-sunken p-1">
@@ -95,7 +117,7 @@ export function AmountEditor(props: {
               <span class="num text-ink">{Math.round((props.kcalPer100 * estimate.grams) / 100)}</span> kcal
             </>
           )}
-          {props.hint !== false && !grams && estimate.method === 'generic' && <span class="block text-xs text-faint">typical size; switch to grams for an exact amount</span>}
+          {props.hint !== false && !exactUnit && estimate.method === 'generic' && <span class="block text-xs text-faint">typical size; switch to {EXACT_UNITS[fit.exact[0]!]!.label.toLowerCase()} for an exact amount</span>}
         </p>
       </div>
     </div>

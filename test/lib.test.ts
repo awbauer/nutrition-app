@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { addDays, logDate, mealTypeForTime, localParts } from '../src/worker/lib/dates';
 import { fromUsda } from '../src/worker/lib/nutrients';
-import { toGrams, ucum } from '../src/worker/lib/units';
+import { EXACT_UNITS, foodKind, sizesFor, toGrams, ucum, type Portion } from '../src/worker/lib/units';
 import { normaliseDetailFood, parsePortionText } from '../src/worker/lib/usda';
+import { normaliseOff } from '../src/worker/lib/off';
 import { chickenDetail, foundationEgg } from './fixtures/usda';
 
 describe('day boundary', () => {
@@ -65,5 +66,70 @@ describe('USDA nutrient mapping', () => {
   });
   it('converts kJ to kcal', () => {
     expect(fromUsda([{ id: 1008, value: 418.4, unit: 'kJ' }])[0]!.value).toBeCloseTo(100);
+  });
+});
+
+describe('amount chips by food', () => {
+  const kind = (name: string | string[], category: string | null = null, portions: Portion[] = []) => foodKind({ name, category, portions });
+  it('goes by the USDA category when it is specific', () => {
+    expect(kind('COLA', 'Soda')).toBe('can-drink');
+    expect(kind('Coffee, Latte, nonfat', 'Coffee')).toBe('hot-drink');
+    expect(kind('Coffee, Iced Latte', 'Coffee')).toBe('drink');
+    expect(kind('Wine, red', 'Wine')).toBe('wine');
+    expect(kind('Vodka', 'Liquor and cocktails')).toBe('spirit');
+    expect(kind('LEMONADE', 'Powdered Drinks')).toBe('powder');
+    expect(kind('CHICKEN NOODLE SOUP', 'Canned Soup')).toBe('soup');
+    expect(kind('OLIVE OIL', 'Vegetable & Cooking Oils')).toBe('spread');
+    expect(kind('ALMONDS', 'Popcorn, Peanuts, Seeds & Related Snacks')).toBe('bits');
+    expect(kind('GRANOLA', 'Cereal')).toBe('bowl');
+    expect(kind('CHEDDAR CHEESE', 'Cheese')).toBe('sliced');
+    expect(kind('Potato, french fries, NFS', 'French fries and other fried white potatoes')).toBe('whole');
+    expect(kind('Chicken breast, roasted', 'Chicken, whole pieces')).toBe('protein');
+    // The category knows what a flavour-named product is.
+    expect(kind('COFFEE', 'Other Frozen Desserts')).toBe('bowl');
+    expect(kind('BANANA', 'Nut & Seed Butters')).toBe('spread');
+    expect(kind('Peanut butter', 'Nuts and seeds')).toBe('spread');
+  });
+  it('lets the name decide within broad food groups', () => {
+    expect(kind('Milk, whole, 3.25% milkfat', 'Dairy and Egg Products')).toBe('drink');
+    expect(kind('Cheese, cheddar', 'Dairy and Egg Products')).toBe('sliced');
+    expect(kind('Butter, salted', 'Dairy and Egg Products')).toBe('spread');
+    expect(kind('Bananas, raw', 'Fruits and Fruit Juices')).toBe('whole');
+    expect(kind("APPLEBEE'S, french fries", 'Restaurant Foods')).toBe('whole');
+    expect(kind('Beverages, coffee, brewed', 'Beverages')).toBe('hot-drink');
+    expect(kind('Beverages, coffee, instant, powder', 'Beverages')).toBe('powder');
+  });
+  it('reads Open Food Facts tags from the most specific', () => {
+    expect(kind('Fizzy', 'beverages > carbonated drinks > sodas > colas')).toBe('can-drink');
+    expect(kind('Crunchy', 'plant based foods > snacks > salty snacks > crisps')).toBe('bits');
+  });
+  it('falls back to the name without a category', () => {
+    expect(kind('oat latte')).toBe('hot-drink');
+    expect(kind('Sparkling Lime', null, [{ label: '12 fl oz', unit: 'fl oz', amount: 12, grams: 355 }])).toBe('can-drink');
+    expect(kind('Fish, tuna, light, canned in water')).toBe('protein');
+    expect(kind('Pasta, cooked, enriched, with added salt')).toBe('bowl');
+    expect(kind('toast with butter')).toBe('sliced');
+    expect(kind('butter chicken')).toBe('bowl');
+    expect(kind('chicken noodle soup')).toBe('soup');
+    expect(kind(['my usual', 'Quinoa, cooked'])).toBe('bowl');
+  });
+  it('offers volume units for drinks and a short list for food', () => {
+    expect(sizesFor({ name: 'COFFEE', category: 'Coffee' })).toMatchObject({ exact: ['ml', 'fl oz'], sizes: ['mug', 'cup'] });
+    expect(sizesFor({ name: 'COLA', category: 'Soda' }).sizes).toEqual(['can', 'bottle', 'glass']);
+    expect(sizesFor({ name: 'Olive oil' })).toMatchObject({ exact: ['g'], sizes: ['tbsp', 'tsp', 'cup'] });
+    expect(sizesFor({ name: 'Mystery dish' }).sizes.length).toBeLessThanOrEqual(5);
+  });
+  it('reads the category from each USDA shape and from Open Food Facts', () => {
+    expect(normaliseDetailFood({ fdcId: 1, description: 'Coffee, Latte', dataType: 'Survey (FNDDS)', wweiaFoodCategory: { wweiaFoodCategoryDescription: 'Coffee' } }).category).toBe('Coffee');
+    expect(normaliseDetailFood({ fdcId: 2, description: 'COLA', dataType: 'Branded', brandedFoodCategory: 'Soda' }).category).toBe('Soda');
+    expect(normaliseDetailFood({ fdcId: 3, description: 'Food', dataType: 'Foundation' }).category).toBeNull();
+    const off = normaliseOff('5000112637922', { product_name: 'Cola', categories_hierarchy: ['en:beverages', 'en:carbonated-drinks', 'en:sodas', 'fr:boissons'] });
+    expect(off.category).toBe('beverages > carbonated drinks > sodas');
+    expect(foodKind({ name: off.name, category: off.category })).toBe('can-drink');
+  });
+  it('converts exact units the way the editor does', () => {
+    expect(toGrams(12, 'fl oz').grams).toBeCloseTo(EXACT_UNITS['fl oz']!.grams * 12, 5);
+    expect(toGrams(330, 'ml').grams).toBe(330);
+    expect(toGrams(1, 'shot').grams).toBe(44);
   });
 });

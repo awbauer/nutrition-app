@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../env';
-import { createCustomFood, getFood, resolveFdc, searchLocal, usdaClient, type CustomFoodInput } from '../lib/foods';
+import { backfillCategories, createCustomFood, getFood, getSnapshot, resolveFdc, searchLocal, usdaClient, type CustomFoodInput } from '../lib/foods';
 import { HttpError } from '../lib/ids';
 import { MEAL_TYPES, type MealType } from '../lib/intake';
 import { quickFoods } from '../lib/quick';
@@ -20,6 +20,8 @@ foods.get('/', async (c) => {
       const hits = await usdaClient(c.env).searchAll(q);
       const cachedIds = new Set(local.filter((f) => f.source === 'usda').map((f) => f.source_id));
       usda = hits.filter((h) => !cachedIds.has(h.sourceId));
+      // Older cached foods have no category yet; the search hits carry it.
+      c.executionCtx.waitUntil(backfillCategories(c.env.DB, local, hits).catch(() => {}));
     } catch (e) {
       usdaError = (e as Error).message;
     }
@@ -39,6 +41,15 @@ foods.get('/quick', async (c) => {
   const mt = c.req.query('meal_type');
   const mealType = mt && MEAL_TYPES.includes(mt as MealType) ? (mt as MealType) : null;
   return c.json(await quickFoods(c.env.DB, c.get('user').id, mealType));
+});
+
+/** GET /api/foods/:id/source -> the source database's full record for the food, as received. */
+foods.get('/:id/source', async (c) => {
+  const f = await getFood(c.env.DB, c.get('user').id, c.req.param('id'));
+  if (!f) throw new HttpError(404, 'food not found');
+  const snap = await getSnapshot(c.env.DB, f.id);
+  if (!snap) throw new HttpError(404, 'no source record for this food');
+  return c.json(snap);
 });
 
 foods.get('/:id', async (c) => {

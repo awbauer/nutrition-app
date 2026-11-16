@@ -263,6 +263,7 @@ async function estimateFood(db: D1Database, userId: string, req: MatchRequest): 
     name: req.name,
     brand: null,
     data_type: null,
+    category: null,
     default_serving_grams: null,
     owner_user_id: userId,
     portions: [],
