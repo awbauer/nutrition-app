@@ -1,5 +1,5 @@
--- The source database's record for a food as received (USDA FoodData Central JSON, less per-sample
--- lab details; see snapshotOf), so fields the app doesn't use yet can be read later without fetching again. Kept apart from
+-- The source database's record for a food (USDA FoodData Central JSON as received, less per-sample
+-- lab details and row bookkeeping; see snapshotOf), so fields the app doesn't use yet can be read later without fetching again. Kept apart from
 -- `food` so searches over food rows stay small. A full detail record is never replaced by the
 -- thinner search-result version. Additive.
 CREATE TABLE food_source_snapshot (

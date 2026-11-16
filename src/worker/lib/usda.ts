@@ -163,21 +163,37 @@ function brandedServing(f: { servingSize?: number; servingSizeUnit?: string; hou
 }
 
 /**
- * The record to keep, as received apart from two fields no food log needs: per-nutrient lab sample
- * details on Foundation foods (store, purchase date and lab method for every sample; ~80% of their
- * size) and branded foods' log of earlier versions. Everything else, unused fields included, stays.
+ * The record to keep: everything FoodData Central sent that describes the food, unused fields
+ * included, without what no food log needs:
+ * - per-nutrient lab sample details on Foundation foods (store, purchase date and lab method for
+ *   every sample; ~80% of their size) and branded foods' log of earlier versions;
+ * - per-row bookkeeping: row ids, the "FoodNutrient" type tag, display ranks and the ids inside
+ *   derivation codes (their codes and descriptions stay), and heading rows with no value.
+ * Kept per nutrient: id, number, name, unit, amount, min/max/median, data points and derivation.
  */
 export function snapshotOf<T extends object>(f: T): T {
-  const { foodUpdateLog: _log, ...rest } = f as T & { foodUpdateLog?: unknown; foodNutrients?: unknown };
+  const { foodUpdateLog: _log, ...rest } = f as T & { foodUpdateLog?: unknown };
   const nutrients = (rest as { foodNutrients?: unknown }).foodNutrients;
   if (!Array.isArray(nutrients)) return rest as T;
+  const strip = (o: unknown, ...keys: string[]) => {
+    if (!o || typeof o !== 'object') return o;
+    const copy = { ...(o as Record<string, unknown>) };
+    for (const k of keys) delete copy[k];
+    return copy;
+  };
   return {
     ...rest,
-    foodNutrients: nutrients.map((n) => {
-      if (!n || typeof n !== 'object') return n;
-      const { nutrientAnalysisDetails: _details, ...keep } = n as Record<string, unknown>;
-      return keep;
-    }),
+    foodNutrients: nutrients
+      .filter((n) => !n || typeof n !== 'object' || 'amount' in n || 'value' in n)
+      .map((n) => {
+        if (!n || typeof n !== 'object') return n;
+        // Detail rows nest the nutrient; search-result rows are flat (nutrientId, rank, indentLevel).
+        const keep = strip(n, 'nutrientAnalysisDetails', 'type', 'id', 'foodNutrientId', 'rank', 'indentLevel') as Record<string, unknown>;
+        if (keep.nutrient) keep.nutrient = strip(keep.nutrient, 'rank');
+        const der = keep.foodNutrientDerivation as Record<string, unknown> | undefined;
+        if (der && typeof der === 'object') keep.foodNutrientDerivation = { ...(strip(der, 'id') as object), ...(der.foodNutrientSource ? { foodNutrientSource: strip(der.foodNutrientSource, 'id') } : {}) };
+        return keep;
+      }),
   } as T;
 }
 

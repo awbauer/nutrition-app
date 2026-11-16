@@ -17,15 +17,31 @@ describe('source snapshots', () => {
       fdcId: 990001,
       someNewUsdaField: { kept: true },
       foodUpdateLog: [{ fdcId: 1 }],
-      foodNutrients: chickenDetail.foodNutrients.map((n) => ({ ...n, min: 1, nutrientAnalysisDetails: [{ storeCity: 'Somewhere' }] })),
+      foodNutrients: [
+        { type: 'FoodNutrient', nutrient: { id: 951, name: 'Proximates', rank: 50, unitName: 'g' } },
+        ...chickenDetail.foodNutrients.map((n) => ({
+          ...n,
+          type: 'FoodNutrient',
+          id: 35281873,
+          min: 1,
+          foodNutrientDerivation: { id: 1, code: 'A', description: 'Analytical', foodNutrientSource: { id: 1, code: '1', description: 'Analytical' } },
+          nutrientAnalysisDetails: [{ storeCity: 'Somewhere' }],
+        })),
+      ],
     };
     await cacheFood(db, normaliseDetailFood(detail));
     const snap = (await getSnapshot(db, first.id)) as { kind: string; data: any };
     expect(snap).toMatchObject({ kind: 'detail', data: { someNewUsdaField: { kept: true } } });
     // Lab sample details and the branded update log are left out; everything else per nutrient stays.
     expect(snap.data.foodUpdateLog).toBeUndefined();
-    expect(snap.data.foodNutrients[0]).toMatchObject({ amount: 165, min: 1, nutrient: { id: 1008 } });
-    expect(snap.data.foodNutrients[0].nutrientAnalysisDetails).toBeUndefined();
+    // Heading rows and row bookkeeping go; values, ranges and how they were derived stay.
+    expect(snap.data.foodNutrients).toHaveLength(chickenDetail.foodNutrients.length);
+    expect(snap.data.foodNutrients[0]).toEqual({
+      nutrient: { id: 1008, unitName: 'kcal' },
+      amount: 165,
+      min: 1,
+      foodNutrientDerivation: { code: 'A', description: 'Analytical', foodNutrientSource: { code: '1', description: 'Analytical' } },
+    });
 
     await cacheFood(db, normaliseSearchFood(hit));
     expect((await getSnapshot(db, first.id))!.kind).toBe('detail');
