@@ -29,6 +29,13 @@ export function mockFetch(handler: (url: URL, init?: RequestInit) => Response | 
   const real = globalThis.fetch;
   return vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url);
+    // USDA searches are POSTed; expose the body as query params so handlers can match on them.
+    if (url.hostname === 'api.nal.usda.gov' && typeof init?.body === 'string') {
+      const b = JSON.parse(init.body) as { query?: string; dataType?: string[]; pageSize?: number };
+      if (b.query != null) url.searchParams.set('query', b.query);
+      if (b.dataType) url.searchParams.set('dataType', b.dataType.join(','));
+      if (b.pageSize != null) url.searchParams.set('pageSize', String(b.pageSize));
+    }
     const r = await handler(url, init);
     if (r) return r;
     return real(input, init);

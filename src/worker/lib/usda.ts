@@ -31,16 +31,14 @@ export class UsdaError extends Error {
   }
 }
 
-const RETRYABLE = new Set([400, 429, 500, 502, 503, 504]);
+// 400 is not retried: FoodData Central's 400s are deterministic (see search()).
+const RETRYABLE = new Set([429, 500, 502, 503, 504]);
 export const RETRY_DELAYS_MS = [400, 1200];
-/** Pause between requests: FoodData Central rejects requests that overlap. */
+/** Short pause between requests, to stay well inside USDA's rate limit. */
 export const USDA_SPACING_MS = 120;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/**
- * One USDA request at a time per isolate. Matching a meal looks up several foods in
- * parallel; sent together, FoodData Central rejected all but the first with HTTP 400.
- */
+/** One USDA request at a time per isolate; matching a meal would otherwise send a burst. */
 class SerialQueue {
   private tail: Promise<unknown> = Promise.resolve();
   run<T>(task: () => Promise<T>): Promise<T> {
@@ -62,18 +60,20 @@ export class UsdaClient {
     private base: string = BASE,
   ) {}
 
-  private async get<T>(path: string, params: Record<string, string>): Promise<T> {
+  /** GET when there's no body, otherwise POST it as JSON. */
+  private async request<T>(path: string, body?: unknown): Promise<T> {
     const url = new URL(this.base + path);
-    for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
     url.searchParams.set('api_key', this.apiKey);
+    const init: RequestInit = body
+      ? { method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+      : { headers: { Accept: 'application/json' } };
     return usdaQueue.run(async () => {
       let status = 0;
       for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
         if (attempt) await sleep(RETRY_DELAYS_MS[attempt - 1]!);
-        const res = await this.fetcher(url.toString(), { headers: { Accept: 'application/json' } });
+        const res = await this.fetcher(url.toString(), init);
         if (res.ok) return res.json<T>();
         status = res.status;
-        // USDA answers overlapping requests with 400 (not 429), so 400 is retried too.
         if (!RETRYABLE.has(status)) break;
       }
       throw new UsdaError(path, status);
@@ -81,11 +81,9 @@ export class UsdaClient {
   }
 
   async search(query: string, dataTypes: readonly string[], pageSize = 8): Promise<NormalisedFood[]> {
-    const data = await this.get<{ foods?: UsdaSearchFood[] }>('/foods/search', {
-      query,
-      dataType: dataTypes.join(','),
-      pageSize: String(pageSize),
-    });
+    // POST, not GET: FoodData Central's GET search answers some queries that include
+    // Survey (FNDDS) with a bare nginx 400 every time ("pasta", "mimosa"); POST works.
+    const data = await this.request<{ foods?: UsdaSearchFood[] }>('/foods/search', { query, dataType: [...dataTypes], pageSize });
     return (data.foods ?? []).map(normaliseSearchFood);
   }
 
@@ -108,7 +106,7 @@ export class UsdaClient {
   }
 
   async food(fdcId: string | number): Promise<NormalisedFood> {
-    return normaliseDetailFood(await this.get<UsdaDetailFood>(`/food/${fdcId}`, {}));
+    return normaliseDetailFood(await this.request<UsdaDetailFood>(`/food/${fdcId}`));
   }
 }
 
