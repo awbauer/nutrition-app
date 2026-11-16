@@ -117,15 +117,16 @@ export function Today(props: { today: string }) {
           ) : (
             <ol class="relative flex flex-col gap-4" aria-label="Meals">
               {/* The day's timeline */}
-              <span class="absolute top-3 bottom-3 left-[3.5rem] w-px bg-line" aria-hidden="true" />
+              {/* Tablet and up only; on phones the time sits in the card so cards get the full width. */}
+              <span class="absolute top-3 bottom-3 left-[3.5rem] hidden w-px bg-line md:block" aria-hidden="true" />
               {meals.map((m, i) => (
-                <li class="rise grid grid-cols-[3rem_minmax(0,1fr)] items-start gap-4" style={{ animationDelay: `${i * 40}ms` }}>
-                  <div class="flex flex-col items-end pt-4 whitespace-nowrap">
+                <li class="rise items-start gap-4 md:grid md:grid-cols-[3rem_minmax(0,1fr)]" style={{ animationDelay: `${i * 40}ms` }}>
+                  <div class="hidden flex-col items-end pt-4 whitespace-nowrap md:flex">
                     <span class="num text-[0.8rem] leading-none text-ink-2">{time(m.occurrence_at).replace(/\s?[AP]M/i, '')}</span>
                     <span class="mt-0.5 text-[10px] text-faint uppercase">{/PM/i.test(time(m.occurrence_at)) ? 'pm' : 'am'}</span>
                   </div>
                   <div class="relative min-w-0">
-                    <span class="absolute top-5 -left-[0.82rem] h-2.5 w-2.5 rounded-full bg-accent ring-4 ring-paper" aria-hidden="true" />
+                    <span class="absolute top-5 -left-[0.82rem] hidden h-2.5 w-2.5 md:block rounded-full bg-accent ring-4 ring-paper" aria-hidden="true" />
                     <MealCard meal={m} onChange={() => load()} onAdd={(intake) => setAdding({ intake })} />
                   </div>
                 </li>

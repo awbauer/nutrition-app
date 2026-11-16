@@ -2,7 +2,7 @@ import { Copy, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { watch } from '../analysis';
 import { api, type Intake, type Item } from '../api';
-import { amountLabel, confidenceTone, kcal, MEAL_LABEL } from '../format';
+import { amountLabel, confidenceTone, kcal, MEAL_LABEL, time } from '../format';
 import { toast } from '../toast';
 import { ItemSheet } from './ItemSheet';
 import { MealEdit } from './MealEdit';
@@ -75,6 +75,8 @@ export function MealCard(props: { meal: Intake; onChange: (m: Intake | null) => 
             {asking && <StatusPill tone="accent">One question</StatusPill>}
             {failed && <StatusPill tone="berry">Couldn't read</StatusPill>}
           </h3>
+          {/* Phones: the time lives here (tablet and up show it on the timeline rail). */}
+          <p class="num mt-0.5 text-[0.8rem] text-ink-2 md:hidden">{time(meal.occurrence_at)}</p>
           {meal.pending?.adding_to_meal && <p class="mt-0.5 text-xs text-ink-2">Will join your {MEAL_LABEL[meal.meal_type].toLowerCase()} when it's done</p>}
         </div>
         {meal.status !== 'preparation' && (
