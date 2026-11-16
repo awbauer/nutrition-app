@@ -82,7 +82,7 @@ export function Targets(props: { weightUnit: 'kg' | 'lb' }) {
   if (!g) return <div class="card h-40 animate-pulse" />;
   const num = (v: string) => Number(v);
   return (
-    <div class="flex flex-col gap-4">
+    <div class="contents">
       <section class="card flex flex-col gap-3 p-4">
         <h2 class="display text-xl font-semibold">Daily targets</h2>
         <div class="grid grid-cols-2 gap-3">

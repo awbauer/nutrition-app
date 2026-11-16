@@ -191,7 +191,7 @@ function ItemRow(props: { item: Item; onOpen: () => void }) {
   const showMatch = it.food_name && it.food_name.toLowerCase() !== it.display_name.toLowerCase();
   return (
     <li>
-      <button class="flex w-full items-center gap-3 px-4 py-2.5 text-left active:bg-sunken" onClick={props.onOpen}>
+      <button class="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-sunken/70 active:bg-sunken" onClick={props.onOpen}>
         {tone.dot && <span class={`h-2 w-2 shrink-0 rounded-full ${tone.dot}`} title={`${tone.label} confidence`} aria-label={`${tone.label} confidence`} role="img" />}
         <div class="min-w-0 flex-1">
           <p class="truncate text-[0.95rem]">

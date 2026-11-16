@@ -1,5 +1,6 @@
 import { toast } from '../toast';
 import { useEffect, useState } from 'preact/hooks';
+import { useRefreshOnReturn } from '../refresh';
 import { api } from '../api';
 
 interface Data {
@@ -17,6 +18,7 @@ export function Weight(props: { unit: 'kg' | 'lb' }) {
   const fmtW = (kg: number) => `${show(kg).toFixed(1)} ${props.unit}`;
 
   const load = () => api.get<Data>('/weight').then(setData, (e) => toast.error(e));
+  useRefreshOnReturn(() => load());
   useEffect(() => {
     load();
   }, []);
@@ -50,6 +52,9 @@ export function Weight(props: { unit: 'kg' | 'lb' }) {
   return (
     <div class="flex flex-col gap-4">
       <h1 class="display pt-2 text-[2.1rem] leading-none font-semibold">Weight</h1>
+      {/* Desktop: entry and trend on the left, history on the right. */}
+      <div class="flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)] lg:items-start lg:gap-6">
+      <div class="flex flex-col gap-4">
       <section class="card flex gap-2 p-4">
         <input
           class="input text-lg tabular-nums"
@@ -81,6 +86,8 @@ export function Weight(props: { unit: 'kg' | 'lb' }) {
           <p class="mt-2 text-xs text-ink-2">Dots are daily weigh-ins; the line is a 7-day moving average. Daily swings are mostly water.</p>
         </section>
       )}
+      </div>
+      <div class="flex flex-col gap-4">
       {data && data.entries.length > 0 && (
         <section class="card divide-y divide-line">
           {[...data.entries].reverse().slice(0, 14).map((e) => (
@@ -97,6 +104,8 @@ export function Weight(props: { unit: 'kg' | 'lb' }) {
         </section>
       )}
       {data && data.entries.length === 0 && <p class="py-6 text-center text-sm text-ink-2">Weigh in a few mornings a week to see your trend.</p>}
+      </div>
+      </div>
     </div>
   );
 }

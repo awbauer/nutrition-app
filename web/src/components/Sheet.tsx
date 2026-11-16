@@ -23,8 +23,8 @@ export function Sheet(props: { open: boolean; onClose: () => void; title: string
   return createPortal(
     <div class="fixed inset-0 z-40 flex items-end justify-center sm:items-center" role="dialog" aria-modal="true" aria-label={props.title}>
       <div class="absolute inset-0 bg-[#1e211d]/45 backdrop-blur-[3px]" onClick={props.onClose} />
-      <div class="safe-bottom toast-in relative flex max-h-[92dvh] w-full max-w-lg flex-col rounded-t-[1.75rem] bg-paper shadow-2xl sm:rounded-[1.75rem]">
-        <div class="mx-auto mt-2.5 h-1.5 w-10 rounded-full bg-line" aria-hidden="true" />
+      <div class="safe-bottom toast-in relative flex max-h-[92dvh] w-full max-w-lg flex-col rounded-t-[1.75rem] bg-paper shadow-2xl sm:max-h-[85dvh] sm:rounded-[1.75rem] sm:pt-3">
+        <div class="mx-auto mt-2.5 h-1.5 w-10 rounded-full bg-line sm:hidden" aria-hidden="true" />
         <div class="flex items-center justify-between px-5 pt-2 pb-2">
           <h2 class="display text-[1.4rem] font-semibold">{props.title}</h2>
           <button class="icon-btn -mr-2" onClick={props.onClose} aria-label="Close">

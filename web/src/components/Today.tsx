@@ -5,6 +5,7 @@ import { api, type Day, type Intake, type MealType } from '../api';
 import { addDays, dayLabel, MEAL_LABEL, time } from '../format';
 import { onQueueChange } from '../queue';
 import { toast } from '../toast';
+import { useRefreshOnReturn } from '../refresh';
 import { LogSheet } from './LogSheet';
 import { MealCard } from './MealCard';
 import { Sheet } from './Sheet';
@@ -33,6 +34,9 @@ export function Today(props: { today: string }) {
       toast.error(e, { id: 'day' });
     }
   };
+
+  // Pick up meals logged on another device when the app comes back to the foreground.
+  useRefreshOnReturn(() => load());
 
   useEffect(() => {
     const offQueue = onQueueChange(() => load());
@@ -93,18 +97,20 @@ export function Today(props: { today: string }) {
       </header>
 
       {day ? (
-        <>
-          <Summary day={day} />
-
-          {repeatable.length > 0 && (
-            <div class="-mx-5 flex gap-2 overflow-x-auto px-5 pb-1">
-              {repeatable.map((m) => (
-                <button class="chip flex shrink-0 items-center gap-1.5" onClick={() => repeat(m)}>
-                  <RotateCcw size={14} /> Yesterday's {MEAL_LABEL[m.meal_type].toLowerCase()}
-                </button>
-              ))}
-            </div>
-          )}
+        // Desktop: the day's summary stays pinned on the left while the timeline scrolls.
+        <div class="flex flex-col gap-5 lg:grid lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:items-start lg:gap-10">
+          <div class="flex flex-col gap-4 lg:sticky lg:top-8">
+            <Summary day={day} />
+            {repeatable.length > 0 && (
+              <div class="-mx-5 flex gap-2 overflow-x-auto px-5 pb-1 lg:mx-0 lg:flex-wrap lg:px-0">
+                {repeatable.map((m) => (
+                  <button class="chip flex shrink-0 items-center gap-1.5 hover:bg-sunken" onClick={() => repeat(m)}>
+                    <RotateCcw size={14} /> Yesterday's {MEAL_LABEL[m.meal_type].toLowerCase()}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
           {meals.length === 0 ? (
             <EmptyDay isToday={isToday} onLog={() => setAdding({})} />
@@ -126,11 +132,11 @@ export function Today(props: { today: string }) {
               ))}
             </ol>
           )}
-        </>
+        </div>
       ) : (
-        <div class="flex flex-col gap-4" aria-busy="true">
-          <div class="card h-44 animate-pulse" />
-          <div class="card h-28 animate-pulse" />
+        <div class="flex flex-col gap-4 lg:grid lg:grid-cols-[22rem_1fr] lg:gap-10" aria-busy="true">
+          <div class="card h-72 animate-pulse" />
+          <div class="card h-40 animate-pulse" />
         </div>
       )}
 
