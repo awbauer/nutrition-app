@@ -61,6 +61,7 @@ export interface Food {
   name: string;
   brand: string | null;
   data_type: string | null;
+  category: string | null;
   default_serving_grams: number | null;
   portions: Portion[];
   nutrients: Nutrient[];

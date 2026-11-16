@@ -209,6 +209,7 @@ export function ItemSheet(props: { itemId: string; onChange: (m: Intake) => void
           unit={amt.unit}
           onChange={(amount, unit) => setAmt({ amount, unit })}
           portions={food?.portions}
+          category={food?.category}
           name={[item.display_name, food?.name ?? '']}
           defaultServingGrams={food?.default_serving_grams}
           kcalPer100={per100('ENERC_KCAL')}

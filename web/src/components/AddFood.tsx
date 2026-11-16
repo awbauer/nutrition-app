@@ -77,7 +77,7 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
       } else {
         // No portions: start in the food's exact unit (ml for a drink, grams otherwise).
         setAmount(100);
-        setUnit(sizesFor({ name: food.name }).exact[0]!);
+        setUnit(sizesFor({ name: food.name, category: food.category }).exact[0]!);
       }
     } catch (e) {
       toast.error(e);
@@ -120,6 +120,7 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
           {picked.brand && <p class="text-sm text-ink-2">{picked.brand}</p>}
         </div>
         <AmountEditor
+          category={picked.category}
           name={[label ?? '', picked.name]}
           portions={picked.portions}
           defaultServingGrams={picked.default_serving_grams}

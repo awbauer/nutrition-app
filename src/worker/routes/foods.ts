@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../env';
-import { createCustomFood, getFood, resolveFdc, searchLocal, usdaClient, type CustomFoodInput } from '../lib/foods';
+import { backfillCategories, createCustomFood, getFood, resolveFdc, searchLocal, usdaClient, type CustomFoodInput } from '../lib/foods';
 import { HttpError } from '../lib/ids';
 import { MEAL_TYPES, type MealType } from '../lib/intake';
 import { quickFoods } from '../lib/quick';
@@ -20,6 +20,8 @@ foods.get('/', async (c) => {
       const hits = await usdaClient(c.env).searchAll(q);
       const cachedIds = new Set(local.filter((f) => f.source === 'usda').map((f) => f.source_id));
       usda = hits.filter((h) => !cachedIds.has(h.sourceId));
+      // Older cached foods have no category yet; the search hits carry it.
+      c.executionCtx.waitUntil(backfillCategories(c.env.DB, local, hits).catch(() => {}));
     } catch (e) {
       usdaError = (e as Error).message;
     }

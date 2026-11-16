@@ -16,7 +16,8 @@ const MAX_OWN = 4;
 /**
  * Pick an amount the way people think about food: a relative size ("1 handful", "1½ bowls",
  * the food's own "1 slice") with a count, or an exact amount typed in (grams or ounces; ml or
- * fl oz for drinks). Only sizes that suit the food are offered (see sizesFor).
+ * fl oz for drinks). Only sizes that suit the food are offered, chosen from its USDA / Open Food
+ * Facts category (see sizesFor).
  * Uses the server's conversion table, so the preview is what gets saved.
  */
 export function AmountEditor(props: {
@@ -24,7 +25,9 @@ export function AmountEditor(props: {
   unit: string;
   onChange: (amount: number, unit: string) => void;
   portions?: Portion[];
-  /** The food's name (and the user's wording), used to pick sensible sizes. */
+  /** The food's database category, which picks the sizes on offer... */
+  category?: string | null;
+  /** ...or, without a usable one, its name (and the user's wording). */
   name?: string | string[];
   defaultServingGrams?: number | null;
   kcalPer100?: number | null;
@@ -42,7 +45,7 @@ export function AmountEditor(props: {
   const exactUnit = EXACT_UNITS[props.unit];
   const grams = props.unit === 'g';
   const estimate = toGrams(props.amount || 0, props.unit, food);
-  const fit = sizesFor({ name: props.name, portions: props.portions });
+  const fit = sizesFor({ name: props.name, category: props.category, portions: props.portions });
   // The food's own portions (exact units already have their own chip), then the sizes that suit it.
   const own = (props.portions ?? [])
     .filter((p, i, a) => !(p.unit in EXACT_UNITS) && a.findIndex((x) => x.unit === p.unit) === i)

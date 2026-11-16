@@ -3,6 +3,7 @@ export const chickenDetail = {
   fdcId: 171477,
   description: 'Chicken, broilers or fryers, breast, meat only, cooked, roasted',
   dataType: 'SR Legacy',
+  foodCategory: { id: 5, code: '0500', description: 'Poultry Products' },
   foodNutrients: [
     { nutrient: { id: 1008, unitName: 'kcal' }, amount: 165 },
     { nutrient: { id: 1003, unitName: 'g' }, amount: 31.0 },
@@ -47,6 +48,7 @@ export const searchResults = {
       fdcId: 171477,
       description: 'Chicken, broilers or fryers, breast, meat only, cooked, roasted',
       dataType: 'SR Legacy',
+      foodCategory: 'Poultry Products',
       foodNutrients: [
         { nutrientId: 1008, unitName: 'KCAL', value: 165 },
         { nutrientId: 1003, unitName: 'G', value: 31 },

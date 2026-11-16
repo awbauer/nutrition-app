@@ -48,6 +48,7 @@ describe('foods', () => {
     expect(s.data.usda[0]).toMatchObject({ sourceId: '171477', source: 'usda' });
     const f = await api('/foods/fdc/171477');
     expect(f.data.portions.length).toBe(2);
+    expect(f.data.category).toBe('Poultry Products');
     const again = await api('/foods?q=chicken breast');
     expect(again.data.local[0].source_id).toBe('171477');
     expect(again.data.usda.find((u: any) => u.sourceId === '171477')).toBeUndefined();

@@ -11,6 +11,8 @@ export interface FoodRecord {
   name: string;
   brand: string | null;
   data_type: string | null;
+  /** Source database category (USDA, Open Food Facts); null for custom foods. */
+  category: string | null;
   default_serving_grams: number | null;
   owner_user_id: string | null;
   portions: Portion[];
@@ -37,6 +39,7 @@ interface FoodRow {
   name: string;
   brand: string | null;
   data_type: string | null;
+  category: string | null;
   default_serving_grams: number | null;
   owner_user_id: string | null;
   portions_json: string;
@@ -65,6 +68,7 @@ async function hydrate(db: D1Database, rows: FoodRow[]): Promise<FoodRecord[]> {
     name: r.name,
     brand: r.brand,
     data_type: r.data_type,
+    category: r.category,
     default_serving_grams: r.default_serving_grams,
     owner_user_id: r.owner_user_id,
     portions: JSON.parse(r.portions_json) as Portion[],
@@ -72,7 +76,7 @@ async function hydrate(db: D1Database, rows: FoodRow[]): Promise<FoodRecord[]> {
   }));
 }
 
-const FOOD_COLS = 'id, source, source_id, name, brand, data_type, default_serving_grams, owner_user_id, portions_json';
+const FOOD_COLS = 'id, source, source_id, name, brand, data_type, category, default_serving_grams, owner_user_id, portions_json';
 
 /** Load a food visible to the user (shared, or owned by them). */
 export async function getFood(db: D1Database, userId: string, id: string): Promise<FoodRecord | null> {
@@ -102,18 +106,18 @@ export async function cacheFood(db: D1Database, f: NormalisedFood | ExternalFood
   if (existing) {
     stmts.push(
       db
-        .prepare('UPDATE food SET name = ?, name_norm = ?, brand = ?, data_type = ?, default_serving_grams = ?, portions_json = ? WHERE id = ?')
-        .bind(f.name, normName(f.name), f.brand, f.dataType, f.defaultServingGrams, JSON.stringify(f.portions), id),
+        .prepare('UPDATE food SET name = ?, name_norm = ?, brand = ?, data_type = ?, category = ?, default_serving_grams = ?, portions_json = ? WHERE id = ?')
+        .bind(f.name, normName(f.name), f.brand, f.dataType, f.category, f.defaultServingGrams, JSON.stringify(f.portions), id),
       db.prepare('DELETE FROM food_nutrient WHERE food_id = ?').bind(id),
     );
   } else {
     stmts.push(
       db
         .prepare(
-          `INSERT INTO food (id, source, source_id, name, name_norm, brand, data_type, default_serving_grams, portions_json)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO food (id, source, source_id, name, name_norm, brand, data_type, category, default_serving_grams, portions_json)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
-        .bind(id, f.source, f.sourceId, f.name, normName(f.name), f.brand, f.dataType, f.defaultServingGrams, JSON.stringify(f.portions)),
+        .bind(id, f.source, f.sourceId, f.name, normName(f.name), f.brand, f.dataType, f.category, f.defaultServingGrams, JSON.stringify(f.portions)),
     );
   }
   for (const n of f.nutrients) {
@@ -134,6 +138,7 @@ export interface ExternalFood {
   name: string;
   brand: string | null;
   dataType: string | null;
+  category: string | null;
   defaultServingGrams: number | null;
   portions: Portion[];
   nutrients: NutrientValue[];
@@ -142,9 +147,19 @@ export interface ExternalFood {
 /** Resolve an FDC id via the cache, fetching full detail (with foodPortions) on a miss. */
 export async function resolveFdc(env: Env, fdcId: string, fetcher?: typeof fetch): Promise<FoodRecord> {
   const cached = await findCachedBySource(env.DB, 'usda', fdcId);
-  if (cached && cached.portions.length) return cached;
+  // Rows cached before categories were stored are fetched again once to pick one up.
+  if (cached && cached.portions.length && cached.category != null) return cached;
   const detail = await usdaClient(env, fetcher).food(fdcId);
   return cacheFood(env.DB, detail);
+}
+
+/** Fill in the category of cached USDA foods that predate it, from search hits for the same foods. */
+export async function backfillCategories(db: D1Database, local: FoodRecord[], hits: NormalisedFood[]): Promise<void> {
+  const byId = new Map(hits.filter((h) => h.category).map((h) => [h.sourceId, h.category!]));
+  const stmts = local
+    .filter((f) => f.source === 'usda' && f.category == null && f.source_id && byId.has(f.source_id))
+    .map((f) => db.prepare('UPDATE food SET category = ? WHERE id = ? AND category IS NULL').bind(byId.get(f.source_id!)!, f.id));
+  if (stmts.length) await db.batch(stmts);
 }
 
 /** Token-based fuzzy search over the user's custom foods and the shared cache. */

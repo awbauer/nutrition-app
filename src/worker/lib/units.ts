@@ -136,15 +136,176 @@ export const SIZE_LABEL: Record<string, string> = {
   lb: 'lb',
 };
 
-export type FoodKind = 'drink' | 'soup' | 'protein' | 'spread' | 'bits' | 'bowl' | 'sliced' | 'whole' | 'other';
+export type FoodKind =
+  | 'drink'
+  | 'hot-drink'
+  | 'can-drink'
+  | 'wine'
+  | 'spirit'
+  | 'powder'
+  | 'soup'
+  | 'protein'
+  | 'spread'
+  | 'bits'
+  | 'bowl'
+  | 'sliced'
+  | 'whole'
+  | 'other';
+
+/** Exact units (typed as a number) and counted sizes offered for each kind of food. */
+const PRESETS: Record<FoodKind, { exact: string[]; sizes: string[] }> = {
+  drink: { exact: ['ml', 'fl oz'], sizes: ['glass', 'cup', 'bottle'] },
+  'hot-drink': { exact: ['ml', 'fl oz'], sizes: ['mug', 'cup'] },
+  'can-drink': { exact: ['ml', 'fl oz'], sizes: ['can', 'bottle', 'glass'] },
+  wine: { exact: ['ml', 'fl oz'], sizes: ['glass', 'bottle'] },
+  spirit: { exact: ['ml', 'fl oz'], sizes: ['shot', 'glass'] },
+  powder: { exact: ['g'], sizes: ['scoop', 'tbsp', 'tsp'] },
+  soup: { exact: ['ml', 'g'], sizes: ['bowl', 'cup', 'mug'] },
+  spread: { exact: ['g'], sizes: ['tbsp', 'tsp', 'cup'] },
+  bits: { exact: ['g', 'oz'], sizes: ['handful', 'cup', 'piece'] },
+  bowl: { exact: ['g', 'oz'], sizes: ['bowl', 'cup', 'plate', 'tbsp'] },
+  sliced: { exact: ['g', 'oz'], sizes: ['slice', 'piece'] },
+  whole: { exact: ['g', 'oz'], sizes: ['small', 'medium', 'large', 'piece'] },
+  protein: { exact: ['g', 'oz'], sizes: ['piece', 'small', 'medium', 'large'] },
+  other: { exact: ['g', 'oz'], sizes: ['piece', 'cup', 'bowl', 'plate', 'handful'] },
+};
+
+const table = (entries: [FoodKind, string[]][]) => new Map(entries.flatMap(([k, list]) => list.map((c) => [c.toLowerCase(), k] as const)));
+
+/**
+ * USDA categories, by name: WWEIA categories (Survey/FNDDS foods), branded food categories, and the
+ * SR Legacy / Foundation food groups that say enough on their own.
+ */
+const CATEGORY_KIND = table([
+  ['drink', [
+    // WWEIA
+    'Milk, whole', 'Milk, reduced fat', 'Milk, lowfat', 'Milk, nonfat', 'Flavored milk, whole', 'Flavored milk, reduced fat',
+    'Flavored milk, lowfat', 'Flavored milk, nonfat', 'Milk shakes and other dairy drinks', 'Milk substitutes', 'Plant-based milk',
+    'Citrus juice', 'Apple juice', 'Other fruit juice', 'Vegetable juice', 'Fruit drinks', 'Diet fruit drinks', 'Smoothies and grain drinks',
+    'Nutritional beverages', 'Protein and nutritional powders', 'Tap water', 'Bottled water', 'Flavored or carbonated water',
+    'Enhanced or fortified water', 'Baby juice', 'Baby water', 'Sport and energy drinks', 'Diet sport and energy drinks',
+    // Branded
+    'Milk', 'Plant Based Milk', 'Water', 'Other Drinks', 'Fruit & Vegetable Juice, Nectars & Fruit Drinks',
+    'Energy, Protein & Muscle Recovery Drinks', 'Non Alcoholic Beverages - Ready to Drink',
+    // SR Legacy / Foundation
+    'Beverages',
+  ]],
+  ['hot-drink', ['Coffee', 'Tea', 'Tea Bags', 'Coffee - Ground', 'Coffee/Tea/Substitutes']],
+  ['can-drink', ['Soft drinks', 'Diet soft drinks', 'Beer', 'Soda', 'Iced & Bottle Tea', 'Alcoholic Beverages - Beer']],
+  ['wine', ['Wine', 'Alcoholic Beverages - Wine']],
+  ['spirit', ['Liquor and cocktails', 'Alcoholic Beverages - Spirits']],
+  ['powder', ['Powdered Drinks', 'Protein powders']],
+  ['soup', ['Soups', 'Soups, broth-based', 'Soups, cream-based', 'Ramen and Asian broth-based soups', 'Canned Soup', 'Other Soups', 'Soup']],
+  ['spread', [
+    'Jams, syrups, toppings', 'Sugars and honey', 'Sugar substitutes', 'Salad dressings and vegetable oils', 'Butter and animal fats', 'Margarine',
+    'Cream cheese, sour cream, whipped cream', 'Cream and cream substitutes', 'Dips, gravies, other sauces', 'Mustard and other condiments',
+    'Tomato-based condiments', 'Pasta sauces, tomato-based', 'Soy-based condiments',
+    'Butter & Spread', 'Cream', 'Dips & Salsa', 'Honey', 'Jam, Jelly & Fruit Spreads', 'Ketchup, Mustard, BBQ & Cheese Sauce',
+    'Nut & Seed Butters', 'Oriental, Mexican & Ethnic Sauces', 'Prepared Pasta & Pizza Sauces', 'Salad Dressing & Mayonnaise',
+    'Syrups & Molasses', 'Vegetable & Cooking Oils', 'Herbs & Spices', 'Seasoning Mixes, Salts, Marinades & Tenderizers', 'Granulated, Brown & Powdered Sugar',
+    'Fats and Oils', 'Spices and Herbs',
+  ]],
+  ['bits', [
+    'Nuts and seeds', 'Dried fruits', 'Tortilla, corn, other chips', 'Potato chips', 'Pretzels/snack mix', 'Crackers, excludes saltines',
+    'Saltine crackers', 'Candy containing chocolate', 'Candy not containing chocolate', 'Grapes', 'Berries', 'Popcorn', 'Olives, pickles, pepper relish',
+    'Candy', 'Chocolate', 'Chips, Pretzels & Snacks', 'Crackers & Biscotti', 'Flavored Snack Crackers', 'Popcorn, Peanuts, Seeds & Related Snacks',
+    'Other Snacks', 'Wholesome Snacks', 'Pickles, Olives, Peppers & Relishes', 'Frozen Fruit & Fruit Juice Concentrates',
+    'Nut and Seed Products', 'Snacks',
+  ]],
+  ['bowl', [
+    'Oatmeal', 'Ready-to-eat cereal, higher sugar (>21.2g/100g)', 'Ready-to-eat cereal, lower sugar (=<21.2g/100g)', 'Pasta, noodles, cooked grains',
+    'Rice', 'Yogurt, regular', 'Yogurt, Greek', 'Plant-based yogurt', 'Ice cream and frozen dairy desserts', 'Pudding', 'Gelatins, ices, sorbets',
+    'Cottage/ricotta cheese', 'Pasta mixed dishes, excludes macaroni and cheese', 'Macaroni and cheese', 'Rice mixed dishes',
+    'Fried rice and lo/chow mein', 'Stir-fry and soy-based sauce mixtures', 'Meat mixed dishes', 'Poultry mixed dishes', 'Seafood mixed dishes',
+    'Bean, pea, legume dishes', 'Beans, peas, legumes', 'Lettuce and lettuce salads', 'Coleslaw, non-lettuce salads', 'Other Mexican mixed dishes',
+    'Mashed potatoes and white potato mixtures', 'Vegetable dishes', 'Other fruits and fruit salads', 'Egg rolls, dumplings, sushi' /* by the plate */,
+    'All Noodles', 'Cereal', 'Chili & Stew', 'Deli Salads', 'Entrees, Sides & Small Meals', 'Flavored Rice Dishes', 'Frozen Dinners & Entrees',
+    'Ice Cream & Frozen Yogurt', 'Other Frozen Desserts', 'Pasta by Shape & Type', 'Pasta Dinners', 'Vegetable and Lentil Mixes', 'Yogurt',
+    'Mexican Dinner Mixes', 'Pizza Mixes & Other Dry Dinners', 'Gelatin, Gels, Pectins & Desserts', 'Canned Vegetables', 'Frozen Vegetables',
+    'Canned Fruit', 'Breakfast Cereals', 'Cereal Grains and Pasta', 'Legumes and Legume Products',
+  ]],
+  ['sliced', [
+    'Yeast breads', 'Cheese', 'Cold cuts and cured meats', 'Cakes and pies', 'Pizza', 'Bacon', 'Melons',
+    'Breads & Buns', 'Pepperoni, Salami & Cold Cuts', 'Cakes, Cupcakes, Snack Cakes', 'Other Deli', 'Bacon, Sausages & Ribs',
+    'Sausages and Luncheon Meats',
+  ]],
+  ['whole', [
+    'Apples', 'Bananas', 'Citrus fruits', 'Pears', 'Peaches and nectarines', 'Bagels and English muffins', 'Biscuits, muffins, quick breads',
+    'Burgers', 'Burritos and tacos', 'Cookies and brownies', 'Doughnuts, sweet rolls, pastries', 'Egg/breakfast sandwiches', 'Eggs and omelets',
+    'Frankfurter sandwiches', 'Frankfurters', 'Meat and BBQ sandwiches', 'Chicken/turkey sandwiches', 'Other sandwiches', 'Cheese sandwiches',
+    'Peanut butter and jelly sandwiches', 'Seafood sandwiches', 'Pancakes, waffles, French toast', 'Rolls and buns', 'Sausages', 'Tortillas',
+    'Cereal bars', 'Nutrition bars', 'Vegetable sandwiches/burgers', 'Vegetables on a sandwich', 'Chicken patties, nuggets and tenders',
+    'White potatoes, baked or boiled', 'Tomatoes', 'Carrots', 'Other red and orange vegetables',
+    'Cookies & Biscuits', 'Croissants, Sweet Rolls, Muffins & Other Pastries', 'Eggs & Egg Substitutes', 'Frozen Breakfast Sandwiches, Biscuits & Meals',
+    'Prepared Subs & Sandwiches', 'Prepared Wraps and Burittos', 'Sausages, Hotdogs & Brats', 'Snack, Energy & Granola Bars',
+    "Frozen Appetizers & Hors D'oeuvres", 'Frozen Patties and Burgers',
+    // Fries come in small, medium and large.
+    'French fries and other fried white potatoes', 'French Fries, Potatoes & Onion Rings',
+  ]],
+  ['protein', [
+    'Beef, excludes ground', 'Ground beef', 'Chicken, whole pieces', 'Turkey, duck, other poultry', 'Pork', 'Lamb, goat, game', 'Fish', 'Shellfish',
+    'Liver and organ meats', 'Soy and meat-alternative products',
+    'Canned Meat', 'Fish & Seafood', 'Frozen Fish & Seafood', 'Other Meats', 'Poultry, Chicken & Turkey', 'Canned Seafood', 'Meat/Poultry/Other Animals',
+    'Beef Products', 'Pork Products', 'Poultry Products', 'Finfish and Shellfish Products', 'Lamb, Veal, and Game Products',
+  ]],
+]);
+
+/**
+ * SR Legacy / Foundation groups too broad to choose sizes from ("Dairy and Egg Products" is milk,
+ * cheese, eggs and butter); the food's name decides within them.
+ */
+const BROAD = new Set(
+  [
+    'Dairy and Egg Products', 'Fruits and Fruit Juices', 'Vegetables and Vegetable Products', 'Baked Products', 'Sweets', 'Fast Foods',
+    'Restaurant Foods', 'Meals, Entrees, and Side Dishes', 'Baby Foods', 'American Indian/Alaska Native Foods', 'Soups, Sauces, and Gravies',
+    'Not included in a food category', 'Cooked & Prepared', 'Pre-Packaged Fruit & Vegetables', 'Lunch Snacks & Combinations',
+  ].map((c) => c.toLowerCase()),
+);
 
 // Whole words, plural allowed (USDA says "Cereals", "Beverages").
 const words = (list: string) => new RegExp(`\\b(?:${list})s?\\b`);
+
+/** For category names not in the table (new branded categories, Open Food Facts tags); most specific first. */
+const CATEGORY_WORDS: [FoodKind, RegExp][] = [
+  ['powder', words('powder|powdered drink|drink mix')],
+  ['spirit', words('liquor|spirit|vodka|whiske?y|gin|rum|tequila|liqueur')],
+  ['wine', words('wine|sparkling wine|champagne')],
+  ['can-drink', words('soda|soft drink|cola|beer|cider|carbonated drink|energy drink|iced tea')],
+  ['hot-drink', words('coffee|tea|hot chocolate|cocoa drink|herbal tea')],
+  ['bits', words('candy|candies|confectioner(?:y|ies)|chocolate|chip|crisp|cracker|nut|seed|popcorn|pretzel|olive|dried fruit|snack')],
+  ['bowl', words('ice cream|frozen dessert|yogh?urt|cereal|breakfast cereal|pasta|noodle|rice|grain|porridge|oat|salad|stew|meal|dish|legume|bean')],
+  ['soup', words('soup|broth')],
+  ['drink', words('beverage|drink|juice|nectar|water|milk|smoothie|shake|plant based milk')],
+  ['spread', words('sauce|dressing|condiment|oil|fat|butter|spread|jam|honey|syrup|sugar|dip|mayonnaise|ketchup|mustard|spice|seasoning|cream')],
+  ['sliced', words('bread|cheese|cold cut|deli|salami|ham|pizza|cake|bacon')],
+  ['whole', words('cookie|biscuit|muffin|pastr(?:y|ie)|bagel|sandwich|wrap|burrito|egg|sausage|hot dog|bar|fruit')],
+  ['protein', words('meat|poultry|chicken|turkey|beef|pork|fish|seafood|tofu')],
+];
+
+/**
+ * Kind of food from its source category: USDA's (one name) or Open Food Facts' tags joined by " > ",
+ * broadest first. Null when there's no category or it's too broad to say.
+ */
+export function kindFromCategory(category?: string | null): FoodKind | null {
+  if (!category) return null;
+  const exact = CATEGORY_KIND.get(category.trim().toLowerCase());
+  if (exact) return exact;
+  if (BROAD.has(category.trim().toLowerCase())) return null;
+  for (const tag of category.split(' > ').reverse()) {
+    const t = tag.trim().toLowerCase();
+    const k = CATEGORY_KIND.get(t) ?? CATEGORY_WORDS.find(([, re]) => re.test(t))?.[0];
+    if (k) return k;
+  }
+  return null;
+}
+
+// ---- Fallback from the name, for custom foods, model estimates and the broad groups above ----
+
 // First match wins, so whole dishes come before the ingredients in their names
 // ("toast with butter" is sliced, "butter chicken" isn't a spread, "cream cheese" is).
 const KIND_WORDS: [FoodKind, RegExp][] = [
   ['soup', words('soup|broth|bisque|chowder|stock|gazpacho|ramen|pho')],
-  ['whole', words('sandwich|burger|hamburger|cheeseburger|burrito|taco|wrap|hot dog|bagel|muffin|croissant|donut|doughnut|pancake|waffle|cookie|scone|sub|hoagie')],
+  ['whole', words('fries|french fries|sandwich|burger|hamburger|cheeseburger|burrito|taco|wrap|hot dog|bagel|muffin|croissant|donut|doughnut|pancake|waffle|cookie|scone|sub|hoagie')],
   // Saucy dishes are eaten by the bowl, whatever meat is in them.
   ['bowl', words('curry|stew|chili|masala|korma|vindaloo|butter chicken|stir.fry|casserole|risotto|fried rice|pad thai')],
   ['sliced', words('pizza|lasagna|quiche|cake|cheesecake|pie|bread|toast|loaf|meatloaf|brownie|banana bread')],
@@ -158,6 +319,9 @@ const KIND_WORDS: [FoodKind, RegExp][] = [
 const DRINK = words('water|milk|juice|coffee|espresso|latte|cappuccino|americano|macchiato|mocha|flat white|cortado|tea|chai|matcha|cocoa|hot chocolate|soda|cola|soft drink|lemonade|smoothie|shake|milkshake|protein shake|kombucha|kefir|beer|ale|lager|stout|ipa|wine|cider|champagne|prosecco|cocktail|margarita|vodka|whiske?y|gin|rum|tequila|bourbon|drink|beverage|seltzer|tonic|sparkling|nectar|eggnog|horchata|lassi');
 // "Milk chocolate", "tuna canned in water", "rum cake", "tea biscuit": the drink word isn't the food.
 const NOT_DRINK = words('milk chocolate|in water|packed in|powder|powdered|dry|condensed|evaporated|cake|ice cream|frozen|bar|bread|biscuit|cookie|vinegar|chestnuts?|pudding|cheese|sauce|cereal|tart');
+const NUT_BUTTER = words('(?:peanut|almond|cashew|nut|seed|sunflower|hazelnut) butter|tahini');
+const COLD = words('iced|cold brew|frappe|frappuccino|bubble tea|boba');
+const POWDER = words('powder|powdered|dry mix|instant');
 const HOT_DRINK = words('coffee|espresso|latte|cappuccino|americano|macchiato|mocha|flat white|cortado|tea|chai|matcha|cocoa|hot chocolate');
 const CANNED_DRINK = words('soda|cola|soft drink|beer|ale|lager|stout|ipa|cider|seltzer|kombucha|sparkling|tonic|energy drink');
 const SPIRIT = words('vodka|whiske?y|gin|rum|tequila|bourbon|liqueur|brandy|cognac|schnapps');
@@ -170,20 +334,46 @@ const kindOf = (text: string): FoodKind => {
   return 'other';
 };
 
+/** A plain "drink" (from the name, or a category like "Beverages") made specific by the name. */
+function refineDrink(names: string[]): FoodKind {
+  const t = names.join(' ').toLowerCase();
+  if (POWDER.test(t)) return 'powder';
+  if (HOT_DRINK.test(t)) return COLD.test(t) ? 'drink' : 'hot-drink';
+  if (CANNED_DRINK.test(t)) return 'can-drink';
+  if (SPIRIT.test(t)) return 'spirit';
+  if (WINE.test(t)) return 'wine';
+  return 'drink';
+}
+
+interface FoodLike {
+  name?: string | string[] | null;
+  /** Source database category (USDA, Open Food Facts). */
+  category?: string | null;
+  portions?: Portion[];
+}
+
 /**
- * What sort of food this is, to choose sensible amount chips. Tries the user's own wording first,
- * then the database name, looking at the head of each name before the whole of it
- * ("Pasta, cooked, with added salt" is pasta, not salt); USDA portions in fluid ounces mark a drink.
+ * What sort of food this is, to choose sensible amount chips. The source database's category
+ * decides when there is one specific enough; otherwise (custom foods, model estimates, broad USDA
+ * groups) the name does: the user's own wording first, then the database name, the head of each
+ * before the whole ("Pasta, cooked, with added salt" is pasta, not salt).
  */
-export function foodKind(food: { name?: string | string[] | null; portions?: Portion[] }): FoodKind {
+export function foodKind(food: FoodLike): FoodKind {
   const names = [food.name ?? []].flat().filter(Boolean);
+  const fromCategory = kindFromCategory(food.category);
+  if (fromCategory === 'drink') return refineDrink(names);
+  // An iced latte or cold brew comes in a glass, not a mug.
+  if (fromCategory === 'hot-drink' && names.some((n) => COLD.test(n.toLowerCase()))) return 'drink';
+  // WWEIA files nut butters under "Nuts and seeds"; they're spread by the spoonful.
+  if (fromCategory === 'bits' && names.some((n) => NUT_BUTTER.test(n.split(',')[0]!.toLowerCase()))) return 'spread';
+  if (fromCategory) return fromCategory;
   // The head of a name is what the food is: "Pasta, cooked…", "pasta with tomato sauce", "tuna in water".
   const tries = names.flatMap((n) => [n.split(/,|\s(?:with|and|in|on|&)\s/i)[0]!, n]);
   for (const t of tries) {
     const k = kindOf(t);
-    if (k !== 'other') return k;
+    if (k !== 'other') return k === 'drink' ? refineDrink(names) : k;
   }
-  if ((food.portions ?? []).some((p) => /\bfl\.?\s*oz\b|\bfluid ounce/i.test(p.label) || p.unit === 'fl oz')) return 'drink';
+  if ((food.portions ?? []).some((p) => /\bfl\.?\s*oz\b|\bfluid ounce/i.test(p.label) || p.unit === 'fl oz')) return refineDrink(names);
   return 'other';
 }
 
@@ -192,39 +382,9 @@ export function foodKind(food: { name?: string | string[] | null; portions?: Por
  * ml/fl oz for drinks) and a short list of counted sizes that make sense for it.
  * The food's own portions are added on top by the editor.
  */
-export function sizesFor(food: { name?: string | string[] | null; portions?: Portion[] }): { kind: FoodKind; exact: string[]; sizes: string[] } {
+export function sizesFor(food: FoodLike): { kind: FoodKind; exact: string[]; sizes: string[] } {
   const kind = foodKind(food);
-  const name = [food.name ?? []].flat().join(' ').toLowerCase();
-  switch (kind) {
-    case 'drink': {
-      const sizes = HOT_DRINK.test(name)
-        ? ['mug', 'cup']
-        : CANNED_DRINK.test(name)
-          ? ['can', 'bottle', 'glass']
-          : SPIRIT.test(name)
-            ? ['shot', 'glass']
-            : WINE.test(name)
-              ? ['glass', 'bottle']
-              : ['glass', 'cup', 'bottle'];
-      return { kind, exact: ['ml', 'fl oz'], sizes };
-    }
-    case 'soup':
-      return { kind, exact: ['ml', 'g'], sizes: ['bowl', 'cup', 'mug'] };
-    case 'protein':
-      return { kind, exact: ['g', 'oz'], sizes: ['piece', 'small', 'medium', 'large'] };
-    case 'spread':
-      return { kind, exact: ['g'], sizes: ['tbsp', 'tsp', 'cup'] };
-    case 'bits':
-      return { kind, exact: ['g', 'oz'], sizes: ['handful', 'cup', 'piece'] };
-    case 'bowl':
-      return { kind, exact: ['g', 'oz'], sizes: ['bowl', 'cup', 'plate', 'tbsp'] };
-    case 'sliced':
-      return { kind, exact: ['g', 'oz'], sizes: ['slice', 'piece'] };
-    case 'whole':
-      return { kind, exact: ['g', 'oz'], sizes: ['small', 'medium', 'large', 'piece'] };
-    default:
-      return { kind, exact: ['g', 'oz'], sizes: ['piece', 'cup', 'bowl', 'plate', 'handful'] };
-  }
+  return { kind, ...PRESETS[kind] };
 }
 
 /** Stored UCUM unit back to the editor's unit name. */

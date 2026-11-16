@@ -10,6 +10,8 @@ export interface NormalisedFood {
   name: string;
   brand: string | null;
   dataType: string;
+  /** USDA's category: SR/Foundation food group, WWEIA category (FNDDS) or branded category. */
+  category: string | null;
   /** Branded foods: UPC/GTIN, used to match a scanned or photographed barcode. */
   gtin?: string | null;
   defaultServingGrams: number | null;
@@ -118,6 +120,7 @@ interface UsdaSearchFood {
   brandOwner?: string;
   brandName?: string;
   gtinUpc?: string;
+  foodCategory?: string;
   servingSize?: number;
   servingSizeUnit?: string;
   householdServingFullText?: string;
@@ -131,6 +134,9 @@ interface UsdaDetailFood {
   dataType: string;
   brandOwner?: string;
   brandName?: string;
+  foodCategory?: { description?: string };
+  brandedFoodCategory?: string;
+  wweiaFoodCategory?: { wweiaFoodCategoryDescription?: string };
   servingSize?: number;
   servingSizeUnit?: string;
   householdServingFullText?: string;
@@ -189,6 +195,7 @@ export function normaliseSearchFood(f: UsdaSearchFood): NormalisedFood {
     name: f.description,
     brand: f.brandName || f.brandOwner || null,
     dataType: f.dataType,
+    category: f.foodCategory || null,
     gtin: f.gtinUpc ?? null,
     defaultServingGrams: branded.grams ?? measures[0]?.grams ?? null,
     portions: [...branded.portions, ...measures],
@@ -221,6 +228,7 @@ export function normaliseDetailFood(f: UsdaDetailFood): NormalisedFood {
     name: f.description,
     brand: f.brandName || f.brandOwner || null,
     dataType: f.dataType,
+    category: f.foodCategory?.description || f.brandedFoodCategory || f.wweiaFoodCategory?.wweiaFoodCategoryDescription || null,
     defaultServingGrams: branded.grams ?? (portions[0] ? portions[0].grams / portions[0].amount : null),
     portions: [...branded.portions, ...portions],
     nutrients,
