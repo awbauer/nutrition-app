@@ -127,6 +127,18 @@ export async function cacheFood(db: D1Database, f: NormalisedFood | ExternalFood
         .bind(id, n.code, n.usdaId, n.value, n.unit),
     );
   }
+  if ('raw' in f && f.raw) {
+    // Keep the source's full record; a search hit never replaces a full detail record.
+    stmts.push(
+      db
+        .prepare(
+          `INSERT INTO food_source_snapshot (food_id, kind, payload) VALUES (?, ?, ?)
+           ON CONFLICT (food_id) DO UPDATE SET kind = excluded.kind, payload = excluded.payload, fetched_at = excluded.fetched_at
+           WHERE excluded.kind = 'detail' OR food_source_snapshot.kind = 'search'`,
+        )
+        .bind(id, f.raw.kind, JSON.stringify(f.raw.data)),
+    );
+  }
   await db.batch(stmts);
   return (await getFood(db, '', id))!;
 }
@@ -147,10 +159,24 @@ export interface ExternalFood {
 /** Resolve an FDC id via the cache, fetching full detail (with foodPortions) on a miss. */
 export async function resolveFdc(env: Env, fdcId: string, fetcher?: typeof fetch): Promise<FoodRecord> {
   const cached = await findCachedBySource(env.DB, 'usda', fdcId);
-  // Rows cached before categories were stored are fetched again once to pick one up.
-  if (cached && cached.portions.length && cached.category != null) return cached;
+  // Fetched again once if cached before categories or full snapshots were stored.
+  if (cached && cached.portions.length && cached.category != null && (await snapshotKind(env.DB, cached.id)) === 'detail') return cached;
   const detail = await usdaClient(env, fetcher).food(fdcId);
   return cacheFood(env.DB, detail);
+}
+
+async function snapshotKind(db: D1Database, foodId: string): Promise<'search' | 'detail' | null> {
+  const r = await db.prepare('SELECT kind FROM food_source_snapshot WHERE food_id = ?').bind(foodId).first<{ kind: 'search' | 'detail' }>();
+  return r?.kind ?? null;
+}
+
+/** The source database's full record for a food, as received (USDA FoodData Central JSON). */
+export async function getSnapshot(db: D1Database, foodId: string): Promise<{ kind: 'search' | 'detail'; fetched_at: string; data: unknown } | null> {
+  const r = await db
+    .prepare('SELECT kind, payload, fetched_at FROM food_source_snapshot WHERE food_id = ?')
+    .bind(foodId)
+    .first<{ kind: 'search' | 'detail'; payload: string; fetched_at: string }>();
+  return r ? { kind: r.kind, fetched_at: r.fetched_at, data: JSON.parse(r.payload) } : null;
 }
 
 /** Fill in the category of cached USDA foods that predate it, from search hits for the same foods. */

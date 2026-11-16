@@ -17,6 +17,8 @@ export interface NormalisedFood {
   defaultServingGrams: number | null;
   portions: Portion[];
   nutrients: NutrientValue[];
+  /** The record exactly as FoodData Central sent it, kept as a snapshot (food_source_snapshot). */
+  raw: { kind: 'search' | 'detail'; data: unknown };
 }
 
 /** Search tiers in spec order: whole foods first, then mixed dishes, then branded. */
@@ -200,6 +202,7 @@ export function normaliseSearchFood(f: UsdaSearchFood): NormalisedFood {
     defaultServingGrams: branded.grams ?? measures[0]?.grams ?? null,
     portions: [...branded.portions, ...measures],
     nutrients,
+    raw: { kind: 'search', data: f },
   };
 }
 
@@ -232,5 +235,6 @@ export function normaliseDetailFood(f: UsdaDetailFood): NormalisedFood {
     defaultServingGrams: branded.grams ?? (portions[0] ? portions[0].grams / portions[0].amount : null),
     portions: [...branded.portions, ...portions],
     nutrients,
+    raw: { kind: 'detail', data: f },
   };
 }
