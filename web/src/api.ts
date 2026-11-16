@@ -113,6 +113,7 @@ export interface MatchInfo {
   estimate_kcal_100g: number | null;
   candidates: MatchCandidate[];
   chosen: string | null;
+  lookup_error?: string;
 }
 
 export interface ItemDetail {

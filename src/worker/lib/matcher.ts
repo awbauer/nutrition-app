@@ -73,6 +73,8 @@ export interface MatchInfo {
   candidates: MatchCandidate[];
   /** fdc_id or food_id of the chosen candidate */
   chosen: string | null;
+  /** Set when the food database couldn't be reached, so "no match" isn't the real story. */
+  lookup_error?: string;
 }
 
 export interface MatchResult {
@@ -133,12 +135,14 @@ export async function matchFood(env: Env, userId: string, req: MatchRequest): Pr
   const fromLabel = req.label ? labelPer100(req.label) : null;
   // A printed label beats the model's guess as the plausibility reference.
   const est = fromLabel?.ENERC_KCAL ?? req.estimate_per_100g?.kcal ?? null;
+  let lookupError: string | undefined;
   const info = (via: Via, candidates: MatchCandidate[], chosen: string | null): MatchInfo => ({
     query,
     via,
     estimate_kcal_100g: est,
     candidates: candidates.slice(0, MAX_CANDIDATES),
     chosen,
+    ...(lookupError ? { lookup_error: lookupError } : {}),
   });
 
   // 1. The user's corrections, then exact custom foods / recipes.
@@ -202,7 +206,8 @@ export async function matchFood(env: Env, userId: string, req: MatchRequest): Pr
     try {
       rankedRemote = await rankedUsda(env, query, est);
     } catch (e) {
-      console.warn('USDA search failed', e);
+      lookupError = (e as Error).message;
+      console.warn('USDA search failed', query, lookupError);
     }
   }
   const seen = new Set(rankedLocal.map((r) => r.candidate.source_id).filter(Boolean));

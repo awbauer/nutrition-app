@@ -128,7 +128,17 @@ export function ItemSheet(props: { itemId: string; onChange: (m: Intake) => void
             </a>
           )}
         </div>
-        {match && <p class="text-sm text-ink-2">{VIA_LABEL[match.via]}{match.via === 'usda' || match.via === 'estimate' ? ` for “${match.query}”.` : '.'}</p>}
+        {match &&
+          (match.via === 'estimate' && match.lookup_error ? (
+            <p class="rounded-xl bg-mustard-soft p-3 text-sm text-ink">
+              The food database didn't respond when this was logged, so it uses the AI's estimate. Search below to pick the real food.
+            </p>
+          ) : (
+            <p class="text-sm text-ink-2">
+              {VIA_LABEL[match.via]}
+              {match.via === 'usda' || match.via === 'estimate' ? ` for “${match.query}”.` : '.'}
+            </p>
+          ))}
         {item.check_match && match?.estimate_kcal_100g != null && (
           <p class="rounded-xl bg-mustard-soft p-3 text-sm text-ink">
             This food has {kcal(per100('ENERC_KCAL'))} kcal per 100 g, but the AI expected about {kcal(match.estimate_kcal_100g)}. Worth checking the other matches.
