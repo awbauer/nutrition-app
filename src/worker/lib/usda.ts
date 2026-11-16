@@ -17,7 +17,7 @@ export interface NormalisedFood {
   defaultServingGrams: number | null;
   portions: Portion[];
   nutrients: NutrientValue[];
-  /** The record exactly as FoodData Central sent it, kept as a snapshot (food_source_snapshot). */
+  /** The record as FoodData Central sent it, less lab-sample detail (see snapshotOf); kept in food_source_snapshot. */
   raw: { kind: 'search' | 'detail'; data: unknown };
 }
 
@@ -162,6 +162,25 @@ function brandedServing(f: { servingSize?: number; servingSizeUnit?: string; hou
   return { grams, portions };
 }
 
+/**
+ * The record to keep, as received apart from two fields no food log needs: per-nutrient lab sample
+ * details on Foundation foods (store, purchase date and lab method for every sample; ~80% of their
+ * size) and branded foods' log of earlier versions. Everything else, unused fields included, stays.
+ */
+export function snapshotOf<T extends object>(f: T): T {
+  const { foodUpdateLog: _log, ...rest } = f as T & { foodUpdateLog?: unknown; foodNutrients?: unknown };
+  const nutrients = (rest as { foodNutrients?: unknown }).foodNutrients;
+  if (!Array.isArray(nutrients)) return rest as T;
+  return {
+    ...rest,
+    foodNutrients: nutrients.map((n) => {
+      if (!n || typeof n !== 'object') return n;
+      const { nutrientAnalysisDetails: _details, ...keep } = n as Record<string, unknown>;
+      return keep;
+    }),
+  } as T;
+}
+
 /** Parse "1 cup, chopped" / "2 slices" into {amount, unit}. */
 export function parsePortionText(text: string): { amount: number; unit: string } {
   const m = /^\s*(\d+(?:[./]\d+)?|\d+\s+\d\/\d)?\s*(.*)$/.exec(text) ?? [];
@@ -202,7 +221,7 @@ export function normaliseSearchFood(f: UsdaSearchFood): NormalisedFood {
     defaultServingGrams: branded.grams ?? measures[0]?.grams ?? null,
     portions: [...branded.portions, ...measures],
     nutrients,
-    raw: { kind: 'search', data: f },
+    raw: { kind: 'search', data: snapshotOf(f) },
   };
 }
 
@@ -235,6 +254,6 @@ export function normaliseDetailFood(f: UsdaDetailFood): NormalisedFood {
     defaultServingGrams: branded.grams ?? (portions[0] ? portions[0].grams / portions[0].amount : null),
     portions: [...branded.portions, ...portions],
     nutrients,
-    raw: { kind: 'detail', data: f },
+    raw: { kind: 'detail', data: snapshotOf(f) },
   };
 }
