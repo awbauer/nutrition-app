@@ -10,20 +10,20 @@ const food = (fdcId: number, description: string, kcal: number) => ({
   foodMeasures: [],
 });
 
-/** Behaves like FoodData Central: a request that overlaps another one gets HTTP 400. */
+/** Fails any request that overlaps another, to check the client sends one at a time. */
 function overlapRejectingFetch(results: (q: string) => unknown) {
   let inFlight = 0;
   let maxInFlight = 0;
   let calls = 0;
-  const fetcher = async (input: RequestInfo | URL) => {
+  const fetcher = async (_input: RequestInfo | URL, init?: RequestInit) => {
     calls++;
     inFlight++;
     maxInFlight = Math.max(maxInFlight, inFlight);
     const overlapped = inFlight > 1;
     await new Promise((r) => setTimeout(r, 15));
     inFlight--;
-    if (overlapped) return new Response('<html>400 Bad Request</html>', { status: 400 });
-    const q = new URL(String(input)).searchParams.get('query') ?? '';
+    if (overlapped) return new Response('busy', { status: 503 });
+    const q = (JSON.parse(String(init?.body ?? '{}')) as { query?: string }).query ?? '';
     return json(results(q));
   };
   return { fetcher, stats: () => ({ calls, maxInFlight }) };
@@ -32,6 +32,18 @@ function overlapRejectingFetch(results: (q: string) => unknown) {
 afterEach(() => vi.restoreAllMocks());
 
 describe('USDA client', () => {
+  it('POSTs searches as JSON (GET search 400s for some Survey (FNDDS) queries)', async () => {
+    let seen: { method?: string; body?: unknown; url?: string } = {};
+    const capture = async (input: RequestInfo | URL, init?: RequestInit) => {
+      seen = { method: init?.method, body: JSON.parse(String(init?.body)), url: String(input) };
+      return json({ foods: [] });
+    };
+    await new UsdaClient('k', capture as typeof fetch).search('pasta', ['Foundation', 'SR Legacy', 'Survey (FNDDS)'], 15);
+    expect(seen.method).toBe('POST');
+    expect(seen.body).toEqual({ query: 'pasta', dataType: ['Foundation', 'SR Legacy', 'Survey (FNDDS)'], pageSize: 15 });
+    expect(new URL(seen.url!).search).toBe('?api_key=k');
+  });
+
   it('sends one request at a time, so parallel lookups all succeed', async () => {
     const f = overlapRejectingFetch((q) => ({ foods: [food(1, q, 100)] }));
     const client = new UsdaClient('k', f.fetcher as typeof fetch);
@@ -42,7 +54,7 @@ describe('USDA client', () => {
 
   it('retries transient failures and gives up with a typed error', async () => {
     let n = 0;
-    const flaky = async () => (++n === 1 ? new Response('busy', { status: 400 }) : json({ foods: [food(2, 'pasta', 131)] }));
+    const flaky = async () => (++n === 1 ? new Response('busy', { status: 503 }) : json({ foods: [food(2, 'pasta', 131)] }));
     expect((await new UsdaClient('k', flaky as typeof fetch).search('pasta', ['SR Legacy']))[0]!.name).toBe('pasta');
     expect(n).toBe(2);
 
@@ -50,6 +62,12 @@ describe('USDA client', () => {
     const down = async () => (m++, new Response('no', { status: 503 }));
     await expect(new UsdaClient('k', down as typeof fetch).search('x', ['SR Legacy'])).rejects.toBeInstanceOf(UsdaError);
     expect(m).toBe(3);
+
+    // 400 from FoodData Central is deterministic, so it isn't retried.
+    let j = 0;
+    const bad = async () => (j++, new Response('<html>400 Bad Request</html>', { status: 400 }));
+    await expect(new UsdaClient('k', bad as typeof fetch).search('x', ['SR Legacy'])).rejects.toThrow('USDA /foods/search 400');
+    expect(j).toBe(1);
 
     let k = 0;
     const forbidden = async () => (k++, new Response('bad key', { status: 403 }));
@@ -66,7 +84,7 @@ describe('matching a whole meal against an overlap-rejecting USDA', () => {
       meatball: [food(2705969, 'Meatballs, chicken', 190)],
     };
     const f = overlapRejectingFetch((q) => ({ foods: Object.entries(DB).find(([k]) => q.includes(k))?.[1] ?? [] }));
-    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => f.fetcher(input as RequestInfo));
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input, init) => f.fetcher(input as RequestInfo, init));
     const out = {
       items: [
         { name: 'fresh pasta', amount: 170, unit: 'g', confidence: 0.9, search_terms: ['pasta fresh'], estimate_per_100g: { kcal: 150 } },
