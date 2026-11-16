@@ -22,6 +22,39 @@ export const SEARCH_TIERS = [['Foundation', 'SR Legacy'], ['Survey (FNDDS)'], ['
 
 type Fetch = typeof fetch;
 
+export class UsdaError extends Error {
+  constructor(
+    public path: string,
+    public status: number,
+  ) {
+    super(`USDA ${path} ${status}`);
+  }
+}
+
+const RETRYABLE = new Set([400, 429, 500, 502, 503, 504]);
+export const RETRY_DELAYS_MS = [400, 1200];
+/** Pause between requests: FoodData Central rejects requests that overlap. */
+export const USDA_SPACING_MS = 120;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * One USDA request at a time per isolate. Matching a meal looks up several foods in
+ * parallel; sent together, FoodData Central rejected all but the first with HTTP 400.
+ */
+class SerialQueue {
+  private tail: Promise<unknown> = Promise.resolve();
+  run<T>(task: () => Promise<T>): Promise<T> {
+    const next = this.tail.then(task, task);
+    // Keep the chain going whatever happens, with a short gap after each request.
+    this.tail = next.then(
+      () => sleep(USDA_SPACING_MS),
+      () => sleep(USDA_SPACING_MS),
+    );
+    return next;
+  }
+}
+export const usdaQueue = new SerialQueue();
+
 export class UsdaClient {
   constructor(
     private apiKey: string,
@@ -33,9 +66,18 @@ export class UsdaClient {
     const url = new URL(this.base + path);
     for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
     url.searchParams.set('api_key', this.apiKey);
-    const res = await this.fetcher(url.toString(), { headers: { Accept: 'application/json' } });
-    if (!res.ok) throw new Error(`USDA ${path} ${res.status}`);
-    return res.json<T>();
+    return usdaQueue.run(async () => {
+      let status = 0;
+      for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+        if (attempt) await sleep(RETRY_DELAYS_MS[attempt - 1]!);
+        const res = await this.fetcher(url.toString(), { headers: { Accept: 'application/json' } });
+        if (res.ok) return res.json<T>();
+        status = res.status;
+        // USDA answers overlapping requests with 400 (not 429), so 400 is retried too.
+        if (!RETRYABLE.has(status)) break;
+      }
+      throw new UsdaError(path, status);
+    });
   }
 
   async search(query: string, dataTypes: readonly string[], pageSize = 8): Promise<NormalisedFood[]> {
