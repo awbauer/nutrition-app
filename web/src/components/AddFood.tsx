@@ -4,7 +4,7 @@ import { api, type Food, type Intake, type MealType, type UsdaHit } from '../api
 import { MEALS, MEAL_LABEL } from '../format';
 import { submitMeal } from '../queue';
 import { AmountEditor } from './AmountEditor';
-import { fromUcum, toGrams } from '../../../src/worker/lib/units';
+import { fromUcum, sizesFor, toGrams } from '../../../src/worker/lib/units';
 
 type Hit = { kind: 'local'; food: Food } | { kind: 'usda'; hit: UsdaHit };
 
@@ -75,8 +75,9 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
         setAmount(first.amount);
         setUnit(first.unit);
       } else {
+        // No portions: start in the food's exact unit (ml for a drink, grams otherwise).
         setAmount(100);
-        setUnit('g');
+        setUnit(sizesFor({ name: food.name }).exact[0]!);
       }
     } catch (e) {
       toast.error(e);
@@ -119,6 +120,7 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
           {picked.brand && <p class="text-sm text-ink-2">{picked.brand}</p>}
         </div>
         <AmountEditor
+          name={[label ?? '', picked.name]}
           portions={picked.portions}
           defaultServingGrams={picked.default_serving_grams}
           kcalPer100={kcal100 ?? null}

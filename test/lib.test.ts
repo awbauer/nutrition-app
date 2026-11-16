@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { addDays, logDate, mealTypeForTime, localParts } from '../src/worker/lib/dates';
 import { fromUsda } from '../src/worker/lib/nutrients';
-import { toGrams, ucum } from '../src/worker/lib/units';
+import { EXACT_UNITS, foodKind, sizesFor, toGrams, ucum, type Portion } from '../src/worker/lib/units';
 import { normaliseDetailFood, parsePortionText } from '../src/worker/lib/usda';
 import { chickenDetail, foundationEgg } from './fixtures/usda';
 
@@ -65,5 +65,44 @@ describe('USDA nutrient mapping', () => {
   });
   it('converts kJ to kcal', () => {
     expect(fromUsda([{ id: 1008, value: 418.4, unit: 'kJ' }])[0]!.value).toBeCloseTo(100);
+  });
+});
+
+describe('amount chips by food', () => {
+  const kind = (name: string | string[], portions: Portion[] = []) => foodKind({ name, portions });
+  it('spots drinks, including from USDA names and fl oz portions', () => {
+    expect(kind('Milk, whole, 3.25% milkfat')).toBe('drink');
+    expect(kind('Beverages, coffee, brewed')).toBe('drink');
+    expect(kind('Alcoholic beverage, beer, regular')).toBe('drink');
+    expect(kind('oat latte')).toBe('drink');
+    expect(kind('Sparkling Lime', [{ label: '12 fl oz', unit: 'fl oz', amount: 12, grams: 355 }])).toBe('drink');
+    expect(kind('Candies, milk chocolate')).not.toBe('drink');
+    expect(kind('Fish, tuna, light, canned in water')).toBe('protein');
+    expect(kind('Watermelon, raw')).toBe('sliced');
+  });
+  it('reads the head of a name before its ingredients', () => {
+    expect(kind('Pasta, cooked, enriched, with added salt')).toBe('bowl');
+    expect(kind('toast with butter')).toBe('sliced');
+    expect(kind('butter chicken')).toBe('bowl');
+    expect(kind('Chicken, breast, roasted')).toBe('protein');
+    expect(kind('peanut butter sandwich')).toBe('whole');
+    expect(kind('chicken noodle soup')).toBe('soup');
+    expect(kind('Butter, salted')).toBe('spread');
+    expect(kind('Cereals ready-to-eat, granola')).toBe('bowl');
+    expect(kind('Bananas, raw')).toBe('whole');
+    expect(kind('Nuts, almonds')).toBe('bits');
+    expect(kind(['my usual', 'Quinoa, cooked'])).toBe('bowl');
+  });
+  it('offers volume units for drinks and a short list for food', () => {
+    expect(sizesFor({ name: 'Beverages, coffee, brewed' })).toMatchObject({ exact: ['ml', 'fl oz'], sizes: ['mug', 'cup'] });
+    expect(sizesFor({ name: 'Cola' }).sizes).toEqual(['can', 'bottle', 'glass']);
+    expect(sizesFor({ name: 'Orange juice' }).exact).toEqual(['ml', 'fl oz']);
+    expect(sizesFor({ name: 'Olive oil' })).toMatchObject({ exact: ['g'], sizes: ['tbsp', 'tsp', 'cup'] });
+    expect(sizesFor({ name: 'Mystery dish' }).sizes.length).toBeLessThanOrEqual(5);
+  });
+  it('converts exact units the way the editor does', () => {
+    expect(toGrams(12, 'fl oz').grams).toBeCloseTo(EXACT_UNITS['fl oz']!.grams * 12, 5);
+    expect(toGrams(330, 'ml').grams).toBe(330);
+    expect(toGrams(1, 'shot').grams).toBe(44);
   });
 });

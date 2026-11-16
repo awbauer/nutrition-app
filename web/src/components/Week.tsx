@@ -10,6 +10,8 @@ interface Summary {
   end: string;
   days: { date: string; meals: number; totals: Record<string, number> }[];
   days_logged: number;
+  /** Logged days before today: the ones the average is taken over. */
+  days_counted: number;
   average: Record<string, number>;
   targets: Record<string, number>;
   streak: number;
@@ -48,14 +50,17 @@ export function Week(props: { today: string }) {
         // Desktop: summary and chart side by side.
         <div class="flex flex-col gap-4 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)] lg:items-start lg:gap-6">
           <section class="card p-5">
-            <p class="text-sm text-ink-2">Daily average · {s.days_logged} of 7 days logged</p>
+            <p class="text-sm text-ink-2">
+              Daily average · {s.days_counted} completed {s.days_counted === 1 ? 'day' : 'days'}
+            </p>
             <div class="mt-1 flex items-baseline gap-2">
-              <span class="num text-5xl font-semibold">{s.days_logged ? kcal(s.average.ENERC_KCAL) : '–'}</span>
+              <span class="num text-5xl font-semibold">{s.days_counted ? kcal(s.average.ENERC_KCAL) : '–'}</span>
               <span class="text-ink-2">kcal</span>
-              {s.targets.ENERC_KCAL != null && s.days_logged > 0 && <Delta value={s.average.ENERC_KCAL ?? 0} target={s.targets.ENERC_KCAL} unit="kcal" />}
+              {s.targets.ENERC_KCAL != null && s.days_counted > 0 && <Delta value={s.average.ENERC_KCAL ?? 0} target={s.targets.ENERC_KCAL} unit="kcal" />}
             </div>
+            {s.end >= props.today && <p class="mt-1 text-xs text-faint">Today counts once it's over.</p>}
             <div class="mt-3 grid grid-cols-3 gap-2 text-center">
-              <Stat label="Protein / day" value={s.days_logged ? `${Math.round(s.average.PROCNT ?? 0)} g` : '–'} sub={s.targets.PROCNT ? `target ${Math.round(s.targets.PROCNT)} g` : undefined} />
+              <Stat label="Protein / day" value={s.days_counted ? `${Math.round(s.average.PROCNT ?? 0)} g` : '–'} sub={s.targets.PROCNT ? `target ${Math.round(s.targets.PROCNT)} g` : undefined} />
               <Stat label="Target" value={s.targets.ENERC_KCAL ? kcal(s.targets.ENERC_KCAL) : '–'} sub="kcal / day" />
               <Stat label="Streak" value={`${s.streak}`} sub={s.streak === 1 ? 'day' : 'days'} />
             </div>
@@ -131,7 +136,8 @@ function Bars(props: { days: Summary['days']; target?: number; today: string }) 
   const bw = (W - 8) / 7;
   const barW = Math.min(bw - 14, 56);
   const y = (v: number) => H - pad - (v / max) * (H - pad - top);
-  const logged = props.days.filter((d) => d.meals > 0);
+  // Same days as the headline average: completed (before today) and logged.
+  const logged = props.days.filter((d) => d.meals > 0 && d.date < props.today);
   const avg = MACROS.map((m) => {
     const g = logged.length ? logged.reduce((a, d) => a + (d.totals[m.code] ?? 0), 0) / logged.length : 0;
     return { ...m, g, kcal: g * m.kcalPerG };

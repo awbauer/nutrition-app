@@ -37,6 +37,7 @@ const GENERIC_GRAMS: Record<string, number> = {
   scoop: 30,
   mug: 300,
   plate: 350,
+  shot: 44,
 };
 
 const ALIASES: Record<string, string> = {
@@ -52,7 +53,7 @@ const ALIASES: Record<string, string> = {
   'fluid ounce': 'fl oz', 'fluid ounces': 'fl oz',
   slices: 'slice', pieces: 'piece', pc: 'piece', pcs: 'piece', each: 'piece', whole: 'piece', item: 'piece',
   servings: 'serving', portion: 'serving',
-  handfuls: 'handful', bowls: 'bowl', bowlful: 'bowl', glasses: 'glass', mugs: 'mug', plates: 'plate', scoops: 'scoop', cans: 'can', bottles: 'bottle',
+  handfuls: 'handful', bowls: 'bowl', bowlful: 'bowl', glasses: 'glass', mugs: 'mug', plates: 'plate', scoops: 'scoop', cans: 'can', bottles: 'bottle', shots: 'shot',
   sm: 'small', med: 'medium', lg: 'large',
 };
 
@@ -100,24 +101,131 @@ export function ucum(rawUnit: string): string {
 }
 
 /**
- * Relative sizes offered in the amount editor, with what they mean in grams when the food
- * has no portion of its own. The UI reads this table so its preview matches the server.
+ * Units typed as an exact number in the amount editor, with grams per unit
+ * (volume at water density, same as toGrams). Everything else is a counted size.
  */
-export const RELATIVE_SIZES: { unit: string; label: string }[] = [
-  { unit: 'handful', label: 'Handful' },
-  { unit: 'bowl', label: 'Bowl' },
-  { unit: 'glass', label: 'Glass' },
-  { unit: 'mug', label: 'Mug' },
-  { unit: 'plate', label: 'Plate' },
-  { unit: 'cup', label: 'Cup' },
-  { unit: 'slice', label: 'Slice' },
-  { unit: 'piece', label: 'Piece' },
-  { unit: 'tbsp', label: 'Tablespoon' },
-  { unit: 'tsp', label: 'Teaspoon' },
-  { unit: 'small', label: 'Small' },
-  { unit: 'medium', label: 'Medium' },
-  { unit: 'large', label: 'Large' },
+export const EXACT_UNITS: Record<string, { label: string; suffix: string; grams: number; step: number }> = {
+  g: { label: 'Grams', suffix: 'g', grams: 1, step: 1 },
+  oz: { label: 'Ounces', suffix: 'oz', grams: MASS.oz!, step: 0.5 },
+  ml: { label: 'ml', suffix: 'ml', grams: 1, step: 1 },
+  'fl oz': { label: 'Fl oz', suffix: 'fl oz', grams: VOLUME_ML['fl oz']!, step: 0.5 },
+};
+
+/** Chip labels for counted sizes; the UI reads this so its preview matches the server's grams. */
+export const SIZE_LABEL: Record<string, string> = {
+  handful: 'Handful',
+  bowl: 'Bowl',
+  glass: 'Glass',
+  mug: 'Mug',
+  plate: 'Plate',
+  cup: 'Cup',
+  slice: 'Slice',
+  piece: 'Piece',
+  tbsp: 'Tbsp',
+  tsp: 'Tsp',
+  small: 'Small',
+  medium: 'Medium',
+  large: 'Large',
+  can: 'Can',
+  bottle: 'Bottle',
+  scoop: 'Scoop',
+  shot: 'Shot',
+  serving: 'Serving',
+  l: 'Litre',
+  kg: 'kg',
+  lb: 'lb',
+};
+
+export type FoodKind = 'drink' | 'soup' | 'protein' | 'spread' | 'bits' | 'bowl' | 'sliced' | 'whole' | 'other';
+
+// Whole words, plural allowed (USDA says "Cereals", "Beverages").
+const words = (list: string) => new RegExp(`\\b(?:${list})s?\\b`);
+// First match wins, so whole dishes come before the ingredients in their names
+// ("toast with butter" is sliced, "butter chicken" isn't a spread, "cream cheese" is).
+const KIND_WORDS: [FoodKind, RegExp][] = [
+  ['soup', words('soup|broth|bisque|chowder|stock|gazpacho|ramen|pho')],
+  ['whole', words('sandwich|burger|hamburger|cheeseburger|burrito|taco|wrap|hot dog|bagel|muffin|croissant|donut|doughnut|pancake|waffle|cookie|scone|sub|hoagie')],
+  // Saucy dishes are eaten by the bowl, whatever meat is in them.
+  ['bowl', words('curry|stew|chili|masala|korma|vindaloo|butter chicken|stir.fry|casserole|risotto|fried rice|pad thai')],
+  ['sliced', words('pizza|lasagna|quiche|cake|cheesecake|pie|bread|toast|loaf|meatloaf|brownie|banana bread')],
+  ['protein', words('chicken|beef|pork|lamb|steak|fish|salmon|tuna|cod|shrimp|prawns|tofu|tempeh|turkey|meatballs?')],
+  ['spread', words('butter|margarine|oil|jam|jelly|marmalade|honey|syrup|sauce|dressing|mayo|mayonnaise|ketchup|mustard|salsa|hummus|guacamole|cream cheese|sour cream|whipped cream|heavy cream|cream|sugar|salt|spread|nutella|pesto|gravy|vinegar|dip|creamer|seeds|tahini')],
+  ['bits', words('nuts?|almonds?|cashews?|peanuts?|walnuts?|pecans?|pistachios?|hazelnuts?|macadamias?|chips|crisps|popcorn|pretzels|berries|blueberries|raspberries|strawberries|blackberries|grapes|raisins|cherries|trail mix|crackers?|candy|candies|gummies|olives|edamame|dates|dried fruit')],
+  ['bowl', words('cereal|oatmeal|porridge|oats|granola|muesli|rice|pasta|spaghetti|macaroni|noodles|salad|stew|chili|curry|yogh?urt|ice cream|gelato|quinoa|couscous|beans|lentils|chickpeas|mashed|stir.fry|risotto|cottage cheese|pudding|poke')],
+  ['sliced', words('cheese|ham|bacon|salami|pepperoni|prosciutto|deli|watermelon|cantaloupe|melon|pineapple')],
+  ['whole', words('apple|banana|orange|pear|peach|plum|nectarine|mango|kiwi|tangerine|clementine|mandarin|eggs?|avocado|potato|potatoes|sweet potato|tomato|tomatoes|onion|carrot|cucumber|pepper|biscuit|sausage|bar|tortilla|roll|bun|pretzel')],
 ];
+const DRINK = words('water|milk|juice|coffee|espresso|latte|cappuccino|americano|macchiato|mocha|flat white|cortado|tea|chai|matcha|cocoa|hot chocolate|soda|cola|soft drink|lemonade|smoothie|shake|milkshake|protein shake|kombucha|kefir|beer|ale|lager|stout|ipa|wine|cider|champagne|prosecco|cocktail|margarita|vodka|whiske?y|gin|rum|tequila|bourbon|drink|beverage|seltzer|tonic|sparkling|nectar|eggnog|horchata|lassi');
+// "Milk chocolate", "tuna canned in water", "rum cake", "tea biscuit": the drink word isn't the food.
+const NOT_DRINK = words('milk chocolate|in water|packed in|powder|powdered|dry|condensed|evaporated|cake|ice cream|frozen|bar|bread|biscuit|cookie|vinegar|chestnuts?|pudding|cheese|sauce|cereal|tart');
+const HOT_DRINK = words('coffee|espresso|latte|cappuccino|americano|macchiato|mocha|flat white|cortado|tea|chai|matcha|cocoa|hot chocolate');
+const CANNED_DRINK = words('soda|cola|soft drink|beer|ale|lager|stout|ipa|cider|seltzer|kombucha|sparkling|tonic|energy drink');
+const SPIRIT = words('vodka|whiske?y|gin|rum|tequila|bourbon|liqueur|brandy|cognac|schnapps');
+const WINE = words('wine|champagne|prosecco|cocktail|margarita');
+
+const kindOf = (text: string): FoodKind => {
+  const t = text.toLowerCase().replace(/[,()]/g, ' ');
+  if (DRINK.test(t) && !NOT_DRINK.test(t)) return 'drink';
+  for (const [kind, re] of KIND_WORDS) if (re.test(t)) return kind;
+  return 'other';
+};
+
+/**
+ * What sort of food this is, to choose sensible amount chips. Tries the user's own wording first,
+ * then the database name, looking at the head of each name before the whole of it
+ * ("Pasta, cooked, with added salt" is pasta, not salt); USDA portions in fluid ounces mark a drink.
+ */
+export function foodKind(food: { name?: string | string[] | null; portions?: Portion[] }): FoodKind {
+  const names = [food.name ?? []].flat().filter(Boolean);
+  // The head of a name is what the food is: "Pasta, cooked…", "pasta with tomato sauce", "tuna in water".
+  const tries = names.flatMap((n) => [n.split(/,|\s(?:with|and|in|on|&)\s/i)[0]!, n]);
+  for (const t of tries) {
+    const k = kindOf(t);
+    if (k !== 'other') return k;
+  }
+  if ((food.portions ?? []).some((p) => /\bfl\.?\s*oz\b|\bfluid ounce/i.test(p.label) || p.unit === 'fl oz')) return 'drink';
+  return 'other';
+}
+
+/**
+ * The amount chips worth showing for a food: exact units typed as a number (grams/ounces for food,
+ * ml/fl oz for drinks) and a short list of counted sizes that make sense for it.
+ * The food's own portions are added on top by the editor.
+ */
+export function sizesFor(food: { name?: string | string[] | null; portions?: Portion[] }): { kind: FoodKind; exact: string[]; sizes: string[] } {
+  const kind = foodKind(food);
+  const name = [food.name ?? []].flat().join(' ').toLowerCase();
+  switch (kind) {
+    case 'drink': {
+      const sizes = HOT_DRINK.test(name)
+        ? ['mug', 'cup']
+        : CANNED_DRINK.test(name)
+          ? ['can', 'bottle', 'glass']
+          : SPIRIT.test(name)
+            ? ['shot', 'glass']
+            : WINE.test(name)
+              ? ['glass', 'bottle']
+              : ['glass', 'cup', 'bottle'];
+      return { kind, exact: ['ml', 'fl oz'], sizes };
+    }
+    case 'soup':
+      return { kind, exact: ['ml', 'g'], sizes: ['bowl', 'cup', 'mug'] };
+    case 'protein':
+      return { kind, exact: ['g', 'oz'], sizes: ['piece', 'small', 'medium', 'large'] };
+    case 'spread':
+      return { kind, exact: ['g'], sizes: ['tbsp', 'tsp', 'cup'] };
+    case 'bits':
+      return { kind, exact: ['g', 'oz'], sizes: ['handful', 'cup', 'piece'] };
+    case 'bowl':
+      return { kind, exact: ['g', 'oz'], sizes: ['bowl', 'cup', 'plate', 'tbsp'] };
+    case 'sliced':
+      return { kind, exact: ['g', 'oz'], sizes: ['slice', 'piece'] };
+    case 'whole':
+      return { kind, exact: ['g', 'oz'], sizes: ['small', 'medium', 'large', 'piece'] };
+    default:
+      return { kind, exact: ['g', 'oz'], sizes: ['piece', 'cup', 'bowl', 'plate', 'handful'] };
+  }
+}
 
 /** Stored UCUM unit back to the editor's unit name. */
 export function fromUcum(u: string): string {

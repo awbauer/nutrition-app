@@ -80,7 +80,7 @@ describe('week summary', () => {
   });
   afterEach(() => vi.restoreAllMocks());
 
-  it('averages logged days only and counts the streak', async () => {
+  it('averages completed logged days only and counts the streak', async () => {
     const U = { DEV_USER_EMAIL: 'week@example.test' };
     await api('/settings', { method: 'PUT', json: { timezone: 'UTC', day_cutoff: '00:00' } }, U);
     const food = await api('/foods', { method: 'POST', json: { name: 'Test meal', per_100g: { ENERC_KCAL: 100, PROCNT: 10 } } }, U);
@@ -97,7 +97,9 @@ describe('week summary', () => {
     const s = await api('/summary', {}, U);
     expect(s.data.days).toHaveLength(7);
     expect(s.data.days_logged).toBe(4);
-    expect(s.data.average.ENERC_KCAL).toBe(1250);
+    // Today is still in progress: only the three earlier days count (2000 + 1500 + 500) / 3.
+    expect(s.data.days_counted).toBe(3);
+    expect(s.data.average.ENERC_KCAL).toBe(1333.3);
     expect(s.data.targets.ENERC_KCAL).toBe(1800);
     expect(s.data.streak).toBe(3);
   });

@@ -139,11 +139,13 @@ progress.get('/summary', async (c) => {
       .all<{ log_date: string }>(),
   ]);
   const targets = targetsFromGoals(goals);
-  // Average over days that have food logged, so an unlogged day doesn't read as fasting.
+  // Average over completed days with food logged: an unlogged day doesn't read as fasting,
+  // and today (still in progress) doesn't drag the average down until it's over.
   const loggedDays = days.filter((d) => d.meals > 0);
+  const counted = loggedDays.filter((d) => d.date < t);
   const average: Record<string, number> = {};
   for (const code of ['ENERC_KCAL', 'PROCNT', 'FAT', 'CHOCDF', 'FIBTG']) {
-    if (loggedDays.length) average[code] = round(loggedDays.reduce((s, d) => s + (d.totals[code] ?? 0), 0) / loggedDays.length);
+    if (counted.length) average[code] = round(counted.reduce((s, d) => s + (d.totals[code] ?? 0), 0) / counted.length);
   }
   const set = new Set(logged.results.map((r) => r.log_date));
   let streak = 0;
@@ -153,5 +155,5 @@ progress.get('/summary', async (c) => {
     cursor = addDays(cursor, -1);
   }
   const series = Array.from({ length: 7 }, (_, i) => addDays(start, i)).map((d) => days.find((x) => x.date === d) ?? { date: d, meals: 0, totals: {} });
-  return c.json({ start, end, days: series, days_logged: loggedDays.length, average, targets, streak });
+  return c.json({ start, end, days: series, days_logged: loggedDays.length, days_counted: counted.length, average, targets, streak });
 });
