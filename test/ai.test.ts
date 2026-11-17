@@ -168,7 +168,7 @@ describe('text logging', () => {
     );
     expect(r.status).toBe(202);
     expect(ai.calls[0]!.opts).toEqual({ gateway: { id: 'nutrition' } });
-    expect(r.data).toMatchObject({ source: 'text', status: 'in-progress', meal_type: 'dinner', prompt_version: 'parse-v3', pipeline_version: '2.0' });
+    expect(r.data).toMatchObject({ source: 'text', status: 'in-progress', meal_type: 'dinner', prompt_version: 'parse-v4', pipeline_version: '2.0' });
     expect(r.data.model_id).toMatch(/llama/);
 
     // q2 (5 g difference) is not worth asking; the oil question is.
@@ -297,6 +297,75 @@ describe('photo logging', () => {
     expect(r.status).toBe(202);
     expect(r.data.pending.error).toMatch(/gateway down/);
     expect((await api(`/intake/${r.data.id}/media`)).status).toBe(200);
+  });
+});
+
+describe('several photos of one meal', () => {
+  const jpg = (n: number) => new File([new Uint8Array([0xff, 0xd8, 0xff, n])], `p${n}.jpg`, { type: 'image/jpeg' });
+  const multi = (files: File[], extra: Record<string, string> = {}) => {
+    const f = new FormData();
+    for (const file of files) f.append('photo', file);
+    for (const [k, v] of Object.entries(extra)) f.append(k, v);
+    return f;
+  };
+
+  it('sends every photo in one request, told they are one meal, and serves each back in order', async () => {
+    const out = {
+      meal_type_guess: 'lunch',
+      items: [
+        { name: 'roast chicken breast', amount: 120, unit: 'g', confidence: 0.8, search_terms: ['chicken breast roasted'] },
+        { name: 'apple', amount: 1, unit: 'medium', confidence: 0.9, search_terms: ['apple raw'] },
+      ],
+      questions: [],
+    };
+    const ai = fakeAI([{ response: JSON.stringify(out) }]);
+    const r = await api('/intake', { method: 'POST', body: multi([jpg(1), jpg(2), jpg(3)], { text: 'the apple was small' }) }, { AI: ai.AI });
+    expect(r.status).toBe(202);
+    expect(r.data).toMatchObject({ source: 'photo', photo_count: 3, has_media: true, status: 'completed' });
+    expect(r.data.items.map((i: any) => i.display_name)).toHaveLength(2);
+    expect(ai.calls).toHaveLength(1);
+    const content = ai.calls[0]!.inputs.messages[0].content;
+    expect(content.filter((c: any) => c.type === 'image_url')).toHaveLength(3);
+    expect(content[0].text).toMatch(/These 3 photos are all of ONE meal/);
+    expect(content[0].text).toMatch(/Count each food once/);
+    expect(content[0].text).toMatch(/the apple was small/);
+
+    for (const n of [1, 2, 3]) {
+      const p = await api(`/intake/${r.data.id}/photos/${n - 1}`);
+      expect(p.status).toBe(200);
+      expect(p.res.headers.get('Content-Type')).toBe('image/jpeg');
+    }
+    expect((await api(`/intake/${r.data.id}/photos/3`)).status).toBe(404);
+    expect((await api(`/intake/${r.data.id}/photos/0`, {}, { DEV_USER_EMAIL: 'other@example.test' })).status).toBe(404);
+    // Older clients still get the first photo.
+    expect((await api(`/intake/${r.data.id}/media`)).status).toBe(200);
+  });
+
+  it('a single photo keeps the single-photo prompt', async () => {
+    const out = { items: [{ name: 'apple', amount: 1, unit: 'medium', confidence: 0.9 }], questions: [] };
+    const ai = fakeAI([{ response: out }]);
+    await api('/intake', { method: 'POST', body: multi([jpg(1)]) }, { AI: ai.AI });
+    expect(ai.calls[0]!.inputs.messages[0].content[0].text).toMatch(/^Identify every food and drink shown in this photo/);
+  });
+
+  it('limits the number of photos', async () => {
+    const r = await api('/intake', { method: 'POST', body: multi([1, 2, 3, 4, 5, 6, 7].map(jpg)) });
+    expect(r.status).toBe(413);
+  });
+
+  it('reads photos one at a time with a single-image model and combines the items', async () => {
+    await api('/settings', { method: 'PUT', json: { model_vision: '@cf/meta/llama-3.2-11b-vision-instruct' } }, { DEV_USER_EMAIL: 'single-image@example.test' });
+    const a = { items: [{ name: 'apple', amount: 1, unit: 'medium', confidence: 0.9 }], questions: [] };
+    const b = {
+      items: [{ name: 'latte', amount: 350, unit: 'ml', confidence: 0.5, estimate_per_100g: { kcal: 60 } }],
+      questions: [{ id: 'q1', item_index: 0, text: 'Size?', options: ['Regular', 'Large'], default: 'Regular', effects: { Regular: {}, Large: { set_amount: { amount: 700, unit: 'ml' } } } }],
+    };
+    const ai = fakeAI([{ response: a }, { response: b }]);
+    const r = await api('/intake', { method: 'POST', body: multi([jpg(1), jpg(2)]) }, { AI: ai.AI, DEV_USER_EMAIL: 'single-image@example.test' } as any);
+    expect(ai.calls).toHaveLength(2);
+    expect(ai.calls[0]!.inputs.image).toBeTruthy();
+    expect(r.data.items).toHaveLength(2);
+    expect(r.data.pending.questions[0]).toMatchObject({ item_index: 1, text: 'Size?' });
   });
 });
 

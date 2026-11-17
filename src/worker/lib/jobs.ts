@@ -4,7 +4,7 @@
  * models, matches foods and fills the meal in.
  */
 import type { Env, User } from '../env';
-import { FALLBACK_MODELS, isCapacityError, parsePhoto, parseText, transcribe, withCapacityFallback, type ModelOutput } from './ai';
+import { FALLBACK_MODELS, isCapacityError, parsePhotos, parseText, transcribe, withCapacityFallback, type ModelOutput, type PhotoInput } from './ai';
 import { localParts } from './dates';
 import { HttpError } from './ids';
 import type { MealType } from './intake';
@@ -78,21 +78,19 @@ export async function processIntake(env: Env, msg: JobMessage, final: boolean): 
     let rawText = row.raw_input_text;
     const ctx = { recipes: await recipeNames(env.DB, user.id), batch: !!state.job.recipe };
 
-    if (row.source === 'photo' || row.source === 'voice') {
+    if (row.source === 'photo') {
+      const photos = await loadPhotos(env, msg.intakeId);
+      if (!photos.length) throw new HttpError(410, 'the uploaded photos are missing');
+      ({ out, model } = await withCapacityFallback(settings.model_vision, FALLBACK_MODELS.vision, (m) =>
+        parsePhotos(env, m, photos, localTime, state.job.hint ?? undefined, ctx),
+      ));
+    } else if (row.source === 'voice') {
       const obj = row.media_r2_key ? await env.MEDIA.get(row.media_r2_key) : null;
       if (!obj) throw new HttpError(410, 'the uploaded media is missing');
-      const bytes = new Uint8Array(await obj.arrayBuffer());
-      if (row.source === 'photo') {
-        const mime = obj.httpMetadata?.contentType ?? 'image/jpeg';
-        ({ out, model } = await withCapacityFallback(settings.model_vision, FALLBACK_MODELS.vision, (m) =>
-          parsePhoto(env, m, bytes, mime, localTime, state.job.hint ?? undefined, ctx),
-        ));
-      } else {
-        rawText = await transcribe(env, settings.model_speech, bytes);
-        if (!rawText) throw new HttpError(422, "couldn't hear any speech in that clip");
-        const text = rawText;
-        ({ out, model } = await withCapacityFallback(settings.model_parser, FALLBACK_MODELS.parser, (m) => parseText(env, m, text, localTime, ctx)));
-      }
+      rawText = await transcribe(env, settings.model_speech, new Uint8Array(await obj.arrayBuffer()));
+      if (!rawText) throw new HttpError(422, "couldn't hear any speech in that clip");
+      const text = rawText;
+      ({ out, model } = await withCapacityFallback(settings.model_parser, FALLBACK_MODELS.parser, (m) => parseText(env, m, text, localTime, ctx)));
     } else {
       if (!rawText) throw new HttpError(400, 'nothing to read');
       const text = rawText;
@@ -160,6 +158,15 @@ async function saveBatchAsRecipe(
   )
     .bind(JSON.stringify({ recipe_saved: { id: saved.id, name: saved.name } }), rawText, model, intakeId, user.id)
     .run();
+}
+
+/** A meal's photos, in the order they were taken. Any that went missing from storage are skipped. */
+async function loadPhotos(env: Env, intakeId: string): Promise<PhotoInput[]> {
+  const { results } = await env.DB.prepare('SELECT r2_key FROM intake_photo WHERE intake_id = ? ORDER BY position').bind(intakeId).all<{ r2_key: string }>();
+  const objs = await Promise.all(results.map((r) => env.MEDIA.get(r.r2_key)));
+  const photos: PhotoInput[] = [];
+  for (const obj of objs) if (obj) photos.push({ bytes: new Uint8Array(await obj.arrayBuffer()), mime: obj.httpMetadata?.contentType ?? 'image/jpeg' });
+  return photos;
 }
 
 /** Queue consumer: one message per meal; retried by the queue, error recorded on the last attempt. */

@@ -2,6 +2,7 @@
 import type { Context } from 'hono';
 import type { AppEnv } from '../env';
 import { HttpError, newId } from '../lib/ids';
+import { MAX_PHOTOS } from '../lib/ai';
 import { createIntake, getIntake, MEAL_TYPES, type MealType, type Source } from '../lib/intake';
 import { enqueue, type JobState } from '../lib/jobs';
 import { applyAnswers } from '../lib/pipeline';
@@ -27,13 +28,14 @@ const EXT: Record<string, string> = {
 };
 
 /**
- * POST /api/intake with multipart form: one of photo | audio | text, plus meal_type?, occurrence_at?, note?.
+ * POST /api/intake with multipart form: one or more `photo` fields (up to MAX_PHOTOS, read together as one meal),
+ * or audio, or text; plus meal_type?, occurrence_at?, note?. With photos, text is a hint for the model.
  * Saves the meal right away as `preparation` (202) and hands the AI work to a background job.
  */
 export async function createFromMedia(c: Context<AppEnv>): Promise<Response> {
   const user = c.get('user');
   const form = await c.req.formData();
-  const photo = form.get('photo');
+  const photos = form.getAll('photo').filter((p): p is File => p instanceof File);
   const audio = form.get('audio');
   const textField = form.get('text');
   const text = typeof textField === 'string' ? textField.trim() : '';
@@ -47,28 +49,32 @@ export async function createFromMedia(c: Context<AppEnv>): Promise<Response> {
   if (text.length > MAX_TEXT) throw new HttpError(413, 'text is too long');
 
   let source: Source;
-  let file: File | null = null;
-  if (photo instanceof File) {
-    if (photo.size > MAX_PHOTO) throw new HttpError(413, 'photo is too large (max 8 MB)');
-    if (!(photo.type || 'image/jpeg').startsWith('image/')) throw new HttpError(415, 'photo must be an image');
+  let clip: File | null = null;
+  if (photos.length) {
+    if (photos.length > MAX_PHOTOS) throw new HttpError(413, `up to ${MAX_PHOTOS} photos per meal`);
+    for (const p of photos) {
+      if (p.size > MAX_PHOTO) throw new HttpError(413, 'photo is too large (max 8 MB)');
+      if (!(p.type || 'image/jpeg').startsWith('image/')) throw new HttpError(415, 'photo must be an image');
+    }
     source = 'photo';
-    file = photo;
   } else if (audio instanceof File) {
     if (audio.size > MAX_AUDIO) throw new HttpError(413, 'audio is too large (max 10 MB)');
     source = 'voice';
-    file = audio;
+    clip = audio;
   } else if (text) {
     source = 'text';
   } else {
     throw new HttpError(400, 'send a photo, audio or text');
   }
 
-  let mediaKey: string | null = null;
-  if (file) {
-    const mime = (file.type || (source === 'photo' ? 'image/jpeg' : 'audio/mp4')).split(';')[0]!;
-    mediaKey = `media/${user.id}/${newId()}.${EXT[mime] ?? 'bin'}`;
-    await c.env.MEDIA.put(mediaKey, await file.arrayBuffer(), { httpMetadata: { contentType: mime } });
-  }
+  const store = async (file: File, fallbackMime: string) => {
+    const mime = (file.type || fallbackMime).split(';')[0]!;
+    const key = `media/${user.id}/${newId()}.${EXT[mime] ?? 'bin'}`;
+    await c.env.MEDIA.put(key, await file.arrayBuffer(), { httpMetadata: { contentType: mime } });
+    return key;
+  };
+  const photoKeys = await Promise.all(photos.map((p) => store(p, 'image/jpeg')));
+  const mediaKey = clip ? await store(clip, 'audio/mp4') : null;
 
   // A batch being cooked: the items become a recipe, not a meal (see saveBatchAsRecipe).
   const recipe = await parseRecipeField(c.env.DB, user.id, form.get('recipe'));
@@ -91,6 +97,7 @@ export async function createFromMedia(c: Context<AppEnv>): Promise<Response> {
       note,
       raw_input_text: source === 'text' ? text : null,
       media_r2_key: mediaKey,
+      photo_keys: photoKeys,
       pending_json: JSON.stringify(state),
     },
     [],
@@ -157,13 +164,32 @@ export async function answer(c: Context<AppEnv>): Promise<Response> {
   return c.json(await getIntake(c.env.DB, user.id, id));
 }
 
-/** GET /api/intake/:id/media -> the meal's photo or clip, only to its owner. */
+/** GET /api/intake/:id/media -> the meal's voice clip, or its first photo (older clients), only to its owner. */
 export async function media(c: Context<AppEnv>): Promise<Response> {
-  const row = await c.env.DB.prepare('SELECT media_r2_key FROM nutrition_intake WHERE id = ? AND user_id = ?')
+  const row = await c.env.DB.prepare(
+    `SELECT COALESCE(i.media_r2_key, (SELECT r2_key FROM intake_photo p WHERE p.intake_id = i.id ORDER BY position LIMIT 1)) AS r2_key
+     FROM nutrition_intake i WHERE i.id = ? AND i.user_id = ?`,
+  )
     .bind(c.req.param('id'), c.get('user').id)
-    .first<{ media_r2_key: string | null }>();
-  if (!row?.media_r2_key) throw new HttpError(404, 'no media');
-  const obj = await c.env.MEDIA.get(row.media_r2_key);
+    .first<{ r2_key: string | null }>();
+  return serve(c, row?.r2_key);
+}
+
+/** GET /api/intake/:id/photos/:n -> the meal's n-th photo (0-based), only to its owner. */
+export async function photo(c: Context<AppEnv>): Promise<Response> {
+  const n = Number(c.req.param('n'));
+  if (!Number.isInteger(n) || n < 0) throw new HttpError(404, 'no such photo');
+  const row = await c.env.DB.prepare(
+    `SELECT p.r2_key FROM intake_photo p JOIN nutrition_intake i ON i.id = p.intake_id
+     WHERE p.intake_id = ? AND i.user_id = ? ORDER BY p.position LIMIT 1 OFFSET ?`,
+  )
+    .bind(c.req.param('id'), c.get('user').id, n)
+    .first<{ r2_key: string }>();
+  return serve(c, row?.r2_key);
+}
+
+async function serve(c: Context<AppEnv>, key: string | null | undefined): Promise<Response> {
+  const obj = key ? await c.env.MEDIA.get(key) : null;
   if (!obj) throw new HttpError(404, 'no media');
   return new Response(obj.body, {
     headers: {

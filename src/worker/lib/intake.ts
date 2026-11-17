@@ -107,6 +107,8 @@ export interface NewIntake {
   note?: string | null;
   raw_input_text?: string | null;
   media_r2_key?: string | null;
+  /** Photos, in order (see intake_photo). */
+  photo_keys?: string[];
   model_id?: string | null;
   prompt_version?: string | null;
   pipeline_version?: string | null;
@@ -155,6 +157,9 @@ export async function createIntake(env: Env, user: User, data: NewIntake, items:
       data.pending_json ?? null,
     ),
   ];
+  (data.photo_keys ?? []).forEach((k, i) =>
+    stmts.push(env.DB.prepare('INSERT INTO intake_photo (intake_id, position, r2_key) VALUES (?, ?, ?)').bind(id, i, k)),
+  );
   items.forEach((it, i) => stmts.push(...itemStatements(env.DB, user.id, id, it, i)));
   stmts.push(refreshConfidence(env.DB, id));
   await env.DB.batch(stmts);
@@ -196,6 +201,8 @@ export interface IntakeView {
   note: string | null;
   raw_input_text: string | null;
   has_media: boolean;
+  /** Number of photos (GET /api/intake/:id/photos/:n). */
+  photo_count: number;
   confidence: number | null;
   model_id: string | null;
   prompt_version: string | null;
@@ -205,8 +212,9 @@ export interface IntakeView {
   pending?: unknown;
 }
 
-interface IntakeRow extends Omit<IntakeView, 'items' | 'totals' | 'has_media' | 'pending'> {
+interface IntakeRow extends Omit<IntakeView, 'items' | 'totals' | 'has_media' | 'photo_count' | 'pending'> {
   media_r2_key: string | null;
+  photo_count: number;
   pending_json: string | null;
 }
 
@@ -260,13 +268,14 @@ export async function loadIntakes(db: D1Database, rows: IntakeRow[]): Promise<In
     l.push(view);
     iByIntake.set(r.intake_id as string, l);
   }
-  return rows.map(({ media_r2_key, pending_json, ...r }) => {
+  return rows.map(({ media_r2_key, pending_json, photo_count, ...r }) => {
     const its = iByIntake.get(r.id) ?? [];
     const totals: Record<string, number> = {};
     for (const it of its) for (const [k, v] of Object.entries(it.nutrients)) totals[k] = round((totals[k] ?? 0) + v);
     return {
       ...r,
-      has_media: !!media_r2_key,
+      has_media: !!media_r2_key || photo_count > 0,
+      photo_count,
       items: its,
       totals,
       ...(pending_json ? { pending: publicPending(pending_json) } : {}),
@@ -308,7 +317,8 @@ function needsCheck(matchJson: string | null, kcal100: number | null): boolean {
 }
 
 const INTAKE_COLS = `id, status, meal_type, occurrence_at, occurrence_tz, log_date, recorded_at, source, note, raw_input_text,
-  media_r2_key, confidence, model_id, prompt_version, pipeline_version, pending_json`;
+  media_r2_key, confidence, model_id, prompt_version, pipeline_version, pending_json,
+  (SELECT COUNT(*) FROM intake_photo p WHERE p.intake_id = nutrition_intake.id) AS photo_count`;
 
 export async function getIntake(db: D1Database, userId: string, id: string): Promise<IntakeView | null> {
   const row = await db

@@ -106,8 +106,21 @@ export function MealCard(props: { meal: Intake; onChange: (m: Intake | null) => 
       </header>
 
       {meal.note && <p class="display mx-4 mt-1.5 text-[0.95rem] text-ink-2 italic">{meal.note}</p>}
-      {meal.has_media && meal.source === 'photo' && (
-        <img src={`/api/intake/${meal.id}/media`} alt="Meal photo" loading="lazy" class="mx-4 mt-3 h-36 w-[calc(100%-2rem)] rounded-2xl object-cover" />
+      {meal.photo_count === 1 && (
+        <img src={`/api/intake/${meal.id}/photos/0`} alt="Meal photo" loading="lazy" class="mx-4 mt-3 h-36 w-[calc(100%-2rem)] rounded-2xl object-cover" />
+      )}
+      {meal.photo_count > 1 && (
+        // Several photos: a strip that scrolls sideways, the next one peeking in.
+        <div class="mt-3 flex snap-x gap-2 overflow-x-auto px-4" aria-label={`${meal.photo_count} meal photos`}>
+          {Array.from({ length: meal.photo_count }, (_, i) => (
+            <img
+              src={`/api/intake/${meal.id}/photos/${i}`}
+              alt={`Meal photo ${i + 1} of ${meal.photo_count}`}
+              loading="lazy"
+              class="h-36 w-[min(16rem,75%)] shrink-0 snap-start rounded-2xl object-cover"
+            />
+          ))}
+        </div>
       )}
 
       {meal.status === 'preparation' && (

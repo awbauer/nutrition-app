@@ -38,10 +38,10 @@ Single user at launch. Every table is keyed by user from day one so more people 
 
 ### Request flow: logging a meal
 
-1. User submits a photo, a voice clip, or text from the PWA.
+1. User submits one or more photos (read together as one meal: plates, angles, drinks, package labels), a voice clip, or text from the PWA.
 2. Worker stores raw media in R2 and creates a draft intake with status `preparation`.
 3. If voice: Whisper transcribes to text.
-4. Vision model (photo) or text model (text) returns a list of candidate foods with estimated portions and a confidence score per item.
+4. Vision model (all of a meal's photos in one request, so a food seen twice is counted once and a label in one photo informs another) or text model (text) returns a list of candidate foods with estimated portions and a confidence score per item.
 5. Worker resolves each food against the food cache, then USDA FoodData Central, then Open Food Facts.
 6. If any item is below the confidence threshold or ambiguous in a way that changes calories by more than about 15%, the Worker returns up to two clarifying questions with tap options.
 7. User answers or accepts defaults. Worker computes nutrient totals from database values times amounts.
@@ -102,7 +102,8 @@ Tables use our own lightweight shape, but names and structure follow FHIR so eac
 - occurrence\_at (datetime, when eaten)
 - recorded\_at (datetime, when logged)
 - source: `photo`, `voice`, `text`, `manual`, `copy`
-- media\_r2\_key (nullable)
+- media\_r2\_key (nullable; voice clip)
+- photos: `intake_photo` (intake\_id, position, r2\_key), up to 6 per meal, read together
 - raw\_input\_text (nullable; transcript or typed text)
 - note
 - confidence (0 to 1, lowest item confidence)
@@ -251,7 +252,8 @@ All routes require a valid Access JWT; the Worker maps it to `user_id`.
 
 | Method | Route | Purpose |
 | --- | --- | --- |
-| POST | /api/intake | Create draft from photo, audio, or text (multipart) |
+| POST | /api/intake | Create draft from photos (repeat `photo`, up to 6), audio, or text (multipart) |
+| GET | /api/intake/:id/photos/:n | A meal's n-th photo (owner only) |
 | POST | /api/intake/:id/answers | Submit answers to clarifying questions |
 | PATCH | /api/intake/:id | Edit time, meal type, note, status |
 | PATCH | /api/item/:id | Edit an item's food or amount |

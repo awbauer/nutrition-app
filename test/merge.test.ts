@@ -89,6 +89,26 @@ describe('adding to an existing meal', () => {
     expect(r.data.pending.adding_to_meal).toBe(true);
   });
 
+  it("photos added from a meal's Add item join the meal's photos", async () => {
+    const { U } = await setup('merge-photos@example.test');
+    const out = { meal_type_guess: 'lunch', items: [{ name: 'apple', amount: 1, unit: 'medium', confidence: 0.9 }], questions: [] };
+    const jpg = (n: number) => new File([new Uint8Array([0xff, 0xd8, n])], `p${n}.jpg`, { type: 'image/jpeg' });
+    const first = new FormData();
+    first.append('photo', jpg(1));
+    first.append('meal_type', 'lunch');
+    first.append('occurrence_at', AT(12));
+    const lunch = await api('/intake', { method: 'POST', body: first }, { ...U, AI: ai(out) });
+    expect(lunch.data.photo_count).toBe(1);
+    const more = new FormData();
+    more.append('photo', jpg(2));
+    more.append('photo', jpg(3));
+    more.append('append_to', lunch.data.id);
+    const r = await api('/intake', { method: 'POST', body: more }, { ...U, AI: ai(out) });
+    expect(r.data).toMatchObject({ id: lunch.data.id, photo_count: 3 });
+    expect(r.data.items).toHaveLength(2);
+    for (const n of [0, 1, 2]) expect((await api(`/intake/${lunch.data.id}/photos/${n}`, {}, U)).status).toBe(200);
+  });
+
   it('only finished meals accept new items', async () => {
     const { U } = await setup('merge-guard@example.test');
     const out = { items: [{ name: 'egg', amount: 100, unit: 'g', confidence: 0.5 }], questions: [{ id: 'q1', item_index: 0, text: 'Size?', options: ['S', 'L'], default: 'S', effects: { S: { set_amount: { amount: 50, unit: 'g' } }, L: { set_amount: { amount: 300, unit: 'g' } } } }] };

@@ -141,6 +141,8 @@ export interface Intake {
   note: string | null;
   raw_input_text: string | null;
   has_media: boolean;
+  /** Photos, served at /api/intake/:id/photos/:n. */
+  photo_count: number;
   confidence: number | null;
   items: Item[];
   totals: Record<string, number>;
