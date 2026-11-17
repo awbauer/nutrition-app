@@ -111,9 +111,12 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
     const g = toGrams(amount || 0, unit, { portions: picked.portions, default_serving_grams: picked.default_serving_grams }).grams;
     return (
       <div class="flex flex-col gap-4">
-        <button class="self-start text-sm text-accent-ink" onClick={() => setPicked(null)}>
-          ← Back to results
-        </button>
+        {/* Opened on a quick pick there are no results to go back to (the sheet has its own Back). */}
+        {!label && (
+          <button class="self-start text-sm text-accent-ink" onClick={() => setPicked(null)}>
+            ← Back to results
+          </button>
+        )}
         <div>
           <h3 class="display text-lg font-semibold">{label ?? picked.name}</h3>
           {label && label.toLowerCase() !== picked.name.toLowerCase() && <p class="text-sm text-ink-2">{picked.name}</p>}
@@ -172,7 +175,7 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
           const name = h.kind === 'local' ? h.food.name : h.hit.name;
           const brand = h.kind === 'local' ? h.food.brand : h.hit.brand;
           const nutrients = h.kind === 'local' ? h.food.nutrients : h.hit.nutrients;
-          const tag = h.kind === 'local' ? (h.food.source === 'usda' ? 'Recent' : 'My food') : h.hit.dataType;
+          const tag = h.kind === 'local' ? (h.food.source === 'usda' ? 'Recent' : h.food.source === 'recipe' ? 'Your recipe' : 'My food') : h.hit.dataType;
           return (
             <li>
               <button class="flex w-full items-center gap-3 py-3 text-left" onClick={() => choose(h)}>

@@ -1,4 +1,4 @@
-import { Copy, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-preact';
+import { ChefHat, Copy, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { watch } from '../analysis';
 import { api, type Intake, type Item } from '../api';
@@ -7,12 +7,14 @@ import { toast } from '../toast';
 import { ItemSheet } from './ItemSheet';
 import { MealEdit } from './MealEdit';
 import { Questions } from './Questions';
+import { SaveAsRecipe } from './Recipes';
 import { Sheet } from './Sheet';
 
 export function MealCard(props: { meal: Intake; onChange: (m: Intake | null) => void; onAdd: (m: Intake) => void }) {
   const { meal } = props;
   const [openItem, setOpenItem] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const [savingRecipe, setSavingRecipe] = useState(false);
   const [menu, setMenu] = useState(false);
   const [busy, setBusy] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -70,7 +72,7 @@ export function MealCard(props: { meal: Intake; onChange: (m: Intake | null) => 
       <header class="flex items-start gap-2 px-4 pt-3.5">
         <div class="min-w-0 flex-1">
           <h3 class="display text-lg leading-tight font-semibold">
-            {MEAL_LABEL[meal.meal_type]}
+            {meal.pending?.recipe ? `Recipe: ${meal.pending.recipe}` : MEAL_LABEL[meal.meal_type]}
             {analyzing && <StatusPill tone="neutral" pulse>{meal.source === 'voice' ? 'Listening' : 'Reading'}</StatusPill>}
             {asking && <StatusPill tone="accent">One question</StatusPill>}
             {failed && <StatusPill tone="berry">Couldn't read</StatusPill>}
@@ -96,6 +98,7 @@ export function MealCard(props: { meal: Intake; onChange: (m: Intake | null) => 
             <div class="toast-in absolute top-10 right-0 z-30 w-52 overflow-hidden rounded-2xl bg-card py-1 shadow-xl ring-1 ring-line" role="menu">
               {meal.status !== 'preparation' && <MenuItem icon={<Pencil size={16} />} label="Edit time, meal or note" onClick={() => (setMenu(false), setEditing(true))} />}
               {done && <MenuItem icon={<Copy size={16} />} label="Copy to now" onClick={copy} />}
+              {done && meal.items.length > 0 && <MenuItem icon={<ChefHat size={16} />} label="Save as recipe" onClick={() => (setMenu(false), setSavingRecipe(true))} />}
               <MenuItem icon={<Trash2 size={16} />} label="Delete" danger onClick={remove} />
             </div>
           )}
@@ -152,6 +155,17 @@ export function MealCard(props: { meal: Intake; onChange: (m: Intake | null) => 
 
       <Sheet open={!!openItem} onClose={() => setOpenItem(null)} title="Food details">
         {openItem && <ItemSheet itemId={openItem} onChange={props.onChange} onClose={() => setOpenItem(null)} />}
+      </Sheet>
+      <Sheet open={savingRecipe} onClose={() => setSavingRecipe(false)} title="Save as recipe">
+        {savingRecipe && (
+          <SaveAsRecipe
+            meal={meal}
+            onSaved={() => {
+              setSavingRecipe(false);
+              props.onChange(null);
+            }}
+          />
+        )}
       </Sheet>
       <Sheet open={editing} onClose={() => setEditing(false)} title={`Edit ${MEAL_LABEL[meal.meal_type].toLowerCase()}`}>
         {editing && (

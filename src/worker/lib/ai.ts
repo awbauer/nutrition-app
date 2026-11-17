@@ -98,20 +98,51 @@ const RULES = `Rules:
   make your best guess and ask about it.
 - Never invent brands. Do not include nutrition totals beyond estimate_per_100g and printed label values.`;
 
-export function parserMessages(text: string, localTime: string) {
+/**
+ * The user's own recipes (batches they cooked). Listed so a portion of one is logged as that
+ * recipe, by its exact name, instead of being broken into guessed ingredients.
+ */
+export interface PromptContext {
+  /** Names of the user's saved recipes. */
+  recipes?: string[];
+  /** The input describes a batch being cooked (a recipe's ingredients), not something eaten. */
+  batch?: boolean;
+}
+
+const BATCH_RULES = `
+This is NOT a meal. The user is describing a batch they cooked (a recipe), to be eaten in portions later.
+- List every ingredient that went into the batch as its own item, with the FULL amount used for the whole batch, uncooked
+  as it went in (e.g. "1 lb ground beef" -> amount 1, unit "lb", grams 454). Do not divide into servings.
+- Include cooking fats, sauces and liquids that stayed in the dish. Leave out water unless it's a soup or stew base.
+- Ask NO questions: "questions" must be []. meal_type_guess is null.`;
+
+function contextRules(ctx: PromptContext = {}): string {
+  return (ctx.batch ? BATCH_RULES : '') + recipeRules(ctx.recipes);
+}
+
+export function recipeRules(recipes: string[] = []): string {
+  if (!recipes.length) return '';
+  return `\nThe user has saved these home-made recipes: ${recipes.map((r) => JSON.stringify(r)).join(', ')}.
+- If they ate one of them (e.g. "a bowl of my chili", "leftover lasagna"), log it as ONE item named exactly as the recipe is written,
+  not as its ingredients. Amount: unit "serving" for servings or bowls/plates (1 bowl = 1 serving unless they say otherwise),
+  unit "batch" for a fraction of the whole batch (a quarter of the pot = 0.25 batch), or "g" when they give a weight.
+- Only use a recipe when it clearly matches; otherwise treat the food normally.`;
+}
+
+export function parserMessages(text: string, localTime: string, ctx: PromptContext = {}) {
   return [
     {
       role: 'system',
-      content: `You turn a meal description into structured food items for a nutrition log. The user's local time is ${localTime}.\n${RULES}\n${SCHEMA_TEXT}`,
+      content: `You turn a meal description into structured food items for a nutrition log. The user's local time is ${localTime}.\n${RULES}${contextRules(ctx)}\n${SCHEMA_TEXT}`,
     },
     { role: 'user', content: text },
   ];
 }
 
-export function visionPrompt(localTime: string, hint?: string) {
-  return `Identify every food and drink in this photo and estimate each portion. The user's local time is ${localTime}.${
+export function visionPrompt(localTime: string, hint?: string, ctx: PromptContext = {}) {
+  return `${ctx.batch ? 'Identify every ingredient shown in this photo (a batch being cooked, or its ingredients and packages) and estimate each amount.' : 'Identify every food and drink in this photo and estimate each portion.'} The user's local time is ${localTime}.${
     hint ? ` The user added: "${hint}".` : ''
-  }\n${RULES}\n${SCHEMA_TEXT}`;
+  }\n${RULES}${contextRules(ctx)}\n${SCHEMA_TEXT}`;
 }
 
 // ---------- validation ----------
@@ -355,9 +386,9 @@ export async function withCapacityFallback(
 
 const RETRY_NOTE = 'Your previous answer was not valid JSON matching the schema. Reply with the JSON object only.';
 
-export function parseText(env: Env, model: string, text: string, localTime: string): Promise<ModelOutput> {
+export function parseText(env: Env, model: string, text: string, localTime: string, ctx: PromptContext = {}): Promise<ModelOutput> {
   return withRetry((attempt) => {
-    const messages = parserMessages(text, localTime);
+    const messages = parserMessages(text, localTime, ctx);
     if (attempt) messages.push({ role: 'user', content: RETRY_NOTE });
     return env.AI.run(
       model as Parameters<Ai['run']>[0],
@@ -367,8 +398,8 @@ export function parseText(env: Env, model: string, text: string, localTime: stri
   });
 }
 
-export function parsePhoto(env: Env, model: string, image: Uint8Array, mime: string, localTime: string, hint?: string) {
-  const prompt = visionPrompt(localTime, hint);
+export function parsePhoto(env: Env, model: string, image: Uint8Array, mime: string, localTime: string, hint?: string, ctx: PromptContext = {}) {
+  const prompt = visionPrompt(localTime, hint, ctx);
   return withRetry((attempt) => {
     const text = attempt ? `${prompt}\n${RETRY_NOTE}` : prompt;
     // Llama 3.2 Vision takes raw bytes; chat-style vision models (Llama 4 Scout, etc.) take a data URL.

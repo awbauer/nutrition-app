@@ -6,6 +6,7 @@ import { createIntake, getIntake, MEAL_TYPES, type MealType, type Source } from 
 import { enqueue, type JobState } from '../lib/jobs';
 import { applyAnswers } from '../lib/pipeline';
 import { assertAppendable, mergedInto, parseMergeSpec } from '../lib/merge';
+import { assertRecipeNameFree, validateRecipe } from '../lib/recipes';
 
 const MAX_PHOTO = 8 * 1024 * 1024;
 const MAX_AUDIO = 10 * 1024 * 1024;
@@ -69,12 +70,16 @@ export async function createFromMedia(c: Context<AppEnv>): Promise<Response> {
     await c.env.MEDIA.put(mediaKey, await file.arrayBuffer(), { httpMetadata: { contentType: mime } });
   }
 
+  // A batch being cooked: the items become a recipe, not a meal (see saveBatchAsRecipe).
+  const recipe = await parseRecipeField(c.env.DB, user.id, form.get('recipe'));
   // append_to: from a meal's "Add item"; merge: from the main button (breakfast/lunch/dinner join the day's meal).
-  const merge = parseMergeSpec(form.get('append_to'), form.get('merge'));
+  const merge = recipe ? null : parseMergeSpec(form.get('append_to'), form.get('merge'));
   // Adding to a specific meal: the draft takes that meal's type and time, so progress and
   // any questions are shown for the right meal and day.
   const into = merge?.mode === 'into' ? await assertAppendable(c.env.DB, user.id, merge.id) : null;
-  const state: JobState = { job: { meal_explicit: !!(meal_type || into), hint: source === 'photo' && text ? text : null, merge } };
+  const state: JobState = {
+    job: { meal_explicit: !!(meal_type || into || recipe), hint: source === 'photo' && text ? text : null, merge, ...(recipe ? { recipe } : {}) },
+  };
   const id = await createIntake(
     c.env,
     user,
@@ -92,6 +97,21 @@ export async function createFromMedia(c: Context<AppEnv>): Promise<Response> {
   );
   await enqueue(c.env, { intakeId: id, userId: user.id }, waitUntil(c));
   return c.json(await currentView(c.env.DB, user.id, id), 202);
+}
+
+/** `recipe` form field: JSON {name, servings, yield_grams?}. Checked now so a bad name fails before the AI runs. */
+async function parseRecipeField(db: D1Database, userId: string, raw: unknown) {
+  if (typeof raw !== 'string' || !raw) return null;
+  let r: { name?: unknown; servings?: unknown; yield_grams?: unknown };
+  try {
+    r = JSON.parse(raw);
+  } catch {
+    throw new HttpError(400, 'recipe must be JSON');
+  }
+  const input = { name: r.name as string, servings: r.servings as number, yield_grams: (r.yield_grams as number | null | undefined) ?? null };
+  validateRecipe(input);
+  await assertRecipeNameFree(db, userId, input.name.trim());
+  return { ...input, name: input.name.trim() };
 }
 
 /** The entry, or the meal it was already merged into (when the job ran inline). */

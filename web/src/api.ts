@@ -144,9 +144,43 @@ export interface Intake {
   confidence: number | null;
   items: Item[];
   totals: Record<string, number>;
-  pending?: { questions?: Question[]; error?: string; adding_to_meal?: boolean };
+  pending?: {
+    questions?: Question[];
+    error?: string;
+    adding_to_meal?: boolean;
+    /** A batch being read and saved as this recipe. */
+    recipe?: string;
+    /** The batch was saved as a recipe (this entry is retired). */
+    recipe_saved?: { id: string; name: string };
+  };
   /** Present when this entry was merged into an existing meal (this object is that meal). */
   merged_from?: string;
+}
+export interface RecipeIngredient {
+  id: string;
+  food_id: string;
+  food_name: string;
+  display_name: string;
+  amount_value: number;
+  amount_unit: string;
+  grams: number;
+  kcal: number;
+  protein: number;
+}
+export interface Recipe {
+  id: string;
+  name: string;
+  servings: number;
+  yield_grams: number | null;
+  batch_grams: number;
+  serving_grams: number;
+  per_serving: Record<string, number>;
+  per_100g: Record<string, number>;
+  totals: Record<string, number>;
+  ingredients: RecipeIngredient[];
+  times_logged: number;
+  last_logged_at: string | null;
+  updated_at: string;
 }
 export interface Day {
   date: string;

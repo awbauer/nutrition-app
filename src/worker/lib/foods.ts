@@ -188,6 +188,9 @@ export async function backfillCategories(db: D1Database, local: FoodRecord[], hi
   if (stmts.length) await db.batch(stmts);
 }
 
+/** Deleted recipes stay in `food` (past logs point at them) but are never offered again. */
+const NOT_ARCHIVED = 'NOT EXISTS (SELECT 1 FROM recipe r WHERE r.food_id = food.id AND r.archived = 1)';
+
 /** Token-based fuzzy search over the user's custom foods and the shared cache. */
 export async function searchLocal(db: D1Database, userId: string, q: string, limit = 10): Promise<FoodRecord[]> {
   const tokens = normName(q).split(' ').filter((t) => t.length > 1).slice(0, 5);
@@ -196,7 +199,7 @@ export async function searchLocal(db: D1Database, userId: string, q: string, lim
   const { results } = await db
     .prepare(
       `SELECT ${FOOD_COLS} FROM food
-       WHERE (owner_user_id IS NULL OR owner_user_id = ?) AND ${where}
+       WHERE (owner_user_id IS NULL OR owner_user_id = ?) AND ${where} AND ${NOT_ARCHIVED}
        ORDER BY (owner_user_id IS NOT NULL) DESC, (source = 'recipe') DESC, length(name) ASC
        LIMIT ?`,
     )
@@ -208,7 +211,7 @@ export async function searchLocal(db: D1Database, userId: string, q: string, lim
 /** Exact (normalised) name match in the user's own custom foods and recipes. */
 export async function exactCustom(db: D1Database, userId: string, name: string): Promise<FoodRecord | null> {
   const row = await db
-    .prepare(`SELECT ${FOOD_COLS} FROM food WHERE owner_user_id = ? AND name_norm = ? LIMIT 1`)
+    .prepare(`SELECT ${FOOD_COLS} FROM food WHERE owner_user_id = ? AND name_norm = ? AND ${NOT_ARCHIVED} ORDER BY (source = 'recipe') DESC LIMIT 1`)
     .bind(userId, normName(name))
     .first<FoodRow>();
   return row ? (await hydrate(db, [row]))[0]! : null;

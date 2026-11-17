@@ -9,8 +9,9 @@ import { localParts } from './dates';
 import { HttpError } from './ids';
 import type { MealType } from './intake';
 import { mergeDraft, resolveTarget, type MergeSpec } from './merge';
-import { buildPending, finishDraft } from './pipeline';
-import { getSettings } from './settings';
+import { buildPending, finishDraft, materialise } from './pipeline';
+import { recipeNames, saveRecipe } from './recipes';
+import { getSettings, type Settings } from './settings';
 
 export interface JobMessage {
   intakeId: string;
@@ -19,7 +20,13 @@ export interface JobMessage {
 
 /** Stored in pending_json while the meal is in `preparation`. */
 export interface JobState {
-  job: { meal_explicit: boolean; hint: string | null; merge?: MergeSpec | null };
+  job: {
+    meal_explicit: boolean;
+    hint: string | null;
+    merge?: MergeSpec | null;
+    /** The input is a batch being cooked: save the items as this recipe instead of logging them. */
+    recipe?: { name: string; servings: number; yield_grams?: number | null };
+  };
   error?: string;
   attempts?: number;
 }
@@ -69,6 +76,7 @@ export async function processIntake(env: Env, msg: JobMessage, final: boolean): 
     let out: ModelOutput;
     let model: string;
     let rawText = row.raw_input_text;
+    const ctx = { recipes: await recipeNames(env.DB, user.id), batch: !!state.job.recipe };
 
     if (row.source === 'photo' || row.source === 'voice') {
       const obj = row.media_r2_key ? await env.MEDIA.get(row.media_r2_key) : null;
@@ -77,20 +85,25 @@ export async function processIntake(env: Env, msg: JobMessage, final: boolean): 
       if (row.source === 'photo') {
         const mime = obj.httpMetadata?.contentType ?? 'image/jpeg';
         ({ out, model } = await withCapacityFallback(settings.model_vision, FALLBACK_MODELS.vision, (m) =>
-          parsePhoto(env, m, bytes, mime, localTime, state.job.hint ?? undefined),
+          parsePhoto(env, m, bytes, mime, localTime, state.job.hint ?? undefined, ctx),
         ));
       } else {
         rawText = await transcribe(env, settings.model_speech, bytes);
         if (!rawText) throw new HttpError(422, "couldn't hear any speech in that clip");
         const text = rawText;
-        ({ out, model } = await withCapacityFallback(settings.model_parser, FALLBACK_MODELS.parser, (m) => parseText(env, m, text, localTime)));
+        ({ out, model } = await withCapacityFallback(settings.model_parser, FALLBACK_MODELS.parser, (m) => parseText(env, m, text, localTime, ctx)));
       }
     } else {
       if (!rawText) throw new HttpError(400, 'nothing to read');
       const text = rawText;
-      ({ out, model } = await withCapacityFallback(settings.model_parser, FALLBACK_MODELS.parser, (m) => parseText(env, m, text, localTime)));
+      ({ out, model } = await withCapacityFallback(settings.model_parser, FALLBACK_MODELS.parser, (m) => parseText(env, m, text, localTime, ctx)));
     }
     if (!out.items.length) throw new HttpError(422, "couldn't find any food in that");
+
+    if (state.job.recipe) {
+      await saveBatchAsRecipe(env, user, msg.intakeId, state.job.recipe, out, settings, model, rawText);
+      return 'done';
+    }
 
     const pending = await buildPending(env, user, out, settings, row.source === 'photo' ? 'photo-estimate' : 'described');
     const mealGuess: MealType | undefined = state.job.meal_explicit ? undefined : (out.meal_type_guess ?? undefined);
@@ -111,7 +124,7 @@ export async function processIntake(env: Env, msg: JobMessage, final: boolean): 
           ? e.message
           : isCapacityError(e)
             ? 'the AI service is busy right now, try again in a minute'
-            : `couldn't read that meal (${(e as Error).message})`;
+            : `couldn't read that ${state.job.recipe ? 'recipe' : 'meal'} (${(e as Error).message})`;
       await env.DB.prepare(`UPDATE nutrition_intake SET pending_json = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ? AND status = 'preparation'`)
         .bind(JSON.stringify({ ...state, error: message, attempts: (state.attempts ?? 0) + 1 } satisfies JobState), msg.intakeId)
         .run();
@@ -119,6 +132,34 @@ export async function processIntake(env: Env, msg: JobMessage, final: boolean): 
     }
     throw e;
   }
+}
+
+/**
+ * A described batch: match the ingredients, save them as the recipe, and retire the entry
+ * (nothing was eaten yet). The entry keeps a pointer to the recipe for the client.
+ */
+async function saveBatchAsRecipe(
+  env: Env,
+  user: User,
+  intakeId: string,
+  recipe: NonNullable<JobState['job']['recipe']>,
+  out: ModelOutput,
+  settings: Settings,
+  model: string,
+  rawText: string | null,
+): Promise<void> {
+  const pending = await buildPending(env, user, { ...out, questions: [] }, settings, 'described');
+  const items = await materialise(env.DB, user.id, pending, {});
+  const saved = await saveRecipe(env, user, {
+    ...recipe,
+    ingredients: items.map((it) => ({ food_id: it.food.id, amount: it.amount, unit: it.unit, grams: it.grams, display_name: it.display_name })),
+  });
+  await env.DB.prepare(
+    `UPDATE nutrition_intake SET status = 'entered-in-error', pending_json = ?, raw_input_text = ?, model_id = ?,
+     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ? AND user_id = ? AND status = 'preparation'`,
+  )
+    .bind(JSON.stringify({ recipe_saved: { id: saved.id, name: saved.name } }), rawText, model, intakeId, user.id)
+    .run();
 }
 
 /** Queue consumer: one message per meal; retried by the queue, error recorded on the last attempt. */

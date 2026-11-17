@@ -3,6 +3,15 @@ import type { MealType } from './api';
 export const MEALS: MealType[] = ['breakfast', 'lunch', 'dinner', 'snack'];
 export const MEAL_LABEL: Record<MealType, string> = { breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner', snack: 'Snack' };
 
+/** The meal the current time of day suggests. */
+export function guessMeal(): MealType {
+  const h = new Date().getHours() + new Date().getMinutes() / 60;
+  if (h >= 4 && h < 10.5) return 'breakfast';
+  if (h >= 11 && h < 14.5) return 'lunch';
+  if (h >= 17 && h < 21.5) return 'dinner';
+  return 'snack';
+}
+
 export const kcal = (v: number | undefined) => Math.round(v ?? 0).toLocaleString();
 export const grams = (v: number | undefined) => `${Math.round(v ?? 0)} g`;
 
@@ -36,7 +45,7 @@ const UNIT_LABEL: Record<string, string> = {
 export const unitLabel = (u: string) => UNIT_LABEL[u] ?? u;
 
 const NO_PLURAL = new Set(['g', 'mL', 'kg', 'oz', 'lb', 'tbsp', 'tsp', 'fl oz', 'small', 'medium', 'large', 'L', 'ml']);
-const PLURAL: Record<string, string> = { glass: 'glasses', piece: 'pieces', slice: 'slices', serving: 'servings', handful: 'handfuls', bowl: 'bowls', cup: 'cups', mug: 'mugs', plate: 'plates', scoop: 'scoops', can: 'cans', bottle: 'bottles' };
+const PLURAL: Record<string, string> = { glass: 'glasses', piece: 'pieces', slice: 'slices', serving: 'servings', handful: 'handfuls', bowl: 'bowls', cup: 'cups', mug: 'mugs', plate: 'plates', scoop: 'scoops', can: 'cans', bottle: 'bottles', batch: 'batches' };
 
 /** "1½ bowls", "2 handfuls", "170 g", "1 medium". */
 export function amountLabel(amount: number, unit: string): string {

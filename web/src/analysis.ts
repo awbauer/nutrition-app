@@ -14,12 +14,17 @@ let timer: ReturnType<typeof setInterval> | undefined;
 
 export const onIntakeSettled = (fn: (i: Intake) => void) => (listeners.add(fn), () => listeners.delete(fn));
 
-const label = (i: Intake) => MEAL_LABEL[i.meal_type];
+const label = (i: Intake) => (i.pending?.recipe ? `Recipe "${i.pending.recipe}"` : MEAL_LABEL[i.meal_type]);
 const toastId = (id: string) => `ai-${id}`;
 
 function report(i: Intake) {
   const id = toastId(i.merged_from ?? i.id);
-  if (i.status === 'preparation' && !i.pending?.error) {
+  if (i.pending?.recipe_saved) {
+    toast.success(`Saved recipe "${i.pending.recipe_saved.name}". Log servings from the + button.`, { id });
+    dispatchEvent(new CustomEvent('recipes-changed'));
+  } else if (i.status === 'preparation' && i.pending?.recipe && !i.pending.error) {
+    toast.progress(`Reading the ingredients for "${i.pending.recipe}"…`, { id });
+  } else if (i.status === 'preparation' && !i.pending?.error) {
     toast.progress(i.source === 'voice' ? `Transcribing your ${label(i).toLowerCase()}…` : `Analyzing your ${label(i).toLowerCase()}…`, { id });
   } else if (i.status === 'preparation') {
     toast.error(`${label(i)}: ${i.pending!.error}`, { id, sticky: true, action: { label: 'Try again', onClick: () => retry(i.id) } });
@@ -61,6 +66,7 @@ async function tick() {
 
 /** Start tracking a meal that is (or may be) still being analyzed. */
 export function watch(i: Intake) {
+  if (i.pending?.recipe_saved) return report(i);
   if (i.status !== 'preparation') return;
   report(i);
   if (i.pending?.error) return;

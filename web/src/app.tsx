@@ -1,4 +1,4 @@
-import { ChartColumn, NotebookPen, Plus, Scale, Settings2 } from 'lucide-preact';
+import { ChartColumn, ChefHat, NotebookPen, Plus, Settings2 } from 'lucide-preact';
 import { useEffect, useState } from 'preact/hooks';
 import { api, ApiError } from './api';
 import { isIOS, isStandalone } from './push';
@@ -9,9 +9,16 @@ import { Toaster } from './components/Toaster';
 import { SettingsView } from './components/SettingsView';
 import { Today } from './components/Today';
 import { Week } from './components/Week';
-import { Weight } from './components/Weight';
+import { RecipesView } from './components/Recipes';
 
-type Tab = 'today' | 'week' | 'weight' | 'settings';
+type Tab = 'today' | 'week' | 'recipes' | 'settings';
+const TABS: Tab[] = ['today', 'week', 'recipes', 'settings'];
+/** Tab from the URL hash; old links to #weight land on Week, where the trend now lives. */
+const tabFromHash = (): Tab => {
+  const h = location.hash.slice(1);
+  if (h === 'weight') return 'week';
+  return TABS.includes(h as Tab) ? (h as Tab) : 'today';
+};
 
 interface Me {
   timezone: string;
@@ -26,7 +33,7 @@ function logToday(tz: string, cutoff: string): string {
 }
 
 export function App() {
-  const [tab, setTab] = useState<Tab>(() => (location.hash.slice(1) as Tab) || 'today');
+  const [tab, setTab] = useState<Tab>(tabFromHash);
   const [me, setMe] = useState<Me | null>(null);
   useEffect(
     () =>
@@ -64,7 +71,7 @@ export function App() {
     history.replaceState(null, '', `#${tab}`);
   }, [tab]);
   useEffect(() => {
-    const onHash = () => setTab((location.hash.slice(1) as Tab) || 'today');
+    const onHash = () => setTab(tabFromHash());
     addEventListener('hashchange', onHash);
     return () => removeEventListener('hashchange', onHash);
   }, []);
@@ -110,7 +117,7 @@ export function App() {
   const tabs: [Tab, string, preact.ComponentChildren][] = [
     ['today', 'Today', <NotebookPen size={22} strokeWidth={1.75} />],
     ['week', 'Week', <ChartColumn size={22} strokeWidth={1.75} />],
-    ['weight', 'Weight', <Scale size={22} strokeWidth={1.75} />],
+    ['recipes', 'Recipes', <ChefHat size={22} strokeWidth={1.75} />],
     ['settings', 'Settings', <Settings2 size={22} strokeWidth={1.75} />],
   ];
 
@@ -142,9 +149,9 @@ export function App() {
       {/* Content is centred in the space beside the sidebar. */}
       <main class="safe-top px-5 pb-32 md:pt-8 md:pr-10 md:pb-16 md:pl-[calc(14rem+2.5rem)]">
         <div class={`mx-auto ${tab === 'settings' ? 'max-w-lg md:max-w-3xl lg:max-w-5xl' : 'max-w-lg md:max-w-3xl lg:max-w-6xl'}`}>
-          {today && tab === 'today' && <Today key={today} today={today} />}
-          {today && tab === 'week' && <Week key={today} today={today} />}
-          {me && tab === 'weight' && <Weight unit={me.settings.weight_unit} />}
+          {me && today && tab === 'today' && <Today key={today} today={today} weightUnit={me.settings.weight_unit} />}
+          {me && today && tab === 'week' && <Week key={today} today={today} weightUnit={me.settings.weight_unit} />}
+          {today && tab === 'recipes' && <RecipesView today={today} />}
           {today && tab === 'settings' && <SettingsView today={today} onSaved={loadMe} />}
         </div>
       </main>
@@ -163,7 +170,7 @@ export function App() {
               <Plus size={30} strokeWidth={2.25} />
             </button>
           </div>
-          <NavItem tab="weight" current={tab} onSelect={setTab} label="Weight" icon={tabs[2][2]} />
+          <NavItem tab="recipes" current={tab} onSelect={setTab} label="Recipes" icon={tabs[2][2]} />
           <NavItem tab="settings" current={tab} onSelect={setTab} label="Settings" icon={tabs[3][2]} />
         </div>
       </nav>

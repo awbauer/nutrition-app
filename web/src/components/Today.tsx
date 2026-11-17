@@ -1,8 +1,8 @@
 import { ChevronLeft, ChevronRight, RotateCcw } from 'lucide-preact';
 import { useEffect, useState } from 'preact/hooks';
 import { onIntakeSettled, watch } from '../analysis';
-import { api, type Day, type Intake, type MealType } from '../api';
-import { addDays, dayLabel, MEAL_LABEL, time } from '../format';
+import { api, type Day, type Intake } from '../api';
+import { addDays, dayLabel, guessMeal, MEAL_LABEL, time } from '../format';
 import { onQueueChange } from '../queue';
 import { toast } from '../toast';
 import { useRefreshOnReturn } from '../refresh';
@@ -10,18 +10,11 @@ import { LogSheet } from './LogSheet';
 import { MealCard } from './MealCard';
 import { Sheet } from './Sheet';
 import { Summary } from './Summary';
-
-function guessMeal(): MealType {
-  const h = new Date().getHours() + new Date().getMinutes() / 60;
-  if (h >= 4 && h < 10.5) return 'breakfast';
-  if (h >= 11 && h < 14.5) return 'lunch';
-  if (h >= 17 && h < 21.5) return 'dinner';
-  return 'snack';
-}
+import { WeighIn } from './Weight';
 
 const longDate = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
 
-export function Today(props: { today: string }) {
+export function Today(props: { today: string; weightUnit: 'kg' | 'lb' }) {
   const [date, setDate] = useState(props.today);
   const [day, setDay] = useState<Day | null>(null);
   const [adding, setAdding] = useState<{ intake?: Intake } | null>(null);
@@ -101,6 +94,7 @@ export function Today(props: { today: string }) {
         <div class="flex flex-col gap-5 lg:grid lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:items-start lg:gap-10">
           <div class="flex flex-col gap-4 lg:sticky lg:top-8">
             <Summary day={day} />
+            <WeighIn unit={props.weightUnit} date={date} today={props.today} />
             {repeatable.length > 0 && (
               <div class="-mx-5 flex gap-2 overflow-x-auto px-5 pb-1 lg:mx-0 lg:flex-wrap lg:px-0">
                 {repeatable.map((m) => (
