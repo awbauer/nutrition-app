@@ -258,7 +258,9 @@ All routes require a valid Access JWT; the Worker maps it to `user_id`.
 | GET | /api/day/:date | Day totals, meals, targets remaining |
 | GET | /api/range?from=&to= | Daily totals for a range |
 | POST | /api/intake/:id/copy | Copy a meal to now |
-| GET, POST | /api/foods | Search foods; create custom food or recipe |
+| GET, POST | /api/foods | Search foods; create custom food |
+| GET, POST | /api/recipes | List recipes; create one from ingredients or from a logged meal (`from_intake`) |
+| GET, PUT, DELETE | /api/recipes/:id | Read, replace (name, servings, finished weight, ingredients) or delete a recipe |
 | GET, PUT | /api/goals | Read and set targets |
 | POST | /api/weight | Log a weigh-in |
 | GET, PUT | /api/settings | Model choices, units, thresholds |

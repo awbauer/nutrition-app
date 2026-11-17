@@ -1,4 +1,4 @@
-import { ArrowUp, Camera, Mic, Plus, Search, X } from 'lucide-preact';
+import { ArrowUp, Camera, ChefHat, Mic, Plus, Search, X } from 'lucide-preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { watch } from '../analysis';
 import { api, type Intake, type MealType } from '../api';
@@ -9,6 +9,7 @@ import { toast } from '../toast';
 import { AddFood, occurrenceFor, type QuickPick } from './AddFood';
 import { Questions } from './Questions';
 import { Recorder } from './Recorder';
+import { emptyRecipeFields, RecipeFields, recipeBody, RecipePicks } from './Recipes';
 
 const AUDIO_EXT: Record<string, string> = { 'audio/mp4': 'm4a', 'audio/webm': 'webm', 'audio/ogg': 'ogg' };
 
@@ -27,6 +28,8 @@ export function LogSheet(props: { date: string; defaultMeal: MealType; target?: 
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState<Intake | null>(null);
   const [quickPick, setQuickPick] = useState<QuickPick | undefined>();
+  // Cooked a batch: what's described becomes a recipe's ingredients instead of a meal.
+  const [batch, setBatch] = useState<ReturnType<typeof emptyRecipeFields> | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const mealFor = props.target?.meal_type ?? meal;
 
@@ -38,7 +41,11 @@ export function LogSheet(props: { date: string; defaultMeal: MealType; target?: 
     if (clip) f.append('audio', clip.blob, `voice.${AUDIO_EXT[clip.blob.type] ?? 'm4a'}`);
     else if (photo) f.append('photo', photo.blob, 'meal.jpg');
     if (text.trim() && !clip) f.append('text', text.trim());
-    if (props.target) f.append('append_to', props.target.id);
+    if (batch) {
+      const body = recipeBody(batch);
+      if (typeof body === 'string') return toast.error(body);
+      f.append('recipe', JSON.stringify(body));
+    } else if (props.target) f.append('append_to', props.target.id);
     else {
       f.append('meal_type', meal);
       f.append('merge', '1');
@@ -49,7 +56,10 @@ export function LogSheet(props: { date: string; defaultMeal: MealType; target?: 
     try {
       const r = await submitMeal('/intake', f);
       // Saved (or queued offline): the AI fills it in in the background and Today shows progress.
-      if (r?.merged_from) {
+      if (r?.pending?.recipe || r?.pending?.recipe_saved) {
+        watch(r);
+        props.onDone();
+      } else if (r?.merged_from) {
         toast.success(`Added to your ${MEAL_LABEL[r.meal_type].toLowerCase()}`);
         props.onDone();
       } else if (r && r.status !== 'preparation') setDraft(r);
@@ -90,7 +100,19 @@ export function LogSheet(props: { date: string; defaultMeal: MealType; target?: 
 
   return (
     <div class="flex flex-col gap-4">
-      {props.target ? (
+      {batch ? (
+        <div class="flex flex-col gap-3">
+          <div class="flex items-center justify-between">
+            <p class="flex items-center gap-2 text-sm font-medium">
+              <ChefHat size={18} /> New recipe
+            </p>
+            <button class="text-sm font-medium text-accent-ink" onClick={() => setBatch(null)}>
+              Log a meal instead
+            </button>
+          </div>
+          <RecipeFields value={batch} onChange={setBatch} autoFocus />
+        </div>
+      ) : props.target ? (
         <p class="text-sm text-ink-2">Adding to your {MEAL_LABEL[props.target.meal_type].toLowerCase()}.</p>
       ) : (
         <div class="segmented" role="radiogroup" aria-label="Meal">
@@ -133,18 +155,26 @@ export function LogSheet(props: { date: string; defaultMeal: MealType; target?: 
           {!clip && (
             <textarea
               class="min-h-24 w-full resize-none bg-transparent px-1 text-[1.05rem] leading-relaxed outline-none placeholder:text-faint"
-              placeholder={photo ? 'Anything to add? (optional, e.g. "half the rice")' : 'Two eggs, toast with butter, a flat white…'}
+              placeholder={
+                batch
+                  ? photo
+                    ? 'Anything to add? (optional, e.g. "plus 2 tbsp olive oil")'
+                    : 'What went in? 2 lb ground turkey, 2 cans black beans, 1 onion, 1 tbsp oil…'
+                  : photo
+                    ? 'Anything to add? (optional, e.g. "half the rice")'
+                    : 'Two eggs, toast with butter, a flat white…'
+              }
               value={text}
               onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
               onKeyDown={(e) => e.key === 'Enter' && (e.metaKey || e.ctrlKey) && submit()}
-              aria-label="What did you eat?"
+              aria-label={batch ? 'What went into the batch?' : 'What did you eat?'}
               enterkeyhint="send"
             />
           )}
           <div class="flex items-center gap-1">
             <ToolButton onClick={() => fileRef.current?.click()} icon={<Camera size={19} />} label="Photo" />
             <ToolButton onClick={() => setView('record')} icon={<Mic size={19} />} label="Voice" />
-            <ToolButton onClick={() => setView('search')} icon={<Search size={18} />} label="Search" />
+            {!batch && <ToolButton onClick={() => setView('search')} icon={<Search size={18} />} label="Search" />}
             <button class="ml-auto flex h-11 w-11 items-center justify-center rounded-full bg-accent text-white transition active:scale-95 disabled:bg-sunken disabled:text-faint" disabled={!ready || busy} onClick={submit} aria-label="Log it">
               {busy ? <span class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" /> : <ArrowUp size={22} strokeWidth={2.5} />}
             </button>
@@ -152,12 +182,23 @@ export function LogSheet(props: { date: string; defaultMeal: MealType; target?: 
         </div>
       )}
 
-      {view === 'compose' && !text && !photo && !clip && (
-        <QuickAdd mealType={mealFor} onPick={(q) => (setQuickPick(q), setView('search'))} />
+      {view === 'compose' && !batch && !text && !photo && !clip && (
+        <>
+          <RecipePicks onPick={(r) => (setQuickPick({ name: r.name, food_id: r.id, amount: 1, unit: 'serving' }), setView('search'))} />
+          <QuickAdd mealType={mealFor} onPick={(q) => (setQuickPick(q), setView('search'))} />
+        </>
+      )}
+
+      {!batch && !props.target && view === 'compose' && (
+        <button class="btn-quiet mx-auto flex items-center gap-2 text-sm" onClick={() => setBatch(emptyRecipeFields())}>
+          <ChefHat size={16} /> Cooked a batch? Save it as a recipe
+        </button>
       )}
 
       <p class="text-center text-xs text-faint">
-        Describe it however you like. The AI finds the foods, and nutrition comes from USDA and the package label.
+        {batch
+          ? 'List everything that went into the pot, with amounts for the whole batch. Then log servings as you eat them.'
+          : 'Describe it however you like. The AI finds the foods, and nutrition comes from USDA and the package label.'}
       </p>
     </div>
   );

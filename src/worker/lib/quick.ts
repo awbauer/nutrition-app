@@ -31,6 +31,7 @@ export async function quickFoods(db: D1Database, userId: string, mealType: MealT
        JOIN nutrition_intake i ON i.id = ci.intake_id
        JOIN food f ON f.id = ci.food_id
        WHERE ci.user_id = ? AND i.status = 'completed' AND i.occurrence_at >= ?
+         AND NOT EXISTS (SELECT 1 FROM recipe r WHERE r.food_id = f.id AND r.archived = 1)
        ORDER BY i.occurrence_at DESC
        LIMIT 1000`,
     )

@@ -9,6 +9,7 @@ import { intake } from './routes/intake';
 import { items } from './routes/items';
 import { progress } from './routes/progress';
 import { push } from './routes/push';
+import { recipes } from './routes/recipes';
 import { settings } from './routes/settings';
 
 export const app = new Hono<AppEnv>();
@@ -30,6 +31,7 @@ api.route('/', exporter);
 api.route('/foods', foods);
 api.route('/intake', intake);
 api.route('/item', items);
+api.route('/recipes', recipes);
 api.notFound((c) => c.json({ error: 'not found' }, 404));
 
 app.route('/api', api);

@@ -172,7 +172,7 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
           const name = h.kind === 'local' ? h.food.name : h.hit.name;
           const brand = h.kind === 'local' ? h.food.brand : h.hit.brand;
           const nutrients = h.kind === 'local' ? h.food.nutrients : h.hit.nutrients;
-          const tag = h.kind === 'local' ? (h.food.source === 'usda' ? 'Recent' : 'My food') : h.hit.dataType;
+          const tag = h.kind === 'local' ? (h.food.source === 'usda' ? 'Recent' : h.food.source === 'recipe' ? 'Your recipe' : 'My food') : h.hit.dataType;
           return (
             <li>
               <button class="flex w-full items-center gap-3 py-3 text-left" onClick={() => choose(h)}>

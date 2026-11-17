@@ -280,13 +280,17 @@ function publicPending(json: string) {
     questions?: { id: string; item_index: number; text: string; options: string[]; default: string }[];
     error?: string;
     merge?: unknown;
-    job?: { merge?: unknown };
+    job?: { merge?: unknown; recipe?: { name: string } };
+    recipe_saved?: { id: string; name: string };
   };
   return {
     questions: (p.questions ?? []).map(({ id, item_index, text, options, default: d }) => ({ id, item_index, text, options, default: d })),
     ...(p.error ? { error: p.error } : {}),
     // This entry will join an existing meal once it's finished (see merge.ts).
     ...(p.merge || p.job?.merge ? { adding_to_meal: true } : {}),
+    // A batch being saved as a recipe: its name while it's read, then the saved recipe.
+    ...(p.job?.recipe ? { recipe: p.job.recipe.name } : {}),
+    ...(p.recipe_saved ? { recipe_saved: p.recipe_saved } : {}),
   };
 }
 
