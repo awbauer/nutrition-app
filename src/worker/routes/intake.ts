@@ -18,7 +18,7 @@ import {
 } from '../lib/intake';
 import { getFood } from '../lib/foods';
 import { assertAppendable, findMergeTarget, mergedInto, parseMergeSpec } from '../lib/merge';
-import { answer, createFromMedia, media, retry } from './log';
+import { answer, createFromMedia, media, photo, retry } from './log';
 
 export const intake = new Hono<AppEnv>();
 
@@ -91,6 +91,7 @@ intake.post('/', async (c) => {
 intake.post('/:id/answers', answer);
 intake.post('/:id/retry', retry);
 intake.get('/:id/media', media);
+intake.get('/:id/photos/:n', photo);
 
 /** GET /api/intake/:id -> the meal; an entry merged into another meal returns that meal with `merged_from`. */
 intake.get('/:id', async (c) => {

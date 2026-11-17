@@ -4,7 +4,7 @@
  */
 import type { Env } from '../env';
 
-export const PROMPT_VERSION = 'parse-v3';
+export const PROMPT_VERSION = 'parse-v4';
 export const PIPELINE_VERSION = '2.0';
 
 export interface QuestionEffect {
@@ -139,11 +139,23 @@ export function parserMessages(text: string, localTime: string, ctx: PromptConte
   ];
 }
 
-export function visionPrompt(localTime: string, hint?: string, ctx: PromptContext = {}) {
-  return `${ctx.batch ? 'Identify every ingredient shown in this photo (a batch being cooked, or its ingredients and packages) and estimate each amount.' : 'Identify every food and drink in this photo and estimate each portion.'} The user's local time is ${localTime}.${
+export function visionPrompt(localTime: string, hint?: string, ctx: PromptContext = {}, photoCount = 1) {
+  const what = ctx.batch
+    ? 'Identify every ingredient shown (a batch being cooked, or its ingredients and packages) and estimate each amount.'
+    : 'Identify every food and drink shown and estimate each portion.';
+  return `${photoCount > 1 ? `${MULTI_PHOTO_INTRO(photoCount)} ${what}` : `${what.replace(' shown', ' shown in this photo')}`} The user's local time is ${localTime}.${
     hint ? ` The user added: "${hint}".` : ''
-  }\n${RULES}${contextRules(ctx)}\n${SCHEMA_TEXT}`;
+  }\n${RULES}${photoCount > 1 ? MULTI_PHOTO_RULES : ''}${contextRules(ctx)}\n${SCHEMA_TEXT}`;
 }
+
+const MULTI_PHOTO_INTRO = (n: number) =>
+  `These ${n} photos are all of ONE meal, taken together: different plates, angles, close-ups, drinks, packages or nutrition labels. Look at all of them before answering.`;
+
+const MULTI_PHOTO_RULES = `
+- Review the photos as a whole and return one combined list. Count each food once, even when it shows up in several photos
+  (the same plate from two angles is one plate, not two).
+- Use what one photo shows to inform another: a package or nutrition label in one photo names and sizes the food on the plate in another.
+- Different servings of the same food that are clearly separate (two different cans, two plates) are separate items or one item with the summed amount.`;
 
 // ---------- validation ----------
 
@@ -398,28 +410,66 @@ export function parseText(env: Env, model: string, text: string, localTime: stri
   });
 }
 
-export function parsePhoto(env: Env, model: string, image: Uint8Array, mime: string, localTime: string, hint?: string, ctx: PromptContext = {}) {
-  const prompt = visionPrompt(localTime, hint, ctx);
-  return withRetry((attempt) => {
-    const text = attempt ? `${prompt}\n${RETRY_NOTE}` : prompt;
-    // Llama 3.2 Vision takes raw bytes; chat-style vision models (Llama 4 Scout, etc.) take a data URL.
-    const inputs = /llama-3\.2-11b-vision/.test(model)
-      ? { prompt: text, image: [...image], max_tokens: 1500, temperature: 0.2 }
-      : {
-          messages: [
-            {
-              role: 'user',
-              content: [
-                { type: 'text', text },
-                { type: 'image_url', image_url: { url: `data:${mime};base64,${b64(image)}` } },
-              ],
-            },
-          ],
-          temperature: 0.2,
-          ...modelOptions(model),
-        };
-    return env.AI.run(model as Parameters<Ai['run']>[0], inputs as never, gatewayOpts(env) as never);
-  });
+export interface PhotoInput {
+  bytes: Uint8Array;
+  mime: string;
+}
+
+/** At most this many photos per meal: enough for plates, drinks and labels without blowing the model's context. */
+export const MAX_PHOTOS = 6;
+
+/** Llama 3.2 Vision takes a single raw image; chat-style vision models (Inkling, Llama 4 Scout, …) take several data URLs. */
+const singleImageModel = (model: string) => /llama-3\.2-11b-vision/.test(model);
+
+/**
+ * Read one meal from its photos. Models that accept several images see them all in one request, so
+ * they can de-duplicate across angles and use a label in one photo for a plate in another.
+ */
+export async function parsePhotos(env: Env, model: string, photos: PhotoInput[], localTime: string, hint?: string, ctx: PromptContext = {}): Promise<ModelOutput> {
+  if (!photos.length) throw new ModelOutputError('no photos');
+  if (photos.length === 1 || !singleImageModel(model)) {
+    const prompt = visionPrompt(localTime, hint, ctx, photos.length);
+    return withRetry((attempt) => {
+      const text = attempt ? `${prompt}\n${RETRY_NOTE}` : prompt;
+      const inputs = singleImageModel(model)
+        ? { prompt: text, image: [...photos[0]!.bytes], max_tokens: 1500, temperature: 0.2 }
+        : {
+            messages: [
+              {
+                role: 'user',
+                content: [
+                  { type: 'text', text },
+                  ...photos.map((p) => ({ type: 'image_url', image_url: { url: `data:${p.mime};base64,${b64(p.bytes)}` } })),
+                ],
+              },
+            ],
+            temperature: 0.2,
+            ...modelOptions(model),
+          };
+      return env.AI.run(model as Parameters<Ai['run']>[0], inputs as never, gatewayOpts(env) as never);
+    });
+  }
+  // A single-image model can't see them together: read each photo on its own and combine.
+  // It can't de-duplicate across photos, so a food shown twice may be listed twice.
+  const outs: ModelOutput[] = [];
+  for (const p of photos) outs.push(await parsePhotos(env, model, [p], localTime, hint, ctx));
+  return combineOutputs(outs);
+}
+
+/** Concatenate several outputs into one, re-pointing questions at their items; at most 2 questions overall. */
+export function combineOutputs(outs: ModelOutput[]): ModelOutput {
+  const items: ModelItem[] = [];
+  const questions: ModelQuestion[] = [];
+  for (const [n, o] of outs.entries()) {
+    const offset = items.length;
+    items.push(...o.items);
+    for (const q of o.questions) questions.push({ ...q, id: `p${n + 1}${q.id}`, item_index: q.item_index + offset });
+  }
+  return {
+    meal_type_guess: outs.find((o) => o.meal_type_guess)?.meal_type_guess ?? null,
+    items: items.slice(0, 20),
+    questions: questions.filter((q) => q.item_index < 20).slice(0, 2),
+  };
 }
 
 export async function transcribe(env: Env, model: string, audio: Uint8Array): Promise<string> {

@@ -72,14 +72,17 @@ export async function mergeDraft(env: Env, userId: string, draftId: string, targ
   if (!draft || draft.status !== 'completed') return draftId;
   if (!target || target.status !== 'completed') return draftId;
 
-  const pos = await env.DB.prepare('SELECT COALESCE(MAX(position), -1) + 1 AS next FROM consumed_item WHERE intake_id = ?')
-    .bind(targetId)
-    .first<{ next: number }>();
+  const [pos, photoPos] = await Promise.all([
+    env.DB.prepare('SELECT COALESCE(MAX(position), -1) + 1 AS next FROM consumed_item WHERE intake_id = ?').bind(targetId).first<{ next: number }>(),
+    env.DB.prepare('SELECT COALESCE(MAX(position), -1) + 1 AS next FROM intake_photo WHERE intake_id = ?').bind(targetId).first<{ next: number }>(),
+  ]);
   const keepMedia = !target.media_r2_key && draft.media_r2_key ? draft.media_r2_key : null;
   const text = [target.raw_input_text, draft.raw_input_text].filter(Boolean).join('\n') || null;
 
   await env.DB.batch([
     env.DB.prepare('UPDATE consumed_item SET intake_id = ?, position = position + ? WHERE intake_id = ? AND user_id = ?').bind(targetId, pos?.next ?? 0, draftId, userId),
+    // The draft's photos join the meal's, after the ones it already has.
+    env.DB.prepare('UPDATE intake_photo SET intake_id = ?, position = position + ? WHERE intake_id = ?').bind(targetId, photoPos?.next ?? 0, draftId),
     // Remember where it went, so a client still holding the draft's id can follow it.
     env.DB.prepare('INSERT OR REPLACE INTO intake_redirect (user_id, from_id, to_id) VALUES (?, ?, ?)').bind(userId, draftId, targetId),
     env.DB.prepare(
@@ -89,7 +92,7 @@ export async function mergeDraft(env: Env, userId: string, draftId: string, targ
     env.DB.prepare('DELETE FROM nutrition_intake WHERE id = ? AND user_id = ?').bind(draftId, userId),
     refreshConfidence(env.DB, targetId),
   ]);
-  // A second photo for a meal that already has one isn't shown anywhere; don't keep it.
+  // A second voice clip for a meal that already has one isn't played anywhere; don't keep it.
   if (draft.media_r2_key && !keepMedia) await env.MEDIA.delete(draft.media_r2_key).catch(() => {});
   return targetId;
 }

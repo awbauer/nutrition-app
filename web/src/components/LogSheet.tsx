@@ -1,4 +1,4 @@
-import { ArrowUp, Camera, ChefHat, Mic, Plus, Search, X } from 'lucide-preact';
+import { ArrowUp, Camera, ChefHat, ImagePlus, Mic, Plus, Search, X } from 'lucide-preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { watch } from '../analysis';
 import { api, type Intake, type MealType } from '../api';
@@ -12,9 +12,12 @@ import { Recorder } from './Recorder';
 import { emptyRecipeFields, RecipeFields, recipeBody, RecipePicks } from './Recipes';
 
 const AUDIO_EXT: Record<string, string> = { 'audio/mp4': 'm4a', 'audio/webm': 'webm', 'audio/ogg': 'ogg' };
+/** Same limit as the server (MAX_PHOTOS). */
+const MAX_PHOTOS = 6;
 
 /**
- * One composer for every way of logging: type it, attach a photo, or record it, then send.
+ * One composer for every way of logging: type it, attach photos, or record it, then send.
+ * Several photos (plate, drink, the package's label…) are read together by the AI as one meal.
  * Search is there for picking an exact food. With `target` (a meal's "Add to …") everything
  * goes into that meal; from the main button, breakfast/lunch/dinner join the day's existing
  * meal of that type and snacks are new.
@@ -32,7 +35,7 @@ export function LogSheet(props: {
   const [view, setView] = useState<'compose' | 'record' | 'search'>(props.initialPick ? 'search' : 'compose');
   const [text, setText] = useState('');
   const [meal, setMeal] = useState<MealType>(props.defaultMeal);
-  const [photo, setPhoto] = useState<{ blob: Blob; url: string } | null>(null);
+  const [photos, setPhotos] = useState<{ blob: Blob; url: string }[]>([]);
   const [clip, setClip] = useState<{ blob: Blob; url: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState<Intake | null>(null);
@@ -42,13 +45,14 @@ export function LogSheet(props: {
   const fileRef = useRef<HTMLInputElement>(null);
   const mealFor = props.target?.meal_type ?? meal;
 
+  const photo = photos.length > 0;
   const ready = !!(photo || clip || text.trim());
 
   async function submit() {
     if (!ready || busy) return;
     const f = new FormData();
     if (clip) f.append('audio', clip.blob, `voice.${AUDIO_EXT[clip.blob.type] ?? 'm4a'}`);
-    else if (photo) f.append('photo', photo.blob, 'meal.jpg');
+    else photos.forEach((p, i) => f.append('photo', p.blob, `meal-${i + 1}.jpg`));
     if (text.trim() && !clip) f.append('text', text.trim());
     if (batch) {
       const body = recipeBody(batch);
@@ -86,13 +90,27 @@ export function LogSheet(props: {
 
   async function onFile(e: Event) {
     const input = e.target as HTMLInputElement;
-    const file = input.files?.[0];
+    const files = [...(input.files ?? [])];
     input.value = ''; // so picking the same photo again still fires change
-    if (!file) return;
-    const blob = await resizeImage(file);
-    if (photo) URL.revokeObjectURL(photo.url);
-    setPhoto({ blob, url: URL.createObjectURL(blob) });
+    if (!files.length) return;
+    const room = MAX_PHOTOS - photos.length;
+    if (files.length > room) toast.info(`Up to ${MAX_PHOTOS} photos per meal${room > 0 ? `; added the first ${room}` : ''}.`);
+    if (room <= 0) return;
+    const blobs = await Promise.all(files.slice(0, room).map((f) => resizeImage(f)));
+    setPhotos((prev) => [...prev, ...blobs.map((blob) => ({ blob, url: URL.createObjectURL(blob) }))].slice(0, MAX_PHOTOS));
     setClip(null);
+  }
+
+  function removePhoto(i: number) {
+    setPhotos((prev) => {
+      URL.revokeObjectURL(prev[i]!.url);
+      return prev.filter((_, j) => j !== i);
+    });
+  }
+
+  function clearPhotos() {
+    photos.forEach((p) => URL.revokeObjectURL(p.url));
+    setPhotos([]);
   }
 
   if (draft) return <DraftView draft={draft} onDone={props.onDone} onChange={setDraft} />;
@@ -134,7 +152,7 @@ export function LogSheet(props: {
         </div>
       )}
 
-      <input ref={fileRef} type="file" accept="image/*" class="hidden" onChange={onFile} />
+      <input ref={fileRef} type="file" accept="image/*" multiple class="hidden" onChange={onFile} />
 
       {view === 'record' ? (
         <div class="card p-4">
@@ -142,7 +160,7 @@ export function LogSheet(props: {
             onClip={(b) => {
               setClip(b ? { blob: b, url: URL.createObjectURL(b) } : null);
               if (b) {
-                setPhoto(null);
+                clearPhotos();
                 setView('compose');
               }
             }}
@@ -153,11 +171,36 @@ export function LogSheet(props: {
         </div>
       ) : (
         <div class="card flex flex-col gap-3 p-3 focus-within:shadow-[0_0_0_2px_var(--accent)]">
-          {(photo || clip) && (
+          {photo && (
+            <div class="-mt-1.5 flex items-center gap-2 overflow-x-auto pt-1.5 pr-1.5 pb-1" aria-label="Photos">
+              {photos.map((p, i) => (
+                <div class="relative shrink-0">
+                  <img src={p.url} alt={`Photo ${i + 1}`} class="h-20 w-20 rounded-xl object-cover" />
+                  <button
+                    class="absolute -top-1.5 -right-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-ink text-card shadow"
+                    onClick={() => removePhoto(i)}
+                    aria-label={`Remove photo ${i + 1}`}
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
+              {photos.length < MAX_PHOTOS && (
+                <button
+                  class="flex h-20 w-20 shrink-0 flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-line text-xs text-ink-2 hover:bg-sunken"
+                  onClick={() => fileRef.current?.click()}
+                  aria-label="Add another photo"
+                >
+                  <ImagePlus size={18} />
+                  Add
+                </button>
+              )}
+            </div>
+          )}
+          {clip && (
             <div class="flex items-center gap-3">
-              {photo && <img src={photo.url} alt="Your photo" class="h-20 w-20 rounded-xl object-cover" />}
-              {clip && <audio src={clip.url} controls class="h-10 min-w-0 flex-1" />}
-              <button class="icon-btn ml-auto" onClick={() => (setPhoto(null), setClip(null))} aria-label="Remove attachment">
+              <audio src={clip.url} controls class="h-10 min-w-0 flex-1" />
+              <button class="icon-btn ml-auto" onClick={() => setClip(null)} aria-label="Remove recording">
                 <X size={18} />
               </button>
             </div>
@@ -171,7 +214,9 @@ export function LogSheet(props: {
                     ? 'Anything to add? (optional, e.g. "plus 2 tbsp olive oil")'
                     : 'What went in? 2 lb ground turkey, 2 cans black beans, 1 onion, 1 tbsp oil…'
                   : photo
-                    ? 'Anything to add? (optional, e.g. "half the rice")'
+                    ? photos.length > 1
+                      ? 'Anything to add? (optional, e.g. "I only drank half the shake")'
+                      : 'Anything to add? (optional, e.g. "half the rice")'
                     : 'Two eggs, toast with butter, a flat white…'
               }
               value={text}
