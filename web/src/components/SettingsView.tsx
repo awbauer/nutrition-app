@@ -2,7 +2,6 @@ import { toast } from '../toast';
 import { useEffect, useState } from 'preact/hooks';
 import { api, type Settings } from '../api';
 import { Export } from './Export';
-import { RecipesCard } from './Recipes';
 import { Reminders } from './Reminders';
 import { Targets } from './Targets';
 import { APP_VERSION } from '../update';
@@ -66,7 +65,6 @@ export function SettingsView(props: { today: string; onSaved: () => void }) {
         </div>
       </section>
       <Targets weightUnit={s.weight_unit} />
-      <RecipesCard />
       <Reminders />
       <Export today={props.today} />
       <p class="pb-2 text-center text-xs text-faint">Version {APP_VERSION}</p>

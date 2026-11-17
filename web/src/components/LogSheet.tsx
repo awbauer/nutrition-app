@@ -19,17 +19,26 @@ const AUDIO_EXT: Record<string, string> = { 'audio/mp4': 'm4a', 'audio/webm': 'w
  * goes into that meal; from the main button, breakfast/lunch/dinner join the day's existing
  * meal of that type and snacks are new.
  */
-export function LogSheet(props: { date: string; defaultMeal: MealType; target?: Intake; onDone: () => void }) {
-  const [view, setView] = useState<'compose' | 'record' | 'search'>('compose');
+export function LogSheet(props: {
+  date: string;
+  defaultMeal: MealType;
+  target?: Intake;
+  onDone: () => void;
+  /** Open straight into "Cooked a batch?" (new recipe). */
+  startBatch?: boolean;
+  /** Open straight on this food's amount (e.g. a recipe's "Log a serving"). */
+  initialPick?: QuickPick;
+}) {
+  const [view, setView] = useState<'compose' | 'record' | 'search'>(props.initialPick ? 'search' : 'compose');
   const [text, setText] = useState('');
   const [meal, setMeal] = useState<MealType>(props.defaultMeal);
   const [photo, setPhoto] = useState<{ blob: Blob; url: string } | null>(null);
   const [clip, setClip] = useState<{ blob: Blob; url: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState<Intake | null>(null);
-  const [quickPick, setQuickPick] = useState<QuickPick | undefined>();
+  const [quickPick, setQuickPick] = useState<QuickPick | undefined>(props.initialPick);
   // Cooked a batch: what's described becomes a recipe's ingredients instead of a meal.
-  const [batch, setBatch] = useState<ReturnType<typeof emptyRecipeFields> | null>(null);
+  const [batch, setBatch] = useState<ReturnType<typeof emptyRecipeFields> | null>(props.startBatch ? emptyRecipeFields() : null);
   const fileRef = useRef<HTMLInputElement>(null);
   const mealFor = props.target?.meal_type ?? meal;
 
@@ -102,7 +111,8 @@ export function LogSheet(props: { date: string; defaultMeal: MealType; target?: 
     <div class="flex flex-col gap-4">
       {batch ? (
         <div class="flex flex-col gap-3">
-          <div class="flex items-center justify-between">
+          {/* From the Recipes screen the sheet is already titled "New recipe". */}
+          <div class={`flex items-center justify-between ${props.startBatch ? 'hidden' : ''}`}>
             <p class="flex items-center gap-2 text-sm font-medium">
               <ChefHat size={18} /> New recipe
             </p>

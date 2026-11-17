@@ -3,6 +3,15 @@ import type { MealType } from './api';
 export const MEALS: MealType[] = ['breakfast', 'lunch', 'dinner', 'snack'];
 export const MEAL_LABEL: Record<MealType, string> = { breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner', snack: 'Snack' };
 
+/** The meal the current time of day suggests. */
+export function guessMeal(): MealType {
+  const h = new Date().getHours() + new Date().getMinutes() / 60;
+  if (h >= 4 && h < 10.5) return 'breakfast';
+  if (h >= 11 && h < 14.5) return 'lunch';
+  if (h >= 17 && h < 21.5) return 'dinner';
+  return 'snack';
+}
+
 export const kcal = (v: number | undefined) => Math.round(v ?? 0).toLocaleString();
 export const grams = (v: number | undefined) => `${Math.round(v ?? 0)} g`;
 

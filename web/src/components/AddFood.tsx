@@ -111,9 +111,12 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
     const g = toGrams(amount || 0, unit, { portions: picked.portions, default_serving_grams: picked.default_serving_grams }).grams;
     return (
       <div class="flex flex-col gap-4">
-        <button class="self-start text-sm text-accent-ink" onClick={() => setPicked(null)}>
-          ← Back to results
-        </button>
+        {/* Opened on a quick pick there are no results to go back to (the sheet has its own Back). */}
+        {!label && (
+          <button class="self-start text-sm text-accent-ink" onClick={() => setPicked(null)}>
+            ← Back to results
+          </button>
+        )}
         <div>
           <h3 class="display text-lg font-semibold">{label ?? picked.name}</h3>
           {label && label.toLowerCase() !== picked.name.toLowerCase() && <p class="text-sm text-ink-2">{picked.name}</p>}

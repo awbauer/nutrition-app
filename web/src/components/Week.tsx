@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import { useRefreshOnReturn } from '../refresh';
 import { api } from '../api';
 import { addDays, kcal } from '../format';
+import { WeightTrend } from './Weight';
 
 interface Summary {
   start: string;
@@ -17,7 +18,7 @@ interface Summary {
   streak: number;
 }
 
-export function Week(props: { today: string }) {
+export function Week(props: { today: string; weightUnit: 'kg' | 'lb' }) {
   const [end, setEnd] = useState(props.today);
   const [s, setS] = useState<Summary | null>(null);
 
@@ -68,6 +69,9 @@ export function Week(props: { today: string }) {
           <section class="card p-4">
             <Bars days={s.days} target={s.targets.ENERC_KCAL} today={props.today} />
           </section>
+          <div class="lg:col-span-2">
+            <WeightTrend unit={props.weightUnit} start={s.start} end={s.end} />
+          </div>
           <p class="px-2 text-center text-xs text-ink-2 lg:col-span-2">The weekly average is what matters. One big day is noise.</p>
         </div>
       )}

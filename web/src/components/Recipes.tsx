@@ -1,7 +1,8 @@
 import { ChefHat, Minus, Plus, Trash2 } from 'lucide-preact';
 import { useEffect, useState } from 'preact/hooks';
 import { api, type Intake, type Recipe } from '../api';
-import { amountLabel, kcal } from '../format';
+import { amountLabel, guessMeal, kcal } from '../format';
+import { LogSheet } from './LogSheet';
 import { toast } from '../toast';
 import { Sheet } from './Sheet';
 
@@ -16,10 +17,20 @@ export interface RecipeFieldValues {
   weightUnit: WeightUnit;
 }
 
-export const emptyRecipeFields = (name = ''): RecipeFieldValues => ({ name, servings: 4, weight: '', weightUnit: 'g' });
+export const emptyRecipeFields = (name = ''): RecipeFieldValues => ({
+  name,
+  servings: 4,
+  weight: '',
+  weightUnit: 'g',
+});
 
 export function recipeFieldsFrom(r: Recipe): RecipeFieldValues {
-  return { name: r.name, servings: r.servings, weight: r.yield_grams ? String(r.yield_grams) : '', weightUnit: 'g' };
+  return {
+    name: r.name,
+    servings: r.servings,
+    weight: r.yield_grams ? String(r.yield_grams) : '',
+    weightUnit: 'g',
+  };
 }
 
 /** {name, servings, yield_grams} for the API, or an error message. */
@@ -28,7 +39,11 @@ export function recipeBody(v: RecipeFieldValues): { name: string; servings: numb
   if (!(v.servings > 0)) return 'How many servings does it make?';
   const w = v.weight.trim() ? Number(v.weight) : null;
   if (w != null && !(w > 0)) return 'Enter the batch weight as a number, or leave it empty';
-  return { name: v.name.trim(), servings: v.servings, yield_grams: w != null ? Math.round(w * WEIGHT_UNITS[v.weightUnit] * 10) / 10 : null };
+  return {
+    name: v.name.trim(),
+    servings: v.servings,
+    yield_grams: w != null ? Math.round(w * WEIGHT_UNITS[v.weightUnit] * 10) / 10 : null,
+  };
 }
 
 /** Name, servings and (optional) weight of the finished batch. */
@@ -39,7 +54,14 @@ export function RecipeFields(props: { value: RecipeFieldValues; onChange: (v: Re
     <div class="flex flex-col gap-3">
       <label class="flex flex-col gap-1">
         <span class="text-sm font-medium">Name</span>
-        <input class="input" value={v.name} maxLength={120} placeholder="Turkey chili" autoFocus={props.autoFocus} onInput={(e) => set({ name: (e.target as HTMLInputElement).value })} />
+        <input
+          class="input"
+          value={v.name}
+          maxLength={120}
+          placeholder="Turkey chili"
+          autoFocus={props.autoFocus}
+          onInput={(e) => set({ name: (e.target as HTMLInputElement).value })}
+        />
       </label>
       <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-5">
         <div class="flex flex-col gap-1">
@@ -47,7 +69,12 @@ export function RecipeFields(props: { value: RecipeFieldValues; onChange: (v: Re
             Makes
           </span>
           <div class="flex w-fit items-center gap-1 rounded-full bg-sunken p-1" role="group" aria-labelledby="servings-label">
-            <button class="icon-btn h-9 w-9 bg-card" onClick={() => set({ servings: Math.max(1, v.servings - 1) })} disabled={v.servings <= 1} aria-label="Fewer servings">
+            <button
+              class="icon-btn h-9 w-9 bg-card"
+              onClick={() => set({ servings: Math.max(1, v.servings - 1) })}
+              disabled={v.servings <= 1}
+              aria-label="Fewer servings"
+            >
               <Minus size={16} />
             </button>
             <input
@@ -80,7 +107,16 @@ export function RecipeFields(props: { value: RecipeFieldValues; onChange: (v: Re
               value={v.weight}
               onInput={(e) => set({ weight: (e.target as HTMLInputElement).value })}
             />
-            <select class="input w-24 shrink-0" value={v.weightUnit} onChange={(e) => set({ weightUnit: (e.target as HTMLSelectElement).value as WeightUnit })} aria-label="Weight unit">
+            <select
+              class="input w-24 shrink-0"
+              value={v.weightUnit}
+              onChange={(e) =>
+                set({
+                  weightUnit: (e.target as HTMLSelectElement).value as WeightUnit,
+                })
+              }
+              aria-label="Weight unit"
+            >
               {Object.keys(WEIGHT_UNITS).map((u) => (
                 <option value={u}>{u}</option>
               ))}
@@ -89,8 +125,8 @@ export function RecipeFields(props: { value: RecipeFieldValues; onChange: (v: Re
         </label>
       </div>
       <p class="text-xs text-ink-2">
-        Weighing the finished batch (less the pot) lets you log portions by weight accurately. Cooking changes weight, so without it portions are counted
-        in servings.
+        Weighing the finished batch (less the pot) lets you log portions by weight accurately. Cooking changes weight, so without it portions are counted in
+        servings.
       </p>
     </div>
   );
@@ -106,7 +142,10 @@ export function SaveAsRecipe(props: { meal: Intake; onSaved: () => void }) {
     if (typeof body === 'string') return toast.error(body);
     setBusy(true);
     try {
-      const r = await api.post<Recipe>('/recipes', { ...body, from_intake: props.meal.id });
+      const r = await api.post<Recipe>('/recipes', {
+        ...body,
+        from_intake: props.meal.id,
+      });
       toast.success(`Saved "${r.name}" · ${kcal(r.per_serving.ENERC_KCAL)} kcal a serving`);
       dispatchEvent(new CustomEvent('recipes-changed'));
       props.onSaved();
@@ -119,8 +158,9 @@ export function SaveAsRecipe(props: { meal: Intake; onSaved: () => void }) {
   return (
     <div class="flex flex-col gap-4">
       <p class="text-sm text-ink-2">
-        {props.meal.items.length === 1 ? 'This item becomes the recipe' : `These ${props.meal.items.length} items become the recipe's ingredients`} ({kcal(props.meal.totals.ENERC_KCAL)} kcal for the whole batch). This entry
-        comes off your log, since you haven't eaten the batch yet. Then log servings as you eat them.
+        {props.meal.items.length === 1 ? 'This item becomes the recipe' : `These ${props.meal.items.length} items become the recipe's ingredients`} (
+        {kcal(props.meal.totals.ENERC_KCAL)} kcal for the whole batch). This entry comes off your log, since you haven't eaten the batch yet. Then log servings
+        as you eat them.
       </p>
       <RecipeFields value={v} onChange={setV} autoFocus />
       <button class="btn-primary w-full py-3" disabled={busy} onClick={save}>
@@ -150,7 +190,10 @@ export function RecipePicks(props: { onPick: (r: Recipe) => void }) {
       <p class="eyebrow">Your recipes</p>
       <div class="-mx-5 flex gap-2 overflow-x-auto px-5 pb-1">
         {list.map((r) => (
-          <button class="card flex min-w-36 shrink-0 flex-col items-start gap-0.5 px-3.5 py-2.5 text-left hover:bg-sunken/70 active:bg-sunken" onClick={() => props.onPick(r)}>
+          <button
+            class="card flex min-w-36 shrink-0 flex-col items-start gap-0.5 px-3.5 py-2.5 text-left hover:bg-sunken/70 active:bg-sunken"
+            onClick={() => props.onPick(r)}
+          >
             <span class="max-w-44 truncate text-[0.95rem] font-medium">{r.name}</span>
             <span class="text-xs text-faint">
               <span class="num text-ink-2">{kcal(r.per_serving.ENERC_KCAL)}</span> kcal a serving
@@ -162,45 +205,96 @@ export function RecipePicks(props: { onPick: (r: Recipe) => void }) {
   );
 }
 
-/** Settings card: the recipe list, each opening its details. */
-export function RecipesCard() {
+/** The Recipes screen: every recipe with its per-serving numbers; start a new one or log a serving. */
+export function RecipesView(props: { today: string }) {
   const list = useRecipes();
   const [open, setOpen] = useState<Recipe | null>(null);
+  const [log, setLog] = useState<{ batch: true } | { pick: Recipe } | null>(null);
   return (
-    <section class="card flex flex-col gap-3 p-4">
-      <h2 class="display text-xl font-semibold">Recipes</h2>
+    <div class="flex flex-col gap-4">
+      <header class="flex items-end justify-between gap-3 pt-2">
+        <div>
+          <p class="eyebrow">Cook once, eat all week</p>
+          <h1 class="display mt-0.5 text-[2.1rem] leading-none font-semibold">Recipes</h1>
+        </div>
+        <button class="btn-primary shrink-0 px-4 py-2" onClick={() => setLog({ batch: true })}>
+          <Plus size={18} strokeWidth={2.25} /> New recipe
+        </button>
+      </header>
+
+      {!list && <div class="card h-40 animate-pulse" />}
       {list && !list.length && (
-        <p class="text-sm text-ink-2">
-          For things you cook in a batch and eat over a few days. Tap <span class="font-medium text-ink">+</span>, choose{' '}
-          <span class="font-medium text-ink">Cooked a batch?</span>, and list what went in. Then log servings as you eat them.
-        </p>
+        <div class="card flex flex-col items-center gap-3 px-6 py-10 text-center">
+          <ChefHat size={40} strokeWidth={1.5} class="text-faint" aria-hidden="true" />
+          <p class="display text-xl font-semibold">No recipes yet</p>
+          <p class="max-w-[19rem] text-sm text-ink-2">
+            Made a pot of chili or a tray of meal prep? Add it as a recipe: list what went in, say how many servings it makes, then log servings as you eat
+            them.
+          </p>
+          <button class="btn-primary mt-1" onClick={() => setLog({ batch: true })}>
+            Add your first recipe
+          </button>
+          <p class="text-xs text-faint">Already logged the batch as a meal? Use "Save as recipe" in that meal's ··· menu.</p>
+        </div>
       )}
       {list && list.length > 0 && (
-        <ul class="-mx-4 divide-y divide-line">
+        <ul class="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
           {list.map((r) => (
-            <li>
-              <button class="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-sunken/70" onClick={() => setOpen(r)}>
-                <div class="min-w-0 flex-1">
-                  <p class="truncate text-[0.95rem]">{r.name}</p>
-                  <p class="truncate text-xs text-faint">
-                    {amountLabel(r.servings, 'serving')} · {r.ingredients.length} ingredients
-                    {r.times_logged > 0 && ` · eaten ${r.times_logged}×`}
-                  </p>
-                </div>
-                <span class="text-right text-xs text-ink-2">
-                  <span class="num block text-[0.95rem] text-ink">{kcal(r.per_serving.ENERC_KCAL)}</span>
-                  kcal a serving
+            <li class="card flex flex-col">
+              <button class="flex flex-1 flex-col gap-1 px-4 pt-3.5 pb-2 text-left" onClick={() => setOpen(r)}>
+                <span class="display text-lg leading-tight font-semibold">{r.name}</span>
+                <span class="text-xs text-faint">
+                  {amountLabel(r.servings, 'serving')} of {Math.round(r.serving_grams)} g · {r.ingredients.length} ingredients
+                  {r.times_logged > 0 && ` · eaten ${r.times_logged}×`}
                 </span>
+                <span class="mt-1 flex items-baseline gap-3">
+                  <span>
+                    <span class="num text-xl font-semibold">{kcal(r.per_serving.ENERC_KCAL)}</span>
+                    <span class="ml-1 text-xs text-faint">kcal</span>
+                  </span>
+                  <span class="text-xs font-medium text-sage">{Math.round(r.per_serving.PROCNT ?? 0)} g protein</span>
+                  <span class="text-xs text-faint">a serving</span>
+                </span>
+              </button>
+              <button
+                class="flex items-center gap-2 border-t border-dashed border-line px-4 py-2.5 text-sm font-medium text-accent-ink"
+                onClick={() => setLog({ pick: r })}
+              >
+                <Plus size={16} /> Log a serving
               </button>
             </li>
           ))}
         </ul>
       )}
-      {!list && <div class="h-12 animate-pulse rounded-xl bg-sunken" />}
+
       <Sheet open={!!open} onClose={() => setOpen(null)} title={open?.name ?? 'Recipe'}>
         {open && <RecipeDetail recipe={open} onDone={() => setOpen(null)} />}
       </Sheet>
-    </section>
+      <Sheet open={!!log} onClose={() => setLog(null)} title={log && 'batch' in log ? 'New recipe' : 'Log a serving'}>
+        {log && (
+          <LogSheet
+            date={props.today}
+            defaultMeal={guessMeal()}
+            startBatch={'batch' in log}
+            initialPick={
+              'pick' in log
+                ? {
+                    name: log.pick.name,
+                    food_id: log.pick.id,
+                    amount: 1,
+                    unit: 'serving',
+                  }
+                : undefined
+            }
+            onDone={() => {
+              if ('pick' in log) toast.success(`Logged a serving of ${log.pick.name}`);
+              setLog(null);
+              dispatchEvent(new CustomEvent('recipes-changed'));
+            }}
+          />
+        )}
+      </Sheet>
+    </div>
   );
 }
 
@@ -220,7 +314,11 @@ function RecipeDetail(props: { recipe: Recipe; onDone: () => void }) {
   const r = props.recipe;
   const [v, setV] = useState(recipeFieldsFrom(r));
   const [ings, setIngs] = useState<EditableIngredient[]>(() =>
-    r.ingredients.map((i) => ({ ...i, kcal_per_g: i.grams > 0 ? i.kcal / i.grams : 0, protein_per_g: i.grams > 0 ? i.protein / i.grams : 0 })),
+    r.ingredients.map((i) => ({
+      ...i,
+      kcal_per_g: i.grams > 0 ? i.kcal / i.grams : 0,
+      protein_per_g: i.grams > 0 ? i.protein / i.grams : 0,
+    })),
   );
   const [busy, setBusy] = useState(false);
   const totalKcal = ings.reduce((s, i) => s + i.kcal_per_g * i.grams, 0);
@@ -238,7 +336,13 @@ function RecipeDetail(props: { recipe: Recipe; onDone: () => void }) {
     try {
       const saved = await api.put<Recipe>(`/recipes/${r.id}`, {
         ...body,
-        ingredients: ings.map((i) => ({ food_id: i.food_id, amount: i.amount_value, unit: i.amount_unit, grams: i.grams, display_name: i.display_name })),
+        ingredients: ings.map((i) => ({
+          food_id: i.food_id,
+          amount: i.amount_value,
+          unit: i.amount_unit,
+          grams: i.grams,
+          display_name: i.display_name,
+        })),
       });
       toast.success(`Saved "${saved.name}" · ${kcal(saved.per_serving.ENERC_KCAL)} kcal a serving`);
       dispatchEvent(new CustomEvent('recipes-changed'));
@@ -327,5 +431,3 @@ function Stat(props: { value: string; label: string }) {
     </div>
   );
 }
-
-export const RecipeIcon = ChefHat;
