@@ -35,7 +35,15 @@ export interface LabelFacts {
   protein?: number;
   fat?: number;
   carbs?: number;
+  fiber?: number;
+  sugars?: number;
+  sat_fat?: number;
+  /** milligrams */
+  sodium?: number;
 }
+
+/** Optional label fields, in the order they're validated. */
+export const LABEL_NUTRIENTS = ['protein', 'fat', 'carbs', 'fiber', 'sugars', 'sat_fat', 'sodium'] as const;
 
 export interface ModelQuestion {
   id: string;
@@ -64,7 +72,8 @@ const SCHEMA_TEXT = `Return ONLY a JSON object, no prose:
     "brand": null,                              // brand if stated or printed on the package, e.g. "fairlife", else null
     "barcode": null,                            // all barcode digits if fully legible or stated, else null
     "label": null,                              // packaged foods only: numbers PRINTED on the package, else null:
-                                                // {"serving_amount": 340, "serving_unit": "ml", "kcal": 150, "protein": 30, "fat": 2.5, "carbs": 4}
+                                                // {"serving_amount": 340, "serving_unit": "ml", "kcal": 150, "protein": 30, "fat": 2.5, "carbs": 4,
+                                                //  "fiber": 1, "sugars": 2, "sat_fat": 1.5, "sodium": 230}  (sodium in mg; omit what isn't printed)
     "estimate_per_100g": {"kcal": 165, "protein": 31, "fat": 3.6, "carbs": 0}
   }],
   "questions": [{
@@ -308,7 +317,7 @@ function normaliseBarcode(b: unknown): string | null {
   return validGtin(digits) ? digits : null;
 }
 
-function validLabel(l: unknown): LabelFacts | null {
+export function validLabel(l: unknown): LabelFacts | null {
   if (!l || typeof l !== 'object') return null;
   const o = l as Record<string, unknown>;
   const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : typeof v === 'string' && /^\d+(\.\d+)?$/.test(v) ? Number(v) : undefined);
@@ -317,7 +326,7 @@ function validLabel(l: unknown): LabelFacts | null {
   const unit = typeof o.serving_unit === 'string' ? o.serving_unit.trim().toLowerCase() : '';
   if (!serving || serving <= 0 || kcal === undefined || !unit) return null;
   const out: LabelFacts = { serving_amount: serving, serving_unit: unit, kcal };
-  for (const k of ['protein', 'fat', 'carbs'] as const) {
+  for (const k of LABEL_NUTRIENTS) {
     const v = num(o[k]);
     if (v !== undefined) out[k] = v;
   }
@@ -327,7 +336,7 @@ function validLabel(l: unknown): LabelFacts | null {
 // ---------- calls ----------
 
 /** Workers AI returns `{response}` for most models and OpenAI-style `{choices}` for others. */
-function responseText(r: unknown): unknown {
+export function responseText(r: unknown): unknown {
   if (r && typeof r === 'object') {
     if ('response' in r) return (r as { response: unknown }).response;
     const c = (r as { choices?: { message?: { content?: unknown } }[] }).choices?.[0]?.message?.content;
@@ -346,7 +355,7 @@ export function modelOptions(model: string): Record<string, unknown> {
   return { max_tokens: 1500 };
 }
 
-const gatewayOpts = (env: Env) => (env.AI_GATEWAY_ID ? { gateway: { id: env.AI_GATEWAY_ID } } : {});
+export const gatewayOpts = (env: Env) => (env.AI_GATEWAY_ID ? { gateway: { id: env.AI_GATEWAY_ID } } : {});
 
 async function withRetry(call: (attempt: number) => Promise<unknown>): Promise<ModelOutput> {
   let lastErr: unknown;

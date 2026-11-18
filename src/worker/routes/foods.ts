@@ -1,9 +1,14 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../env';
-import { backfillCategories, createCustomFood, getFood, getSnapshot, resolveFdc, searchLocal, usdaClient, type CustomFoodInput } from '../lib/foods';
+import { archiveCustomFood, backfillCategories, createCustomFood, getFood, listCustomFoods, updateCustomFood, getSnapshot, resolveFdc, searchLocal, usdaClient, type CustomFoodInput } from '../lib/foods';
 import { HttpError } from '../lib/ids';
 import { MEAL_TYPES, type MealType } from '../lib/intake';
 import { quickFoods } from '../lib/quick';
+import { FALLBACK_MODELS, isCapacityError, MAX_PHOTOS, type PhotoInput } from '../lib/ai';
+import { LabelReadError, readLabel } from '../lib/label';
+import { getSettings } from '../lib/settings';
+
+const MAX_PHOTO = 8 * 1024 * 1024;
 
 export const foods = new Hono<AppEnv>();
 
@@ -43,6 +48,41 @@ foods.get('/quick', async (c) => {
   return c.json(await quickFoods(c.env.DB, c.get('user').id, mealType));
 });
 
+/** GET /api/foods/mine -> the user's custom foods (not recipes). */
+foods.get('/mine', async (c) => c.json(await listCustomFoods(c.env.DB, c.get('user').id)));
+
+/**
+ * POST /api/foods/label (multipart: `photo` x1-MAX_PHOTOS, optional `name`) -> a draft custom food read
+ * from a nutrition label or a restaurant app screenshot. Not saved: the client shows it for editing.
+ */
+foods.post('/label', async (c) => {
+  const form = await c.req.formData();
+  const files = form.getAll('photo').filter((p): p is File => p instanceof File);
+  if (!files.length) throw new HttpError(400, 'send a photo of the label');
+  if (files.length > MAX_PHOTOS) throw new HttpError(413, `up to ${MAX_PHOTOS} photos`);
+  const photos: PhotoInput[] = [];
+  for (const f of files) {
+    if (f.size > MAX_PHOTO) throw new HttpError(413, 'photo is too large (max 8 MB)');
+    if (!(f.type || 'image/jpeg').startsWith('image/')) throw new HttpError(415, 'photo must be an image');
+    photos.push({ bytes: new Uint8Array(await f.arrayBuffer()), mime: f.type || 'image/jpeg' });
+  }
+  const hint = typeof form.get('name') === 'string' ? (form.get('name') as string).trim() || undefined : undefined;
+  const configured = (await getSettings(c.env.DB, c.get('user').id)).model_vision;
+  // Label reading sends chat-style image messages; a single-image model can't take them.
+  const model = /llama-3\.2-11b-vision/.test(configured) ? FALLBACK_MODELS.vision : configured;
+  try {
+    try {
+      return c.json(await readLabel(c.env, model, photos, hint));
+    } catch (e) {
+      if (!isCapacityError(e) || model === FALLBACK_MODELS.vision) throw e;
+      return c.json(await readLabel(c.env, FALLBACK_MODELS.vision, photos, hint));
+    }
+  } catch (e) {
+    if (e instanceof LabelReadError) throw new HttpError(422, e.message);
+    throw e;
+  }
+});
+
 /** GET /api/foods/:id/source -> the source database's full record for the food, as received. */
 foods.get('/:id/source', async (c) => {
   const f = await getFood(c.env.DB, c.get('user').id, c.req.param('id'));
@@ -62,4 +102,16 @@ foods.get('/:id', async (c) => {
 foods.post('/', async (c) => {
   const body = await c.req.json<CustomFoodInput>();
   return c.json(await createCustomFood(c.env.DB, c.get('user').id, body), 201);
+});
+
+/** PUT /api/foods/:id -> edit a custom food (future logs use the new values). */
+foods.put('/:id', async (c) => {
+  const body = await c.req.json<CustomFoodInput>();
+  return c.json(await updateCustomFood(c.env.DB, c.get('user').id, c.req.param('id'), body));
+});
+
+/** DELETE /api/foods/:id -> delete (archive) a custom food. */
+foods.delete('/:id', async (c) => {
+  await archiveCustomFood(c.env.DB, c.get('user').id, c.req.param('id'));
+  return c.body(null, 204);
 });

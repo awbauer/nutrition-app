@@ -188,8 +188,8 @@ export async function backfillCategories(db: D1Database, local: FoodRecord[], hi
   if (stmts.length) await db.batch(stmts);
 }
 
-/** Deleted recipes stay in `food` (past logs point at them) but are never offered again. */
-const NOT_ARCHIVED = 'NOT EXISTS (SELECT 1 FROM recipe r WHERE r.food_id = food.id AND r.archived = 1)';
+/** Deleted recipes and custom foods stay in `food` (past logs point at them) but are never offered again. */
+const NOT_ARCHIVED = 'food.archived_at IS NULL AND NOT EXISTS (SELECT 1 FROM recipe r WHERE r.food_id = food.id AND r.archived = 1)';
 
 /** Token-based fuzzy search over the user's custom foods and the shared cache. */
 export async function searchLocal(db: D1Database, userId: string, q: string, limit = 10): Promise<FoodRecord[]> {
@@ -229,7 +229,7 @@ export interface CustomFoodInput {
   per_serving?: Record<string, number>;
 }
 
-export async function createCustomFood(db: D1Database, userId: string, input: CustomFoodInput): Promise<FoodRecord> {
+function customParts(input: CustomFoodInput): { per100: Record<string, number>; portions: Portion[] } {
   if (!input.name?.trim()) throw new HttpError(400, 'name is required');
   let per100 = input.per_100g;
   if (!per100 && input.per_serving) {
@@ -237,10 +237,30 @@ export async function createCustomFood(db: D1Database, userId: string, input: Cu
     per100 = Object.fromEntries(Object.entries(input.per_serving).map(([k, v]) => [k, (v * 100) / input.serving_grams!]));
   }
   if (!per100) throw new HttpError(400, 'per_100g or per_serving is required');
-  const id = newId();
+  if (!(Number.isFinite(per100.ENERC_KCAL) && per100.ENERC_KCAL! >= 0)) throw new HttpError(400, 'calories are required');
   const portions: Portion[] = input.serving_grams
     ? [{ label: input.serving_label || 'serving', unit: 'serving', amount: 1, grams: input.serving_grams }]
     : [];
+  return { per100, portions };
+}
+
+function nutrientInserts(db: D1Database, id: string, per100: Record<string, number>): D1PreparedStatement[] {
+  const out: D1PreparedStatement[] = [];
+  for (const [code, value] of Object.entries(per100)) {
+    const def = NUTRIENT_BY_CODE.get(code);
+    if (!def || !Number.isFinite(value) || value < 0) continue;
+    out.push(
+      db
+        .prepare('INSERT INTO food_nutrient (food_id, nutrient_code, usda_nutrient_id, value_per_100g, unit) VALUES (?, ?, ?, ?, ?)')
+        .bind(id, code, def.usdaId, value, def.unit),
+    );
+  }
+  return out;
+}
+
+export async function createCustomFood(db: D1Database, userId: string, input: CustomFoodInput): Promise<FoodRecord> {
+  const { per100, portions } = customParts(input);
+  const id = newId();
   const stmts = [
     db
       .prepare(
@@ -248,16 +268,52 @@ export async function createCustomFood(db: D1Database, userId: string, input: Cu
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .bind(id, input.source ?? 'custom', input.name.trim(), normName(input.name), input.brand ?? null, input.serving_grams ?? null, JSON.stringify(portions), userId),
+    ...nutrientInserts(db, id, per100),
   ];
-  for (const [code, value] of Object.entries(per100)) {
-    const def = NUTRIENT_BY_CODE.get(code);
-    if (!def || !Number.isFinite(value)) continue;
-    stmts.push(
-      db
-        .prepare('INSERT INTO food_nutrient (food_id, nutrient_code, usda_nutrient_id, value_per_100g, unit) VALUES (?, ?, ?, ?, ?)')
-        .bind(id, code, def.usdaId, value, def.unit),
-    );
-  }
   await db.batch(stmts);
   return (await getFood(db, userId, id))!;
+}
+
+/** The user's own custom foods (not recipes), with how often they've been logged. */
+export async function listCustomFoods(db: D1Database, userId: string): Promise<(FoodRecord & { times_logged: number; last_logged_at: string | null })[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT ${FOOD_COLS},
+         (SELECT COUNT(*) FROM consumed_item ci WHERE ci.food_id = food.id) AS times_logged,
+         (SELECT MAX(i.occurrence_at) FROM consumed_item ci JOIN nutrition_intake i ON i.id = ci.intake_id WHERE ci.food_id = food.id) AS last_logged_at
+       FROM food WHERE owner_user_id = ? AND source = 'custom' AND archived_at IS NULL
+       ORDER BY COALESCE(last_logged_at, created_at) DESC`,
+    )
+    .bind(userId)
+    .all<FoodRow & { times_logged: number; last_logged_at: string | null }>();
+  const foods = await hydrate(db, results);
+  return foods.map((f, i) => ({ ...f, times_logged: results[i]!.times_logged, last_logged_at: results[i]!.last_logged_at }));
+}
+
+async function ownCustom(db: D1Database, userId: string, id: string): Promise<void> {
+  const row = await db.prepare("SELECT id FROM food WHERE id = ? AND owner_user_id = ? AND source = 'custom' AND archived_at IS NULL").bind(id, userId).first();
+  if (!row) throw new HttpError(404, 'custom food not found');
+}
+
+/** Replace a custom food's details. Meals already logged keep the numbers they were logged with. */
+export async function updateCustomFood(db: D1Database, userId: string, id: string, input: CustomFoodInput): Promise<FoodRecord> {
+  await ownCustom(db, userId, id);
+  const { per100, portions } = customParts(input);
+  await db.batch([
+    db
+      .prepare('UPDATE food SET name = ?, name_norm = ?, brand = ?, default_serving_grams = ?, portions_json = ? WHERE id = ?')
+      .bind(input.name.trim(), normName(input.name), input.brand?.trim() || null, input.serving_grams ?? null, JSON.stringify(portions), id),
+    db.prepare('DELETE FROM food_nutrient WHERE food_id = ?').bind(id),
+    ...nutrientInserts(db, id, per100),
+  ]);
+  return (await getFood(db, userId, id))!;
+}
+
+/** Delete a custom food: archived, since past logs point at it. Aliases to it are dropped. */
+export async function archiveCustomFood(db: D1Database, userId: string, id: string): Promise<void> {
+  await ownCustom(db, userId, id);
+  await db.batch([
+    db.prepare("UPDATE food SET archived_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?").bind(id),
+    db.prepare('DELETE FROM food_alias WHERE user_id = ? AND food_id = ?').bind(userId, id),
+  ]);
 }

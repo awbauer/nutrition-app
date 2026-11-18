@@ -17,6 +17,7 @@ const TABS: Tab[] = ['today', 'week', 'recipes', 'settings'];
 const tabFromHash = (): Tab => {
   const h = location.hash.slice(1);
   if (h === 'weight') return 'week';
+  if (h === 'my-foods') return 'recipes';
   return TABS.includes(h as Tab) ? (h as Tab) : 'today';
 };
 
@@ -117,7 +118,7 @@ export function App() {
   const tabs: [Tab, string, preact.ComponentChildren][] = [
     ['today', 'Today', <NotebookPen size={22} strokeWidth={1.75} />],
     ['week', 'Week', <ChartColumn size={22} strokeWidth={1.75} />],
-    ['recipes', 'Recipes', <ChefHat size={22} strokeWidth={1.75} />],
+    ['recipes', 'Foods', <ChefHat size={22} strokeWidth={1.75} />],
     ['settings', 'Settings', <Settings2 size={22} strokeWidth={1.75} />],
   ];
 
@@ -170,7 +171,7 @@ export function App() {
               <Plus size={30} strokeWidth={2.25} />
             </button>
           </div>
-          <NavItem tab="recipes" current={tab} onSelect={setTab} label="Recipes" icon={tabs[2][2]} />
+          <NavItem tab="recipes" current={tab} onSelect={setTab} label="Foods" icon={tabs[2][2]} />
           <NavItem tab="settings" current={tab} onSelect={setTab} label="Settings" icon={tabs[3][2]} />
         </div>
       </nav>
