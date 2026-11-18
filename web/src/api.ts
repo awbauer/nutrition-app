@@ -65,6 +65,8 @@ export interface Food {
   default_serving_grams: number | null;
   portions: Portion[];
   nutrients: Nutrient[];
+  /** Present on search results you've eaten before. */
+  history?: { names: string[]; times: number; last_at: string };
 }
 export interface UsdaHit {
   source: 'usda';
@@ -110,7 +112,7 @@ export interface MatchCandidate {
 
 export interface MatchInfo {
   query: string;
-  via: 'alias' | 'custom' | 'cache' | 'barcode' | 'label' | 'usda' | 'off' | 'estimate';
+  via: 'alias' | 'custom' | 'history' | 'cache' | 'barcode' | 'label' | 'usda' | 'off' | 'estimate';
   estimate_kcal_100g: number | null;
   candidates: MatchCandidate[];
   chosen: string | null;

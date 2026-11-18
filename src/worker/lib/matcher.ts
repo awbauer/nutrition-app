@@ -3,7 +3,8 @@
  * 1. the user's own corrections (food_alias) and exact custom foods / recipes
  * 2. barcode: Open Food Facts, then USDA Branded by GTIN
  * 2b. nutrition printed on the package (read from a photo): saved as the user's own food
- * 3. local food cache, accepted only if it scores well
+ * 3. foods the user has eaten before (found by meaning, scored on words, boosted by how often),
+ *    and the local food cache, accepted only if they score well
  * 4. USDA FoodData Central: one search across Foundation, SR Legacy, FNDDS and Branded,
  *    re-ranked by `scoring.ts` (word coverage, main word, product type, kcal plausibility)
  * 5. no acceptable match: model estimate, flagged `estimated`, confidence capped at 0.4
@@ -17,7 +18,8 @@ import { cacheFood, createCustomFood, exactCustom, findCachedBySource, getFood, 
 import { newId } from './ids';
 import { NUTRIENT_BY_CODE } from './nutrients';
 import { offByBarcode } from './off';
-import { ACCEPT_SCORE, CONFIDENT_SCORE, rankCandidates } from './scoring';
+import { historyBonus, searchHistory } from './history';
+import { ACCEPT_SCORE, CONFIDENT_SCORE, rankCandidates, scoreCandidate } from './scoring';
 import type { NormalisedFood } from './usda';
 
 export interface MatchRequest {
@@ -27,9 +29,11 @@ export interface MatchRequest {
   brand?: string | null;
   label?: LabelFacts | null;
   estimate_per_100g?: { kcal?: number; protein?: number; fat?: number; carbs?: number };
+  /** The user pointed at something they've had before: lean harder on their history. */
+  from_history?: boolean;
 }
 
-export type Via = 'alias' | 'custom' | 'cache' | 'barcode' | 'label' | 'usda' | 'off' | 'estimate';
+export type Via = 'alias' | 'custom' | 'history' | 'cache' | 'barcode' | 'label' | 'usda' | 'off' | 'estimate';
 
 /** Grams in one labelled serving, when the serving is given in a unit we can convert. */
 export function labelServingGrams(l: LabelFacts): number | null {
@@ -201,9 +205,27 @@ export async function matchFood(env: Env, userId: string, req: MatchRequest): Pr
     return { food, via: 'label', match: info('label', [localCandidate(food, 9, ['from the package label'])], food.id), matchConfidence: 0.95, fromPackage: true };
   }
 
-  // 3 + 4. Rank local cache and USDA together so a cached food only wins on merit.
-  const local = (await searchLocal(db, userId, query, 8)).filter((f) => f.source !== 'estimate');
-  const rankedLocal = rankCandidates(query, local.map((f) => ({ ...f, dataType: f.data_type, kcal100: per100(f.nutrients, 'ENERC_KCAL') })), est);
+  // 3 + 4. Rank history, local cache and USDA together so a known food only wins on merit.
+  // History: foods the user has eaten, found by meaning, then scored on their words (under the
+  // user's own names too) plus a bonus for familiarity. "Turkey meatballs" is near "chicken
+  // meatballs" as a vector but misses a word, so it doesn't win.
+  const history = await searchHistory(env, userId, req.name);
+  const rankedHistory = history
+    .map((h) => {
+      const c = { ...h.food, dataType: h.food.data_type, kcal100: per100(h.food.nutrients, 'ENERC_KCAL') };
+      const best = [h.food.name, ...h.names]
+        .map((name) => scoreCandidate(req.name, { ...c, name }, est))
+        .sort((a, b) => b.score - a.score)[0]!;
+      const bonus = historyBonus(h, req.name, !!req.from_history);
+      return { candidate: h.food, score: Math.round((best.score + bonus) * 100) / 100, reasons: [...best.reasons, `you've had it ${h.times}×`] };
+    })
+    .sort((a, b) => b.score - a.score);
+  const historyIds = new Set(history.map((h) => h.food.id));
+  const local = (await searchLocal(db, userId, query, 8)).filter((f) => f.source !== 'estimate' && !historyIds.has(f.id));
+  const rankedLocal = [
+    ...rankedHistory,
+    ...rankCandidates(query, local.map((f) => ({ ...f, dataType: f.data_type, kcal100: per100(f.nutrients, 'ENERC_KCAL') })), est),
+  ].sort((a, b) => b.score - a.score);
   let rankedRemote: Awaited<ReturnType<typeof rankedUsda>> = [];
   const bestLocal = rankedLocal[0];
   if (env.USDA_API_KEY && !(bestLocal && bestLocal.score >= CONFIDENT_SCORE)) {
@@ -224,7 +246,7 @@ export async function matchFood(env: Env, userId: string, req: MatchRequest): Pr
   const best = candidates[0];
   if (best && best.score >= ACCEPT_SCORE) {
     const food = best._local ?? (await cacheFood(db, best._remote!));
-    const via: Via = best._local ? (food.owner_user_id ? 'custom' : 'cache') : 'usda';
+    const via: Via = best._local ? (historyIds.has(food.id) ? 'history' : food.owner_user_id ? 'custom' : 'cache') : 'usda';
     // Map score to confidence: ACCEPT_SCORE → 0.5, CONFIDENT_SCORE and up → 0.9.
     const t = Math.min(1, Math.max(0, (best.score - ACCEPT_SCORE) / (CONFIDENT_SCORE - ACCEPT_SCORE)));
     return { food, via, match: info(via, strip(candidates), best.fdc_id ?? best.food_id ?? null), matchConfidence: 0.5 + 0.4 * t };

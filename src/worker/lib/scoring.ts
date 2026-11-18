@@ -36,7 +36,7 @@ const DISTINCT = [
   'canned', 'frozen', 'imitation', 'substitute', 'flavored', 'flavor', 'supplement', 'bar',
 ];
 
-const stem = (t: string) => t.replace(/(ies)$/, 'y').replace(/(es|s)$/, '');
+export const stem = (t: string) => t.replace(/(ies)$/, 'y').replace(/(es|s)$/, '');
 
 export function tokens(s: string): string[] {
   return normName(s)
@@ -44,7 +44,7 @@ export function tokens(s: string): string[] {
     .filter((t) => t.length > 1 && !STOP.has(t));
 }
 
-const has = (set: Set<string>, t: string) => set.has(t) || set.has(stem(t)) || [...set].some((x) => stem(x) === stem(t));
+export const has = (set: Set<string>, t: string) => set.has(t) || set.has(stem(t)) || [...set].some((x) => stem(x) === stem(t));
 
 const DATA_TYPE_PRIOR: Record<string, number> = {
   Foundation: 0.15,

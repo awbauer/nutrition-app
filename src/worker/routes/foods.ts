@@ -4,6 +4,7 @@ import { archiveCustomFood, backfillCategories, createCustomFood, getFood, listC
 import { HttpError } from '../lib/ids';
 import { MEAL_TYPES, type MealType } from '../lib/intake';
 import { quickFoods } from '../lib/quick';
+import { coversQuery, searchHistory } from '../lib/history';
 import { FALLBACK_MODELS, isCapacityError, MAX_PHOTOS, type PhotoInput } from '../lib/ai';
 import { LabelReadError, readLabel } from '../lib/label';
 import { getSettings } from '../lib/settings';
@@ -12,18 +13,28 @@ const MAX_PHOTO = 8 * 1024 * 1024;
 
 export const foods = new Hono<AppEnv>();
 
+/** bge-m3 cosine: a related food you've eaten scores ~0.6+, unrelated ones ~0.4-0.5. */
+const HISTORY_MIN_SIMILARITY = 0.6;
+
 /** GET /api/foods?q=  -> local (custom + cache) matches and USDA search results. */
 foods.get('/', async (c) => {
   const q = (c.req.query('q') ?? '').trim();
-  if (q.length < 2) return c.json({ local: [], usda: [] });
+  if (q.length < 2) return c.json({ history: [], local: [], usda: [] });
   const user = c.get('user');
-  const local = await searchLocal(c.env.DB, user.id, q);
+  // Foods you've eaten that mean the same thing ("the meatballs I like"): by meaning, kept only
+  // when close or when they contain every food word you typed.
+  const history = (await searchHistory(c.env, user.id, q, 8))
+    .filter((h) => h.similarity >= HISTORY_MIN_SIMILARITY || [h.food.name, ...h.names].some((n) => coversQuery(q, n)))
+    .slice(0, 5)
+    .map((h) => ({ ...h.food, history: { names: h.names, times: h.times, last_at: h.last_at } }));
+  const inHistory = new Set(history.map((f) => f.id));
+  const local = (await searchLocal(c.env.DB, user.id, q)).filter((f) => !inHistory.has(f.id));
   let usda: unknown[] = [];
   let usdaError: string | undefined;
   if (c.req.query('remote') !== '0' && c.env.USDA_API_KEY) {
     try {
       const hits = await usdaClient(c.env).searchAll(q);
-      const cachedIds = new Set(local.filter((f) => f.source === 'usda').map((f) => f.source_id));
+      const cachedIds = new Set([...history, ...local].filter((f) => f.source === 'usda').map((f) => f.source_id));
       usda = hits.filter((h) => !cachedIds.has(h.sourceId));
       // Older cached foods have no category yet; the search hits carry it.
       c.executionCtx.waitUntil(backfillCategories(c.env.DB, local, hits).catch(() => {}));
@@ -31,7 +42,7 @@ foods.get('/', async (c) => {
       usdaError = (e as Error).message;
     }
   }
-  return c.json({ local, usda, ...(usdaError ? { usda_error: usdaError } : {}) });
+  return c.json({ history, local, usda, ...(usdaError ? { usda_error: usdaError } : {}) });
 });
 
 /** GET /api/foods/fdc/:fdcId -> resolve (and cache) a USDA food with portions. */

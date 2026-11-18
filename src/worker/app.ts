@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { requireUser } from './auth';
 import type { AppEnv } from './env';
+import { refreshHistory } from './lib/history';
 import { HttpError } from './lib/ids';
 import { day } from './routes/day';
 import { exporter } from './routes/export';
@@ -23,6 +24,18 @@ app.onError((err, c) => {
 
 const api = new Hono<AppEnv>();
 api.use('*', requireUser);
+// Logging, editing or deleting food changes what "foods you've eaten" search can find.
+const CHANGES_HISTORY = /^\/api\/(intake|item|recipes|foods)(\/|$)/;
+api.use('*', async (c, next) => {
+  await next();
+  if (c.req.method === 'GET' || c.res.status >= 400 || !CHANGES_HISTORY.test(c.req.path)) return;
+  const run = refreshHistory(c.env, c.get('user').id).catch((e) => console.warn('history refresh failed', (e as Error).message));
+  try {
+    c.executionCtx.waitUntil(run);
+  } catch {
+    await run; // no execution context (tests): finish before responding
+  }
+});
 api.route('/', settings);
 api.route('/', day);
 api.route('/', progress);

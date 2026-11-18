@@ -16,6 +16,7 @@ const SOURCE_LABEL: Record<string, string> = {
 const VIA_LABEL: Record<string, string> = {
   alias: 'Your earlier choice for this food',
   custom: 'Matched your saved food',
+  history: "Matched something you've eaten before",
   cache: 'Matched a food you logged before',
   barcode: 'Matched the exact product by its barcode',
   label: 'Read from the nutrition label on the package, and saved as your food',

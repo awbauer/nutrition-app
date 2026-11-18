@@ -3,6 +3,7 @@
  * this job (run from a Cloudflare Queue, or waitUntil as a fallback) reads the media, calls the
  * models, matches foods and fills the meal in.
  */
+import { refreshHistory } from './history';
 import type { Env, User } from '../env';
 import { FALLBACK_MODELS, isCapacityError, parsePhotos, parseText, transcribe, withCapacityFallback, type ModelOutput, type PhotoInput } from './ai';
 import { localParts } from './dates';
@@ -176,6 +177,7 @@ export async function consume(batch: MessageBatch<JobMessage>, env: Env, maxRetr
       try {
         await processIntake(env, m.body, m.attempts > maxRetries);
         m.ack();
+        await refreshHistory(env, m.body.userId).catch((e) => console.warn('history refresh failed', (e as Error).message));
       } catch (e) {
         console.error('intake job error', m.body.intakeId, e);
         if (m.attempts > maxRetries) m.ack();

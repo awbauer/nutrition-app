@@ -5,6 +5,8 @@ export interface Env {
   ASSETS: Fetcher;
   /** Background AI jobs (optional: without it, jobs run in waitUntil). */
   JOBS?: Queue<{ intakeId: string; userId: string }>;
+  /** Foods each user has eaten, embedded for search by meaning (optional: search falls back to words). */
+  HISTORY?: VectorizeIndex;
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;
   AI_GATEWAY_ID: string;
