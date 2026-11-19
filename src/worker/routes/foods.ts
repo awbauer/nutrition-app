@@ -3,7 +3,7 @@ import type { AppEnv } from '../env';
 import { archiveCustomFood, backfillCategories, createCustomFood, getFood, listCustomFoods, resolveFatSecret, updateCustomFood, getSnapshot, resolveFdc, searchLocal, usdaClient, type CustomFoodInput } from '../lib/foods';
 import { HttpError } from '../lib/ids';
 import { MEAL_TYPES, type MealType } from '../lib/intake';
-import { quickFoods } from '../lib/quick';
+import { goesWith, quickFoods } from '../lib/quick';
 import { addFavorite, listFavorites, removeFavorite } from '../lib/favorites';
 import { coversQuery, searchHistory } from '../lib/history';
 import { fatsecretClient } from '../lib/fatsecret';
@@ -67,13 +67,21 @@ foods.get('/fdc/:fdcId', async (c) => {
   return c.json(await resolveFdc(c.env, fdcId));
 });
 
-/** GET /api/foods/quick?meal_type= -> starred, recent and frequent foods (frequent ranked for that meal). */
+/**
+ * GET /api/foods/quick?meal_type=&with= -> starred, recent and frequent foods (frequent ranked for that meal).
+ * With `with` (a meal's id, when adding to it): also `goes_with`, what you usually have with what's in it.
+ */
 foods.get('/quick', async (c) => {
   const mt = c.req.query('meal_type');
   const mealType = mt && MEAL_TYPES.includes(mt as MealType) ? (mt as MealType) : null;
+  const withId = c.req.query('with');
   const user = c.get('user');
-  const [quick, favorites] = await Promise.all([quickFoods(c.env.DB, user.id, mealType), listFavorites(c.env.DB, user.id)]);
-  return c.json({ favorites, ...quick });
+  const [quick, favorites, goes_with] = await Promise.all([
+    quickFoods(c.env.DB, user.id, mealType),
+    listFavorites(c.env.DB, user.id),
+    withId ? goesWith(c.env.DB, user.id, withId) : Promise.resolve(undefined),
+  ]);
+  return c.json({ favorites, ...quick, ...(goes_with ? { goes_with } : {}) });
 });
 
 /** GET /api/foods/favorites -> starred foods, oldest first, with kcal for their amount. */

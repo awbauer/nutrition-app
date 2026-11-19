@@ -242,7 +242,7 @@ export function LogSheet(props: {
       {view === 'compose' && !batch && !text && !photo && !clip && (
         <>
           <RecipePicks onPick={(r) => (setQuickPick({ name: r.name, food_id: r.id, amount: 1, unit: 'serving' }), setView('search'))} />
-          <QuickAdd mealType={mealFor} onPick={(q) => (setQuickPick(q), setView('search'))} />
+          <QuickAdd mealType={mealFor} intakeId={props.target?.id} onPick={(q) => (setQuickPick(q), setView('search'))} />
         </>
       )}
 
@@ -269,39 +269,50 @@ interface Quick {
   kcal: number | null;
   count: number;
 }
+/** Something you usually have with what's already in the meal. */
+type GoesWith = Quick & { with: string };
+type QuickTab = 'with' | 'favorites' | 'frequent' | 'recent';
 
-/** Starred, frequent and recent foods: tap one to log it with its amount; tap the star to keep it on top. */
-function QuickAdd(props: { mealType: MealType; onPick: (q: QuickPick) => void }) {
-  const [data, setData] = useState<{ recent: Quick[]; frequent: Quick[] } | null>(null);
-  const [tab, setTab] = useState<'favorites' | 'frequent' | 'recent' | null>(null);
+/**
+ * Starred, frequent and recent foods: tap one to log it with its amount; tap the star to keep it on top.
+ * Adding to a meal (`intakeId`), "Goes with" comes first: what you usually have with what's in it.
+ */
+function QuickAdd(props: { mealType: MealType; intakeId?: string; onPick: (q: QuickPick) => void }) {
+  const [data, setData] = useState<{ recent: Quick[]; frequent: Quick[]; goes_with?: GoesWith[] } | null>(null);
+  const [tab, setTab] = useState<QuickTab | null>(null);
   const favorites = useFavorites();
   useEffect(() => {
-    api.get<{ favorites: Favorite[]; recent: Quick[]; frequent: Quick[] }>(`/foods/quick?meal_type=${props.mealType}`).then(
+    const withMeal = props.intakeId ? `&with=${encodeURIComponent(props.intakeId)}` : '';
+    api.get<{ favorites: Favorite[]; recent: Quick[]; frequent: Quick[]; goes_with?: GoesWith[] }>(`/foods/quick?meal_type=${props.mealType}${withMeal}`).then(
       (d) => {
         setFavorites(d.favorites);
         setData(d);
-        setTab((t) => t ?? (d.favorites.length ? 'favorites' : d.frequent.length ? 'frequent' : 'recent'));
+        setTab((t) => t ?? (d.goes_with?.length ? 'with' : d.favorites.length ? 'favorites' : d.frequent.length ? 'frequent' : 'recent'));
       },
       () => setData({ recent: [], frequent: [] }),
     );
-  }, [props.mealType]);
+  }, [props.mealType, props.intakeId]);
 
-  if (!data || (!favorites.length && !data.recent.length && !data.frequent.length)) return null;
+  const goesWith = data?.goes_with ?? [];
+  if (!data || (!goesWith.length && !favorites.length && !data.recent.length && !data.frequent.length)) return null;
   // Unstarring the last favorite falls back to another list.
   const shown = tab === 'favorites' && !favorites.length ? (data.frequent.length ? 'frequent' : 'recent') : tab;
-  const list: (Quick | Favorite)[] = shown === 'favorites' ? favorites : shown === 'frequent' ? data.frequent : data.recent;
-  const tabs: ['favorites' | 'frequent' | 'recent', string][] = [];
+  const list: (Quick | Favorite | GoesWith)[] =
+    shown === 'with' ? goesWith : shown === 'favorites' ? favorites : shown === 'frequent' ? data.frequent : data.recent;
+  const tabs: [QuickTab, string][] = [];
+  if (goesWith.length) tabs.push(['with', 'Goes with']);
   if (favorites.length) tabs.push(['favorites', 'Starred']);
   if (data.frequent.length) tabs.push(['frequent', 'Frequent']);
   if (data.recent.length) tabs.push(['recent', 'Recent']);
   return (
     <section class="flex flex-col gap-2" aria-label="Quick add">
-      <div class="flex items-center justify-between gap-2">
+      {/* Four tabs don't fit beside the label on a phone: they get their own row. */}
+      <div class={`flex gap-2 ${tabs.length > 3 ? 'flex-col' : 'items-center justify-between'}`}>
         <p class="eyebrow whitespace-nowrap">Quick add</p>
         {tabs.length > 1 && (
-          <div class={`segmented min-w-0 text-xs ${tabs.length > 2 ? 'w-60' : 'w-48'}`} role="tablist">
+          <div class={`segmented min-w-0 text-xs ${tabs.length > 3 ? 'w-full sm:w-80' : tabs.length > 2 ? 'w-60' : 'w-48'}`} role="tablist">
             {tabs.map(([key, label]) => (
-              <button class="seg py-1 text-xs" role="tab" aria-pressed={shown === key} aria-selected={shown === key} onClick={() => setTab(key)}>
+              <button class="seg px-1.5 py-1 text-xs whitespace-nowrap" role="tab" aria-pressed={shown === key} aria-selected={shown === key} onClick={() => setTab(key)}>
                 {label}
               </button>
             ))}
@@ -317,6 +328,7 @@ function QuickAdd(props: { mealType: MealType; onPick: (q: QuickPick) => void })
                 <p class="truncate text-xs text-faint">
                   {amountLabel(q.amount, q.unit)}
                   {shown === 'frequent' && 'count' in q && ` · ${q.count}× lately`}
+                  {shown === 'with' && 'with' in q && ` · with ${q.with.toLowerCase()}${q.count > 1 ? ` ${q.count}×` : ''}`}
                 </p>
               </div>
               {q.kcal != null && <span class="num text-ink-2">{kcal(q.kcal)}</span>}
