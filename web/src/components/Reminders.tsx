@@ -74,7 +74,7 @@ export function Reminders() {
           <ol class="mt-1 list-decimal pl-5 text-ink-2">
             <li>Tap the Share button in Safari.</li>
             <li>Choose “Add to Home Screen”.</li>
-            <li>Open Meals from your Home Screen and come back here.</li>
+            <li>Open Clem from your Home Screen and come back here.</li>
           </ol>
           <p class="mt-1 text-xs text-ink-2">iPhone only allows notifications for apps on the Home Screen (iOS 16.4+).</p>
         </div>

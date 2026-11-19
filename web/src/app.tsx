@@ -87,7 +87,7 @@ export function App() {
       dismissed = localStorage.getItem('install-hint-dismissed') === '1';
     } catch {}
     if (!isIOS() || isStandalone() || dismissed) return;
-    toast.info('Add Meals to your Home Screen for reminders: tap Share, then Add to Home Screen.', {
+    toast.info('Add Clem to your Home Screen for reminders: tap Share, then Add to Home Screen.', {
       id: 'install',
       sticky: true,
       onDismiss: () => {
@@ -138,7 +138,7 @@ export function App() {
       {/* Tablet and desktop: sidebar */}
       <aside class="fixed inset-y-0 left-0 z-20 hidden w-56 flex-col gap-1 border-r border-line bg-paper px-4 py-6 md:flex" aria-label="Main">
         <p class="display px-3 pb-5 text-2xl font-semibold">
-          Meals<span class="text-accent">.</span>
+          Clem<span class="text-accent">.</span>
         </p>
         <button class="btn-primary mb-4 w-full justify-start px-4 py-3" onClick={openLog}>
           <Plus size={20} strokeWidth={2.25} /> Log food

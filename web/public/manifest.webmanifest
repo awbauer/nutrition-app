@@ -1,6 +1,6 @@
 {
-  "name": "Meal Tracker",
-  "short_name": "Meals",
+  "name": "Clem",
+  "short_name": "Clem",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
