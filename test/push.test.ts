@@ -116,6 +116,8 @@ describe('reminders API and dispatch', () => {
     const food = await api('/foods', { method: 'POST', json: { name: 'Oats', per_100g: { ENERC_KCAL: 380, PROCNT: 13 } } }, E);
     await api('/intake', { method: 'POST', json: { meal_type: 'breakfast', occurrence_at: '2026-11-16T07:30:00Z', items: [{ food_id: food.data.id, amount: 100, unit: 'g' }] } }, E);
     await api('/goals', { method: 'PUT', json: { energy: 2000, protein: 120 } }, E);
+    // Goals start on the real "today"; the reminders below run on 16 Nov 2026, so start them before that.
+    await env.DB.prepare(`UPDATE goal SET start_date = '2026-11-01' WHERE user_id = (SELECT id FROM users WHERE email = ?)`).bind(E.DEV_USER_EMAIL).run();
 
     const sent: { endpoint: string; body: string }[] = [];
     const fakeSend = async (s: { endpoint: string; p256dh: string; auth: string }, msg: unknown) => {
