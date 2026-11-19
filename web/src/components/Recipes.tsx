@@ -5,6 +5,7 @@ import { amountLabel, guessMeal, kcal } from '../format';
 import { LogSheet } from './LogSheet';
 import { toast } from '../toast';
 import { Sheet } from './Sheet';
+import { CustomFoodForm, MyFoodsList, type CustomFood } from './MyFoods';
 
 const WEIGHT_UNITS = { g: 1, kg: 1000, lb: 453.592, oz: 28.3495 } as const;
 type WeightUnit = keyof typeof WEIGHT_UNITS;
@@ -209,21 +210,42 @@ export function RecipePicks(props: { onPick: (r: Recipe) => void }) {
 export function RecipesView(props: { today: string }) {
   const list = useRecipes();
   const [open, setOpen] = useState<Recipe | null>(null);
-  const [log, setLog] = useState<{ batch: true } | { pick: Recipe } | null>(null);
+  const [log, setLog] = useState<{ batch: true } | { pick: Recipe } | { food: CustomFood } | null>(null);
+  const [section, setSection] = useState<'recipes' | 'mine'>(() => (location.hash === '#my-foods' ? 'mine' : 'recipes'));
+  const [food, setFood] = useState<CustomFood | 'new' | null>(null);
   return (
     <div class="flex flex-col gap-4">
       <header class="flex items-end justify-between gap-3 pt-2">
         <div>
-          <p class="eyebrow">Cook once, eat all week</p>
-          <h1 class="display mt-0.5 text-[2.1rem] leading-none font-semibold">Recipes</h1>
+          <p class="eyebrow">{section === 'recipes' ? 'Cook once, eat all week' : 'Not in the database'}</p>
+          <h1 class="display mt-0.5 text-[2.1rem] leading-none font-semibold">{section === 'recipes' ? 'Recipes' : 'My foods'}</h1>
         </div>
-        <button class="btn-primary shrink-0 px-4 py-2" onClick={() => setLog({ batch: true })}>
-          <Plus size={18} strokeWidth={2.25} /> New recipe
+        <button class="btn-primary shrink-0 px-4 py-2" onClick={() => (section === 'recipes' ? setLog({ batch: true }) : setFood('new'))}>
+          <Plus size={18} strokeWidth={2.25} /> {section === 'recipes' ? 'New recipe' : 'New food'}
         </button>
       </header>
+      <div class="segmented w-full max-w-xs" role="tablist" aria-label="Your foods">
+        <button class="seg" role="tab" aria-pressed={section === 'recipes'} aria-selected={section === 'recipes'} onClick={() => setSection('recipes')}>
+          Recipes
+        </button>
+        <button class="seg" role="tab" aria-pressed={section === 'mine'} aria-selected={section === 'mine'} onClick={() => setSection('mine')}>
+          My foods
+        </button>
+      </div>
 
-      {!list && <div class="card h-40 animate-pulse" />}
-      {list && !list.length && (
+      {section === 'mine' && <MyFoodsList onNew={() => setFood('new')} onOpen={setFood} onLog={(f) => setLog({ food: f })} />}
+      <Sheet open={!!food} onClose={() => setFood(null)} title={food === 'new' ? 'New food' : (food?.name ?? 'Food')}>
+        {food && (
+          <CustomFoodForm
+            food={food === 'new' ? undefined : food}
+            onSaved={(f) => (toast.success(food === 'new' ? `Saved ${f.name}` : 'Saved'), setFood(null))}
+            onDeleted={() => setFood(null)}
+          />
+        )}
+      </Sheet>
+
+      {section === 'recipes' && !list && <div class="card h-40 animate-pulse" />}
+      {section === 'recipes' && list && !list.length && (
         <div class="card flex flex-col items-center gap-3 px-6 py-10 text-center">
           <ChefHat size={40} strokeWidth={1.5} class="text-faint" aria-hidden="true" />
           <p class="display text-xl font-semibold">No recipes yet</p>
@@ -237,7 +259,7 @@ export function RecipesView(props: { today: string }) {
           <p class="text-xs text-faint">Already logged the batch as a meal? Use "Save as recipe" in that meal's ··· menu.</p>
         </div>
       )}
-      {list && list.length > 0 && (
+      {section === 'recipes' && list && list.length > 0 && (
         <ul class="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
           {list.map((r) => (
             <li class="card flex flex-col">
@@ -270,7 +292,7 @@ export function RecipesView(props: { today: string }) {
       <Sheet open={!!open} onClose={() => setOpen(null)} title={open?.name ?? 'Recipe'}>
         {open && <RecipeDetail recipe={open} onDone={() => setOpen(null)} />}
       </Sheet>
-      <Sheet open={!!log} onClose={() => setLog(null)} title={log && 'batch' in log ? 'New recipe' : 'Log a serving'}>
+      <Sheet open={!!log} onClose={() => setLog(null)} title={log && 'batch' in log ? 'New recipe' : log && 'food' in log ? 'Log food' : 'Log a serving'}>
         {log && (
           <LogSheet
             date={props.today}
@@ -284,10 +306,21 @@ export function RecipesView(props: { today: string }) {
                     amount: 1,
                     unit: 'serving',
                   }
-                : undefined
+                : 'food' in log
+                  ? {
+                      name: log.food.name,
+                      food_id: log.food.id,
+                      amount: log.food.portions.some((p) => p.unit === 'serving') ? 1 : 100,
+                      unit: log.food.portions.some((p) => p.unit === 'serving') ? 'serving' : 'g',
+                    }
+                  : undefined
             }
             onDone={() => {
               if ('pick' in log) toast.success(`Logged a serving of ${log.pick.name}`);
+              if ('food' in log) {
+                toast.success(`Logged ${log.food.name}`);
+                dispatchEvent(new CustomEvent('foods-changed'));
+              }
               setLog(null);
               dispatchEvent(new CustomEvent('recipes-changed'));
             }}

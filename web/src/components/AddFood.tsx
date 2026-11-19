@@ -4,6 +4,7 @@ import { api, type Food, type Intake, type MealType, type UsdaHit } from '../api
 import { MEALS, MEAL_LABEL } from '../format';
 import { submitMeal } from '../queue';
 import { AmountEditor } from './AmountEditor';
+import { CustomFoodForm } from './MyFoods';
 import { fromUcum, sizesFor, toGrams } from '../../../src/worker/lib/units';
 
 type Hit = { kind: 'local'; food: Food } | { kind: 'usda'; hit: UsdaHit };
@@ -29,6 +30,7 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
   const [unit, setUnit] = useState('g');
   const [meal, setMeal] = useState<MealType>(props.defaultMeal ?? 'snack');
   const [saving, setSaving] = useState(false);
+  const [creating, setCreating] = useState(false);
   const seq = useRef(0);
   // Opened from Recent / Frequent: start on that food with the amount used last time.
   const [label, setLabel] = useState<string | undefined>(props.initial?.name);
@@ -103,6 +105,17 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
     } finally {
       setSaving(false);
     }
+  }
+
+  if (creating && !picked) {
+    return (
+      <div class="flex flex-col gap-4">
+        <button class="self-start text-sm text-accent-ink" onClick={() => setCreating(false)}>
+          ← Back to results
+        </button>
+        <CustomFoodForm initialName={q.trim()} onSaved={(food) => (setCreating(false), choose({ kind: 'local', food }))} />
+      </div>
+    );
   }
 
   if (picked) {
@@ -192,6 +205,11 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
           );
         })}
       </ul>
+      {q.trim().length >= 2 && !loading && (
+        <button class="btn-quiet mx-auto flex text-sm" onClick={() => setCreating(true)}>
+          {hits.length ? "Not here? Add it from a label" : 'No matches. Add it from a label'}
+        </button>
+      )}
     </div>
   );
 }

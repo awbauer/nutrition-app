@@ -40,15 +40,19 @@ export function labelServingGrams(l: LabelFacts): number | null {
   return null;
 }
 
+/** Label field -> nutrient code (sodium is printed in mg, which is also our unit). */
+export const LABEL_CODES = { protein: 'PROCNT', fat: 'FAT', carbs: 'CHOCDF', fiber: 'FIBTG', sugars: 'SUGAR', sat_fat: 'FASAT', sodium: 'NA' } as const;
+
 /** Per-100 g values from a package label (transcribed, so far better than an estimate). */
 export function labelPer100(l: LabelFacts): Record<string, number> | null {
   const g = labelServingGrams(l);
   if (!g) return null;
   const f = 100 / g;
   const out: Record<string, number> = { ENERC_KCAL: l.kcal * f };
-  if (l.protein != null) out.PROCNT = l.protein * f;
-  if (l.fat != null) out.FAT = l.fat * f;
-  if (l.carbs != null) out.CHOCDF = l.carbs * f;
+  for (const [k, code] of Object.entries(LABEL_CODES)) {
+    const v = l[k as keyof typeof LABEL_CODES];
+    if (v != null) out[code] = v * f;
+  }
   return out;
 }
 
