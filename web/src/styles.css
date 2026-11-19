@@ -14,9 +14,9 @@
   --ink: #1e211d;
   --ink-2: #555b52;
   --faint: #8d8f86;
-  --accent: #d4502a; /* tomato: actions, energy */
-  --accent-ink: #a23a17;
-  --accent-soft: #f9e2d8;
+  --accent: #d9560b; /* clementine: actions, energy */
+  --accent-ink: #a3410a;
+  --accent-soft: #fde3cc;
   --sage: #3f7d58; /* protein, good */
   --sage-soft: #dcebdf;
   --mustard: #b88a1b; /* check this, medium */
@@ -36,9 +36,9 @@
     --ink: #efe9dd;
     --ink-2: #b2b2a6;
     --faint: #7f8177;
-    --accent: #f0714a;
-    --accent-ink: #ff9b7a;
-    --accent-soft: #3a2219;
+    --accent: #f57c2a;
+    --accent-ink: #ffa463;
+    --accent-soft: #3d2512;
     --sage: #74b48d;
     --sage-soft: #1f3327;
     --mustard: #e2b95a;
@@ -74,11 +74,11 @@
 
 /* Kept so older class names still resolve while components move to the tokens above. */
 @theme {
-  --color-brand-50: #f9e2d8;
-  --color-brand-100: #f9e2d8;
-  --color-brand-500: #f0714a;
-  --color-brand-600: #d4502a;
-  --color-brand-700: #d4502a;
+  --color-brand-50: #fde3cc;
+  --color-brand-100: #fde3cc;
+  --color-brand-500: #f57c2a;
+  --color-brand-600: #d9560b;
+  --color-brand-700: #d9560b;
 }
 
 @custom-variant dark (@media (prefers-color-scheme: dark));

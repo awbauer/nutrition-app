@@ -1,6 +1,6 @@
-# Meal Tracker PWA
+# Clem
 
-A personal iPhone PWA that logs meals from photos, voice or text and stores them as structured, FHIR-aligned nutrition data. Runs entirely on Cloudflare. AI identifies foods and portions; **nutrient values always come from food databases** (USDA FoodData Central, Open Food Facts), never from the model.
+Clem is a personal iPhone PWA that logs meals from photos, voice or text and stores them as structured, FHIR-aligned nutrition data. Runs entirely on Cloudflare. AI identifies foods and portions; **nutrient values always come from food databases** (USDA FoodData Central, Open Food Facts), never from the model.
 
 The build spec lives in [docs/spec.md](docs/spec.md); work is tracked in GitHub issues by phase.
 

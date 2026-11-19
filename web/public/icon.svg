@@ -1,6 +1,20 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="114" fill="#0f172a"/>
-  <circle cx="256" cy="256" r="150" fill="none" stroke="#1e293b" stroke-width="48"/>
-  <path d="M256 106 A150 150 0 1 1 112 298" fill="none" stroke="#2dd4bf" stroke-width="48" stroke-linecap="round"/>
-  <circle cx="256" cy="256" r="38" fill="#2dd4bf"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><defs>  <radialGradient id="bpeel" cx="0.36" cy="0.32" r="0.78"><stop offset="0" stop-color="#ffc35a"/><stop offset="0.45" stop-color="#ff8a1c"/><stop offset="0.85" stop-color="#e5590b"/><stop offset="1" stop-color="#b8420a"/></radialGradient>
+  <radialGradient id="bshine" cx="0.5" cy="0.5" r="0.5"><stop offset="0" stop-color="#fff" stop-opacity="0.85"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+  <linearGradient id="bla" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#2f8f4e"/><stop offset="1" stop-color="#7fd36b"/></linearGradient>
+  <linearGradient id="blb" x1="1" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#26763f"/><stop offset="1" stop-color="#5fbf5c"/></linearGradient>
+  <pattern id="bdim" width="14" height="14" patternUnits="userSpaceOnUse"><circle cx="4" cy="4" r="1.6" fill="#b84a08" opacity="0.22"/><circle cx="11" cy="10" r="1.3" fill="#ffd38a" opacity="0.35"/></pattern>
+  <filter id="bsoft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="12"/></filter>
+  <linearGradient id="btile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fffaf1"/><stop offset="1" stop-color="#f6e6cf"/></linearGradient>
+  <clipPath id="bclip"><circle cx="256" cy="290" r="150"/></clipPath></defs>
+  <rect width="512" height="512" rx="114" fill="url(#btile)"/>
+  <ellipse cx="262" cy="452" rx="128" ry="18" fill="#a5582a" opacity="0.28" filter="url(#bsoft)"/>
+  <circle cx="256" cy="290" r="150" fill="url(#bpeel)"/>
+  <rect x="100" y="140" width="320" height="320" fill="url(#bdim)" clip-path="url(#bclip)"/>
+  <ellipse cx="200" cy="226" rx="52" ry="34" fill="url(#bshine)" transform="rotate(-32 200 226)"/>
+  <ellipse cx="186" cy="212" rx="16" ry="9" fill="#fff" opacity="0.9" transform="rotate(-32 186 212)"/>
+  <ellipse cx="268" cy="146" rx="18" ry="8" fill="#c24c08"/>
+  <path d="M266 146 C 264 128, 270 114, 282 104" stroke="#6b4a1e" stroke-width="10" fill="none" stroke-linecap="round"/>
+  <path d="M280 106 C 316 54, 398 44, 432 74 C 406 124, 330 144, 280 106 Z" fill="url(#bla)"/>
+  <path d="M284 105 C 326 92, 372 80, 426 76" stroke="#1f6b37" stroke-width="5" fill="none" stroke-linecap="round" opacity="0.8"/>
+  <path d="M276 108 C 240 66, 182 64, 158 88 C 182 124, 240 134, 276 108 Z" fill="url(#blb)"/>
 </svg>

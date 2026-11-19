@@ -1,10 +1,10 @@
 {
-  "name": "Meal Tracker",
-  "short_name": "Meals",
+  "name": "Clem",
+  "short_name": "Clem",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#121411",
+  "background_color": "#fbf1e2",
   "theme_color": "#121411",
   "icons": [
     {

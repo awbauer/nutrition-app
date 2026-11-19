@@ -74,7 +74,7 @@ self.addEventListener('fetch', (e) => {
 
 // ---- Web Push ----
 self.addEventListener('push', (e) => {
-  let msg = { title: 'Meals', body: 'Time to log a meal.', url: '/#today' };
+  let msg = { title: 'Clem', body: 'Time to log a meal.', url: '/#today' };
   try {
     if (e.data) msg = { ...msg, ...e.data.json() };
   } catch {}
