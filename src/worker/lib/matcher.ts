@@ -33,6 +33,8 @@ export interface MatchRequest {
   estimate_per_100g?: { kcal?: number; protein?: number; fat?: number; carbs?: number };
   /** The user pointed at something they've had before: lean harder on their history. */
   from_history?: boolean;
+  /** A restaurant / chain menu item: search and score on its full name, not generic search terms. */
+  menu_item?: boolean;
 }
 
 export type Via = 'alias' | 'custom' | 'history' | 'cache' | 'barcode' | 'label' | 'usda' | 'fatsecret' | 'off' | 'estimate';
@@ -165,7 +167,8 @@ export async function rankedUsda(env: Env, query: string, estimateKcal: number |
 
 export async function matchFood(env: Env, userId: string, req: MatchRequest): Promise<MatchResult> {
   const db = env.DB;
-  const base = req.search_terms?.[0] || req.name;
+  // A menu item is looked up by its menu name: "espresso" as a search term would find a plain shot.
+  const base = req.menu_item ? req.name : req.search_terms?.[0] || req.name;
   // Brand-aware search: "fairlife" + "chocolate protein shake" finds the branded product.
   const query = req.brand && !normName(base).includes(normName(req.brand)) ? `${req.brand} ${base}` : base;
   const fromLabel = req.label ? labelPer100(req.label) : null;

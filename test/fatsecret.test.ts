@@ -65,6 +65,15 @@ describe('FatSecret client', () => {
     expect(v.FASAT).toBeCloseTo(1.69, 2);
   });
 
+  it('reads "oz" as fluid ounces for drinks and as weight for food', () => {
+    const oz = (name: string) =>
+      normaliseFatSecret({ food_id: '9', food_name: name, servings: { serving: { serving_description: '1 serving', metric_serving_amount: '16.000', metric_serving_unit: 'oz', number_of_units: '1', measurement_description: 'serving', calories: '250' } } })!
+        .portions[0]!.grams;
+    expect(oz('Pistachio Cream Cold Brew (Grande)')).toBeCloseTo(473.2, 1);
+    expect(oz('Iced Brown Sugar Oatmilk Shaken Espresso (Grande)')).toBeCloseTo(473.2, 1);
+    expect(oz('Bacon, Gouda & Egg Sandwich')).toBeCloseTo(453.6, 1);
+  });
+
   it('drops foods with no metric serving and accepts a single serving object', () => {
     expect(normaliseFatSecret({ food_id: '1', food_name: 'x', servings: { serving: { serving_description: '1 item', calories: '100' } } })).toBeNull();
     const one = normaliseFatSecret({ ...DRINK, servings: { serving: (DRINK.servings!.serving as any[])[0] } });

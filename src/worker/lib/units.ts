@@ -316,7 +316,7 @@ const KIND_WORDS: [FoodKind, RegExp][] = [
   ['sliced', words('cheese|ham|bacon|salami|pepperoni|prosciutto|deli|watermelon|cantaloupe|melon|pineapple')],
   ['whole', words('apple|banana|orange|pear|peach|plum|nectarine|mango|kiwi|tangerine|clementine|mandarin|eggs?|avocado|potato|potatoes|sweet potato|tomato|tomatoes|onion|carrot|cucumber|pepper|biscuit|sausage|bar|tortilla|roll|bun|pretzel')],
 ];
-const DRINK = words('water|milk|juice|coffee|espresso|latte|cappuccino|americano|macchiato|mocha|flat white|cortado|tea|chai|matcha|cocoa|hot chocolate|soda|cola|soft drink|lemonade|smoothie|shake|milkshake|protein shake|kombucha|kefir|beer|ale|lager|stout|ipa|wine|cider|champagne|prosecco|cocktail|margarita|vodka|whiske?y|gin|rum|tequila|bourbon|drink|beverage|seltzer|tonic|sparkling|nectar|eggnog|horchata|lassi');
+const DRINK = words('water|milk|juice|coffee|cold brew|frappuccino|refresher|espresso|latte|cappuccino|americano|macchiato|mocha|flat white|cortado|tea|chai|matcha|cocoa|hot chocolate|soda|cola|soft drink|lemonade|smoothie|shake|milkshake|protein shake|kombucha|kefir|beer|ale|lager|stout|ipa|wine|cider|champagne|prosecco|cocktail|margarita|vodka|whiske?y|gin|rum|tequila|bourbon|drink|beverage|seltzer|tonic|sparkling|nectar|eggnog|horchata|lassi');
 // "Milk chocolate", "tuna canned in water", "rum cake", "tea biscuit": the drink word isn't the food.
 const NOT_DRINK = words('milk chocolate|in water|packed in|powder|powdered|dry|condensed|evaporated|cake|ice cream|frozen|bar|bread|biscuit|cookie|vinegar|chestnuts?|pudding|cheese|sauce|cereal|tart');
 const NUT_BUTTER = words('(?:peanut|almond|cashew|nut|seed|sunflower|hazelnut) butter|tahini');

@@ -11,7 +11,7 @@ import type { ExternalFood } from './foods';
 import type { NutrientValue } from './nutrients';
 import { NUTRIENT_BY_CODE } from './nutrients';
 import type { Portion } from './units';
-import { normaliseUnit } from './units';
+import { foodKind, normaliseUnit } from './units';
 
 const ENDPOINT = 'https://platform.fatsecret.com/rest/server.api';
 const SEARCH_METHOD = 'foods.search.v3';
@@ -99,13 +99,16 @@ const FIELDS: [keyof FsServing, string][] = [
   ['potassium', 'K'],
 ];
 
-/** Grams (or ml) in a serving, when FatSecret gives a metric amount. */
-function servingGrams(s: FsServing): number | null {
+/**
+ * Grams (or ml) in a serving, when FatSecret gives a metric amount. FatSecret's "oz" is fluid
+ * ounces for drinks (a grande is "16 oz" = 473 ml) and weight ounces for everything else.
+ */
+function servingGrams(s: FsServing, drink = false): number | null {
   const amt = num(s.metric_serving_amount);
   if (!amt || amt <= 0) return null;
   const u = (s.metric_serving_unit ?? '').toLowerCase();
   if (u === 'g' || u === 'ml') return amt;
-  if (u === 'oz') return amt * 28.3495;
+  if (u === 'oz') return amt * (drink ? 29.5735 : 28.3495);
   return null;
 }
 
@@ -116,10 +119,12 @@ function servingGrams(s: FsServing): number | null {
  */
 export function normaliseFatSecret(f: FsFood): ExternalFood | null {
   const servings = list(f.servings?.serving);
-  const metric = servings.filter((s) => servingGrams(s) && num(s.calories) != null);
+  const drink = ['drink', 'hot-drink', 'can-drink', 'wine', 'spirit'].includes(foodKind({ name: f.food_name }));
+  const grams = (s: FsServing) => servingGrams(s, drink);
+  const metric = servings.filter((s) => grams(s) && num(s.calories) != null);
   const basis = metric.find((s) => s.is_default === '1') ?? metric[0];
   if (!basis) return null;
-  const g = servingGrams(basis)!;
+  const g = grams(basis)!;
   const nutrients: NutrientValue[] = [];
   for (const [field, code] of FIELDS) {
     const v = num(basis[field] as string | undefined);
@@ -136,7 +141,7 @@ export function normaliseFatSecret(f: FsFood): ExternalFood | null {
       label: s.serving_description?.trim() || `${units} ${desc}`,
       unit: desc === 'serving' ? 'serving' : normaliseUnit(desc.split(/[ ,(]/)[0]!),
       amount: units > 0 ? units : 1,
-      grams: servingGrams(s)!,
+      grams: grams(s)!,
     });
   }
   const brand = f.food_type === 'Brand' && f.brand_name ? f.brand_name : null;

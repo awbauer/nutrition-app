@@ -237,10 +237,17 @@ export async function searchLocal(db: D1Database, userId: string, q: string, lim
   return hydrate(db, results);
 }
 
-/** Exact (normalised) name match in the user's own custom foods and recipes. */
+/**
+ * Exact (normalised) name match in the user's own custom foods and recipes. Not their AI-estimate
+ * rows: those are also owned by the user, and matching them would turn one failed lookup into a
+ * permanent estimate for that name.
+ */
 export async function exactCustom(db: D1Database, userId: string, name: string): Promise<FoodRecord | null> {
   const row = await db
-    .prepare(`SELECT ${FOOD_COLS} FROM food WHERE owner_user_id = ? AND name_norm = ? AND ${NOT_ARCHIVED} ORDER BY (source = 'recipe') DESC LIMIT 1`)
+    .prepare(
+      `SELECT ${FOOD_COLS} FROM food WHERE owner_user_id = ? AND name_norm = ? AND source IN ('custom', 'recipe') AND ${NOT_ARCHIVED}
+       ORDER BY (source = 'recipe') DESC LIMIT 1`,
+    )
     .bind(userId, normName(name))
     .first<FoodRow>();
   return row ? (await hydrate(db, [row]))[0]! : null;

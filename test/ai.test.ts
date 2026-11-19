@@ -168,7 +168,7 @@ describe('text logging', () => {
     );
     expect(r.status).toBe(202);
     expect(ai.calls[0]!.opts).toEqual({ gateway: { id: 'nutrition' } });
-    expect(r.data).toMatchObject({ source: 'text', status: 'in-progress', meal_type: 'dinner', prompt_version: 'parse-v5', pipeline_version: '2.0' });
+    expect(r.data).toMatchObject({ source: 'text', status: 'in-progress', meal_type: 'dinner', prompt_version: 'parse-v6', pipeline_version: '2.0' });
     expect(r.data.model_id).toMatch(/llama/);
 
     // q2 (5 g difference) is not worth asking; the oil question is.
