@@ -52,6 +52,9 @@ const DATA_TYPE_PRIOR: Record<string, number> = {
   'Survey (FNDDS)': 0.15,
   Branded: -0.25,
   'Open Food Facts': 0,
+  // FatSecret's generic entries are user-curated averages: below USDA's lab data, above branded.
+  FatSecret: 0,
+  'FatSecret Brand': -0.25,
 };
 
 export function scoreCandidate<T extends Candidate>(query: string, c: T, estimateKcal100?: number | null): ScoredCandidate<T> {

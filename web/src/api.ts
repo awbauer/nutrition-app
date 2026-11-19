@@ -68,6 +68,8 @@ export interface Food {
   /** Present on search results you've eaten before. */
   history?: { names: string[]; times: number; last_at: string };
 }
+/** FatSecret search result: same shape as a USDA hit. */
+export type FatSecretHit = Omit<UsdaHit, 'source'> & { source: 'fatsecret' };
 export interface UsdaHit {
   source: 'usda';
   sourceId: string;
@@ -99,6 +101,7 @@ export interface Item {
 
 export interface MatchCandidate {
   fdc_id?: string;
+  fatsecret_id?: string;
   food_id?: string;
   source: string;
   name: string;
@@ -112,7 +115,7 @@ export interface MatchCandidate {
 
 export interface MatchInfo {
   query: string;
-  via: 'alias' | 'custom' | 'history' | 'cache' | 'barcode' | 'label' | 'usda' | 'off' | 'estimate';
+  via: 'alias' | 'custom' | 'history' | 'cache' | 'barcode' | 'label' | 'usda' | 'fatsecret' | 'off' | 'estimate';
   estimate_kcal_100g: number | null;
   candidates: MatchCandidate[];
   chosen: string | null;

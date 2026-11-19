@@ -4,7 +4,7 @@ import { HttpError } from '../lib/ids';
 import { round } from '../lib/nutrients';
 import { getIntake, itemStatements, refreshConfidence, resolveRef, validAmount, type ItemRef } from '../lib/intake';
 import { getFood, searchLocal } from '../lib/foods';
-import { localCandidate, rankedUsda, rememberChoice, usdaCandidate, type MatchInfo } from '../lib/matcher';
+import { localCandidate, rankedUsda, rememberChoice, fatsecretCandidate, rankedFatSecret, usdaCandidate, type MatchInfo } from '../lib/matcher';
 import { rankCandidates } from '../lib/scoring';
 import { toGrams } from '../lib/units';
 
@@ -65,7 +65,7 @@ items.get('/:id', async (c) => {
   });
 });
 
-/** GET /api/item/:id/search?q= -> ranked alternatives for this item (local foods + USDA). */
+/** GET /api/item/:id/search?q= -> ranked alternatives for this item (local foods, USDA, FatSecret). */
 items.get('/:id/search', async (c) => {
   const user = c.get('user');
   const row = await loadRow(c.env.DB, c.req.param('id'), user.id);
@@ -81,20 +81,19 @@ items.get('/:id/search', async (c) => {
   );
   let remote: ReturnType<typeof usdaCandidate>[] = [];
   let error: string | undefined;
-  if (c.env.USDA_API_KEY) {
-    try {
-      const seen = new Set(rankedLocal.map((r) => r.fdc_id).filter(Boolean));
-      remote = (await rankedUsda(c.env, q, est, 25)).filter((r) => !seen.has(r.candidate.sourceId)).map((r) => usdaCandidate(r.candidate, r.score, r.reasons));
-    } catch (e) {
-      error = (e as Error).message;
-    }
-  }
+  const seenUsda = new Set(rankedLocal.map((r) => r.fdc_id).filter(Boolean));
+  const seenFs = new Set(rankedLocal.map((r) => r.fatsecret_id).filter(Boolean));
+  const [usda, fs] = await Promise.allSettled([c.env.USDA_API_KEY ? rankedUsda(c.env, q, est, 25) : Promise.resolve([]), rankedFatSecret(c.env, q, est, 20)]);
+  if (usda.status === 'fulfilled') remote.push(...usda.value.filter((r) => !seenUsda.has(r.candidate.sourceId)).map((r) => usdaCandidate(r.candidate, r.score, r.reasons)));
+  else error = (usda.reason as Error).message;
+  if (fs.status === 'fulfilled') remote.push(...fs.value.filter((r) => !seenFs.has(r.candidate.sourceId)).map((r) => fatsecretCandidate(r.candidate, r.score, r.reasons)));
+  else console.warn('FatSecret search failed', q, (fs.reason as Error).message);
   return c.json({ query: q, estimate_kcal_100g: est, candidates: [...rankedLocal, ...remote].sort((a, b) => b.score - a.score).slice(0, 20), ...(error ? { error } : {}) });
 });
 
 /**
  * PATCH /api/item/:id -> swap the food and/or change the amount. Nutrients are recomputed.
- * Body: { food_id?, fdc_id?, amount?, unit?, grams?, display_name? }
+ * Body: { food_id?, fdc_id?, fatsecret_id?, amount?, unit?, grams?, display_name? }
  */
 items.patch('/:id', async (c) => {
   const user = c.get('user');
@@ -103,7 +102,7 @@ items.patch('/:id', async (c) => {
   const body = await c.req.json<Partial<ItemRef> & { remember?: boolean; confidence?: number }>();
   if (body.confidence !== undefined && !(typeof body.confidence === 'number' && body.confidence >= 0 && body.confidence <= 1))
     throw new HttpError(400, 'confidence must be between 0 and 1');
-  const swapping = body.food_id != null || body.fdc_id != null;
+  const swapping = body.food_id != null || body.fdc_id != null || body.fatsecret_id != null;
   // Confidence alone: just record how sure the user is about this item.
   if (body.confidence !== undefined && !swapping && body.amount === undefined && body.unit === undefined && body.grams === undefined && body.display_name === undefined) {
     await c.env.DB.batch([
@@ -113,7 +112,7 @@ items.patch('/:id', async (c) => {
     return c.json(await getIntake(c.env.DB, user.id, row.intake_id));
   }
   const food = swapping ? await resolveRef(c.env, user, body as ItemRef) : row.food_id ? await getFood(c.env.DB, user.id, row.food_id) : null;
-  if (!food) throw new HttpError(400, 'item has no food; supply food_id or fdc_id');
+  if (!food) throw new HttpError(400, 'item has no food; supply food_id, fdc_id or fatsecret_id');
   const amount = body.amount ?? row.amount_value;
   const unit = body.unit ?? row.amount_unit;
   validAmount({ amount, unit });
@@ -122,7 +121,7 @@ items.patch('/:id', async (c) => {
   const edited = swapping || amountChanged || body.grams !== undefined;
   // AI-logged items keep the user's words as the label; the matched food is shown separately.
   const match = parseMatch(row.match_json);
-  if (swapping && match) match.chosen = food.source === 'usda' && food.source_id ? food.source_id : food.id;
+  if (swapping && match) match.chosen = (food.source === 'usda' || food.source === 'fatsecret') && food.source_id ? food.source_id : food.id;
   const label = body.display_name ?? (swapping && !match ? food.name : row.display_name);
   const stmts = [
     c.env.DB.prepare('DELETE FROM intake_nutrient WHERE consumed_item_id = ?').bind(row.id),

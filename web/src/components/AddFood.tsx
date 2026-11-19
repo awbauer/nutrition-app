@@ -1,13 +1,14 @@
 import { toast } from '../toast';
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { api, type Food, type Intake, type MealType, type UsdaHit } from '../api';
+import { api, type FatSecretHit, type Food, type Intake, type MealType, type UsdaHit } from '../api';
+import { FatSecretCredit } from './ItemSheet';
 import { MEALS, MEAL_LABEL } from '../format';
 import { submitMeal } from '../queue';
 import { AmountEditor } from './AmountEditor';
 import { CustomFoodForm } from './MyFoods';
 import { fromUcum, sizesFor, toGrams } from '../../../src/worker/lib/units';
 
-type Hit = { kind: 'local'; food: Food } | { kind: 'usda'; hit: UsdaHit };
+type Hit = { kind: 'local'; food: Food } | { kind: 'usda'; hit: UsdaHit | FatSecretHit };
 
 const per100 = (n: { code: string; value: number }[], code: string) => n.find((x) => x.code === code)?.value;
 
@@ -54,11 +55,13 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
     setLoading(true);
     const t = setTimeout(async () => {
       try {
-        const r = await api.get<{ history?: Food[]; local: Food[]; usda: UsdaHit[]; usda_error?: string }>(`/foods?q=${encodeURIComponent(term)}`);
+        const r = await api.get<{ history?: Food[]; local: Food[]; usda: UsdaHit[]; fatsecret?: FatSecretHit[]; usda_error?: string }>(
+          `/foods?q=${encodeURIComponent(term)}`,
+        );
         if (n !== seq.current) return;
         setHits([
           ...[...(r.history ?? []), ...r.local].map((food) => ({ kind: 'local' as const, food })),
-          ...r.usda.map((hit) => ({ kind: 'usda' as const, hit })),
+          ...interleave(r.usda, r.fatsecret ?? []).map((hit) => ({ kind: 'usda' as const, hit })),
         ]);
         if (r.usda_error) toast.info('Food database unavailable; showing saved foods only.', { id: 'usda' });
       } catch (e) {
@@ -72,7 +75,8 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
 
   async function choose(h: Hit) {
     try {
-      const food = h.kind === 'local' ? h.food : await api.get<Food>(`/foods/fdc/${h.hit.sourceId}`);
+      const food =
+        h.kind === 'local' ? h.food : await api.get<Food>(h.hit.source === 'fatsecret' ? `/foods/fatsecret/${h.hit.sourceId}` : `/foods/fdc/${h.hit.sourceId}`);
       // Something you've had before: keep what you usually call it.
       const yours = h.kind === 'local' ? h.food.history?.names[0] : undefined;
       setLabel(yours && yours.toLowerCase() !== food.name.toLowerCase() ? yours : undefined);
@@ -198,12 +202,14 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
           const tag = past
             ? `You've had this${past.times > 1 ? ` ${past.times}×` : ''}${name.toLowerCase() !== dbName.toLowerCase() ? ` · ${dbName}` : ''}`
             : h.kind === 'local'
-              ? h.food.source === 'usda'
+              ? h.food.source === 'usda' || h.food.source === 'fatsecret'
                 ? 'Recent'
                 : h.food.source === 'recipe'
                   ? 'Your recipe'
                   : 'My food'
-              : h.hit.dataType;
+              : h.hit.source === 'fatsecret'
+                ? 'FatSecret'
+                : h.hit.dataType;
           return (
             <li>
               <button class="flex w-full items-center gap-3 py-3 text-left" onClick={() => choose(h)}>
@@ -220,6 +226,11 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
           );
         })}
       </ul>
+      {hits.some((h) => (h.kind === 'usda' && h.hit.source === 'fatsecret') || (h.kind === 'local' && h.food.source === 'fatsecret')) && (
+        <div class="text-center">
+          <FatSecretCredit />
+        </div>
+      )}
       {q.trim().length >= 2 && !loading && (
         <button class="btn-quiet mx-auto flex text-sm" onClick={() => setCreating(true)}>
           {hits.length ? "Not here? Add it from a label" : 'No matches. Add it from a label'}
@@ -227,6 +238,16 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
       )}
     </div>
   );
+}
+
+/** USDA and FatSecret results alternated, so restaurant items aren't buried under 25 USDA rows. */
+function interleave<A, B>(a: A[], b: B[]): (A | B)[] {
+  const out: (A | B)[] = [];
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    if (i < a.length) out.push(a[i]!);
+    if (i < b.length) out.push(b[i]!);
+  }
+  return out;
 }
 
 /** Log "now" for today; noon local time for other days. */

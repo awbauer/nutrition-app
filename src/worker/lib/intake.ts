@@ -1,6 +1,6 @@
 import type { Env, User } from '../env';
 import { localParts, logDate, mealTypeForTime } from './dates';
-import { getFood, resolveFdc, type FoodRecord } from './foods';
+import { sourceSql, getFood, resolveFatSecret, resolveFdc, type FoodRecord } from './foods';
 import { HttpError, newId, nowIso } from './ids';
 import { round, sumNutrients } from './nutrients';
 import { getSettings } from './settings';
@@ -33,6 +33,8 @@ export interface ResolvedItem {
 export interface ItemRef {
   food_id?: string;
   fdc_id?: string | number;
+  /** A FatSecret food id (from a search result or match candidate). */
+  fatsecret_id?: string | number;
   amount: number;
   unit: string;
   grams?: number;
@@ -47,7 +49,8 @@ export async function resolveRef(env: Env, user: User, ref: ItemRef): Promise<Fo
     return f;
   }
   if (ref.fdc_id != null) return resolveFdc(env, String(ref.fdc_id));
-  throw new HttpError(400, 'item needs food_id or fdc_id');
+  if (ref.fatsecret_id != null) return resolveFatSecret(env, String(ref.fatsecret_id));
+  throw new HttpError(400, 'item needs food_id, fdc_id or fatsecret_id');
 }
 
 export function validAmount(ref: { amount: unknown; unit: unknown }): void {
@@ -225,7 +228,7 @@ export async function loadIntakes(db: D1Database, rows: IntakeRow[]): Promise<In
   const [items, nutrients] = await db.batch([
     db
       .prepare(
-        `SELECT ci.*, f.source_id AS fdc_source_id, f.source AS food_source, f.name AS food_name, f.data_type AS food_data_type,
+        `SELECT ci.*, f.source_id AS fdc_source_id, ${sourceSql('f')} AS food_source, f.name AS food_name, f.data_type AS food_data_type,
            (SELECT value_per_100g FROM food_nutrient fn WHERE fn.food_id = ci.food_id AND fn.nutrient_code = 'ENERC_KCAL') AS food_kcal100
          FROM consumed_item ci
          LEFT JOIN food f ON f.id = ci.food_id WHERE ci.intake_id IN (${ph}) ORDER BY ci.position`,

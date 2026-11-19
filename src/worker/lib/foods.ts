@@ -3,10 +3,11 @@ import { HttpError, newId } from './ids';
 import { NUTRIENT_BY_CODE, type NutrientValue } from './nutrients';
 import type { Portion } from './units';
 import { UsdaClient, type NormalisedFood } from './usda';
+import { fatsecretClient } from './fatsecret';
 
 export interface FoodRecord {
   id: string;
-  source: 'usda' | 'off' | 'custom' | 'recipe' | 'estimate';
+  source: 'usda' | 'off' | 'fatsecret' | 'custom' | 'recipe' | 'estimate';
   source_id: string | null;
   name: string;
   brand: string | null;
@@ -30,6 +31,22 @@ export const normName = (s: string): string =>
 export function usdaClient(env: Env, fetcher?: typeof fetch): UsdaClient {
   if (!env.USDA_API_KEY) throw new HttpError(503, 'USDA_API_KEY is not configured');
   return new UsdaClient(env.USDA_API_KEY, fetcher, env.USDA_BASE_URL || undefined);
+}
+
+/**
+ * FatSecret foods are stored as shared 'custom' rows with source_id 'fatsecret:<id>': food.source has a
+ * CHECK constraint, and changing it means rebuilding `food`, which on D1 (foreign keys always on)
+ * would cascade-delete every food_nutrient row. Only this module sees the stored form.
+ */
+const FS_PREFIX = 'fatsecret:';
+/** SQL for a food row's app-level source (FatSecret rows read back as 'fatsecret'); `f` is the table alias. */
+export const sourceSql = (f: string) =>
+  `CASE WHEN ${f}.source = 'custom' AND ${f}.owner_user_id IS NULL AND ${f}.source_id LIKE '${FS_PREFIX}%' THEN 'fatsecret' ELSE ${f}.source END`;
+const toStored = (source: string, sourceId: string): [string, string] => (source === 'fatsecret' ? ['custom', FS_PREFIX + sourceId] : [source, sourceId]);
+function fromStored(r: FoodRow): FoodRow {
+  return r.source === 'custom' && r.owner_user_id == null && r.source_id?.startsWith(FS_PREFIX)
+    ? { ...r, source: 'fatsecret', source_id: r.source_id.slice(FS_PREFIX.length) }
+    : r;
 }
 
 interface FoodRow {
@@ -61,7 +78,7 @@ async function hydrate(db: D1Database, rows: FoodRow[]): Promise<FoodRecord[]> {
     list.push({ code: n.nutrient_code, usdaId: n.usda_nutrient_id, value: n.value_per_100g, unit: n.unit });
     byFood.set(n.food_id, list);
   }
-  return rows.map((r) => ({
+  return rows.map(fromStored).map((r) => ({
     id: r.id,
     source: r.source,
     source_id: r.source_id,
@@ -90,16 +107,17 @@ export async function getFood(db: D1Database, userId: string, id: string): Promi
 export async function findCachedBySource(db: D1Database, source: string, sourceId: string): Promise<FoodRecord | null> {
   const row = await db
     .prepare(`SELECT ${FOOD_COLS} FROM food WHERE source = ? AND source_id = ? AND owner_user_id IS NULL`)
-    .bind(source, sourceId)
+    .bind(...toStored(source, sourceId))
     .first<FoodRow>();
   return row ? (await hydrate(db, [row]))[0]! : null;
 }
 
 /** Insert or refresh a database food (shared) and its nutrients. Returns the stored record. */
 export async function cacheFood(db: D1Database, f: NormalisedFood | ExternalFood): Promise<FoodRecord> {
+  const [source, sourceId] = toStored(f.source, f.sourceId);
   const existing = await db
     .prepare('SELECT id FROM food WHERE source = ? AND source_id = ? AND owner_user_id IS NULL')
-    .bind(f.source, f.sourceId)
+    .bind(source, sourceId)
     .first<{ id: string }>();
   const id = existing?.id ?? newId();
   const stmts: D1PreparedStatement[] = [];
@@ -117,7 +135,7 @@ export async function cacheFood(db: D1Database, f: NormalisedFood | ExternalFood
           `INSERT INTO food (id, source, source_id, name, name_norm, brand, data_type, category, default_serving_grams, portions_json)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
-        .bind(id, f.source, f.sourceId, f.name, normName(f.name), f.brand, f.dataType, f.category, f.defaultServingGrams, JSON.stringify(f.portions)),
+        .bind(id, source, sourceId, f.name, normName(f.name), f.brand, f.dataType, f.category, f.defaultServingGrams, JSON.stringify(f.portions)),
     );
   }
   for (const n of f.nutrients) {
@@ -145,7 +163,7 @@ export async function cacheFood(db: D1Database, f: NormalisedFood | ExternalFood
 
 /** Non-USDA external food (Open Food Facts) or a model estimate, same shape as NormalisedFood. */
 export interface ExternalFood {
-  source: 'off' | 'estimate';
+  source: 'off' | 'fatsecret' | 'estimate';
   sourceId: string;
   name: string;
   brand: string | null;
@@ -154,6 +172,17 @@ export interface ExternalFood {
   defaultServingGrams: number | null;
   portions: Portion[];
   nutrients: NutrientValue[];
+}
+
+/** Resolve a FatSecret food id via the cache, fetching it on a miss. */
+export async function resolveFatSecret(env: Env, id: string, fetcher?: typeof fetch): Promise<FoodRecord> {
+  const cached = await findCachedBySource(env.DB, 'fatsecret', id);
+  if (cached) return cached;
+  const client = fatsecretClient(env, fetcher);
+  if (!client) throw new HttpError(503, 'FatSecret is not configured');
+  const f = await client.food(id);
+  if (!f) throw new HttpError(404, 'FatSecret food has no usable serving');
+  return cacheFood(env.DB, f);
 }
 
 /** Resolve an FDC id via the cache, fetching full detail (with foodPortions) on a miss. */
