@@ -131,6 +131,9 @@ export function App() {
   return (
     <div class="min-h-dvh">
       <Toaster />
+      {/* Phone: a solid strip behind the status bar. Without it the page scrolls under the clock and iOS
+          blurs whatever passes beneath, which made the top of the screen look smeared. */}
+      <div class="safe-top-strip fixed inset-x-0 top-0 z-30 bg-paper md:hidden" aria-hidden="true" />
 
       {/* Tablet and desktop: sidebar */}
       <aside class="fixed inset-y-0 left-0 z-20 hidden w-56 flex-col gap-1 border-r border-line bg-paper px-4 py-6 md:flex" aria-label="Main">
