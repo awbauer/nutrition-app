@@ -6,7 +6,7 @@ import { getIntake, itemStatements, refreshConfidence, resolveRef, validAmount, 
 import { getFood, searchLocal } from '../lib/foods';
 import { localCandidate, rankedUsda, rememberChoice, fatsecretCandidate, rankedFatSecret, usdaCandidate, type MatchInfo } from '../lib/matcher';
 import { rankCandidates } from '../lib/scoring';
-import { toGrams } from '../lib/units';
+import { toGrams, ucum } from '../lib/units';
 
 export const items = new Hono<AppEnv>();
 
@@ -117,7 +117,12 @@ items.patch('/:id', async (c) => {
   const unit = body.unit ?? row.amount_unit;
   validAmount({ amount, unit });
   const amountChanged = body.amount !== undefined || body.unit !== undefined;
-  const grams = body.grams ?? (amountChanged || swapping ? undefined : row.grams);
+  // Same household unit, new count, and the saved weight came from the AI's estimate rather than the
+  // generic size table: keep its weight per unit ("2 small" bananas = 2 × its 80 g, not 2 × 100 g).
+  const sameUnit = !swapping && ucum(unit) === row.amount_unit;
+  const fromAi = sameUnit && row.amount_value > 0 && toGrams(row.amount_value, row.amount_unit, food).method === 'generic' &&
+    Math.abs(toGrams(row.amount_value, row.amount_unit, food).grams - row.grams) > 0.5;
+  const grams = body.grams ?? (fromAi ? (row.grams / row.amount_value) * amount : amountChanged || swapping ? undefined : row.grams);
   const edited = swapping || amountChanged || body.grams !== undefined;
   // AI-logged items keep the user's words as the label; the matched food is shown separately.
   const match = parseMatch(row.match_json);

@@ -33,6 +33,8 @@ export function AmountEditor(props: {
   kcalPer100?: number | null;
   /** Show the "typical size" note under the preview (Food details explains it separately). */
   hint?: boolean;
+  /** A weight already known for one of a unit (the AI's estimate when the item was logged), used over the generic size table. */
+  knownUnit?: { unit: string; grams: number } | null;
 }) {
   const row = useRef<HTMLDivElement>(null);
   // Keep the selected size visible in the scrolling row (e.g. "Piece" sits far to the right).
@@ -44,7 +46,8 @@ export function AmountEditor(props: {
   const food = { portions: props.portions ?? [], default_serving_grams: props.defaultServingGrams ?? null };
   const exactUnit = EXACT_UNITS[props.unit];
   const grams = props.unit === 'g';
-  const estimate = toGrams(props.amount || 0, props.unit, food);
+  const known = props.knownUnit && props.knownUnit.unit === props.unit ? props.knownUnit : null;
+  const estimate = known ? { grams: (props.amount || 0) * known.grams, method: 'portion' as const } : toGrams(props.amount || 0, props.unit, food);
   const fit = sizesFor({ name: props.name, category: props.category, portions: props.portions });
   // The food's own portions (exact units already have their own chip), then the sizes that suit it.
   // Includes the count inside a labelled serving ("2 cookies (36g)" offers a Cookie chip).
