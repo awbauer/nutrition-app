@@ -119,11 +119,29 @@ body {
   border-radius: 8px;
 }
 
+/*
+ * iOS blurs a band of the page under the status bar that reaches about 28pt below it. On phones the
+ * page starts below that band, and a solid strip covers it so content scrolling up never shows
+ * through blurred.
+ */
 .safe-top {
   padding-top: max(env(safe-area-inset-top), 0.75rem);
 }
 .safe-top-strip {
   height: env(safe-area-inset-top);
+}
+@media (max-width: 767px) {
+  .safe-top {
+    padding-top: max(calc(env(safe-area-inset-top) + 1.75rem), 0.75rem);
+  }
+  .safe-top-strip {
+    height: calc(env(safe-area-inset-top) + 1.75rem);
+  }
+}
+@supports not (top: env(safe-area-inset-top)) {
+  .safe-top-strip {
+    display: none;
+  }
 }
 .safe-bottom {
   padding-bottom: max(env(safe-area-inset-bottom), 0.5rem);
