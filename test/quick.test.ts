@@ -38,4 +38,43 @@ describe('recent and frequent foods', () => {
     expect(l.data.frequent[0].name).toBe('Salad');
     expect(l.data.frequent.find((q: any) => q.name === 'side salad')).toBeUndefined(); // logged once
   });
+
+  it('suggests what you usually have with the foods already in a meal', async () => {
+    const W = { DEV_USER_EMAIL: 'goes-with@example.test' };
+    await api('/settings', { method: 'PUT', json: { timezone: 'UTC' } }, W);
+    const mk = async (name: string) => (await api('/foods', { method: 'POST', json: { name, per_100g: { ENERC_KCAL: 100 } } }, W)).data.id as string;
+    const [pasta, parm, sauce, salad, oats] = [await mk('Pasta'), await mk('Parmesan'), await mk('Marinara'), await mk('Salad'), await mk('Oats')];
+    const meal = (d: number, items: [string, number, string?][]) =>
+      api(
+        '/intake',
+        { method: 'POST', json: { meal_type: 'dinner', occurrence_at: at(d, 19), items: items.map(([food_id, g, display_name]) => ({ food_id, amount: g, unit: 'g', display_name })) } },
+        W,
+      );
+    await meal(10, [[pasta, 200], [parm, 10], [sauce, 120]]);
+    await meal(6, [[pasta, 180, 'spaghetti'], [parm, 15]]); // other wording, same food: still pasta
+    await meal(3, [[pasta, 200], [parm, 20], [salad, 100], [parm, 5]]); // parmesan twice counts once
+    await meal(2, [[oats, 50], [salad, 80]]); // nothing in common with pasta
+    const now = await meal(0, [[pasta, 200]]);
+
+    const r = await api(`/foods/quick?meal_type=dinner&with=${now.data.id}`, {}, W);
+    expect(r.status).toBe(200);
+    const g = r.data.goes_with;
+    expect(g.map((x: any) => [x.name, x.count])).toEqual([
+      ['Parmesan', 3],
+      ['Salad', 1],
+      ['Marinara', 1],
+    ]);
+    // Latest amount, and what it went with in this meal's words.
+    expect(g[0]).toMatchObject({ food_id: parm, unit: 'g', with: 'Pasta' });
+    expect([5, 20]).toContain(g[0].amount); // from the latest meal
+
+    // Once the parmesan is in, it's not suggested again.
+    await api('/intake', { method: 'POST', json: { append_to: now.data.id, items: [{ food_id: parm, amount: 10, unit: 'g' }] } }, W);
+    const after = await api(`/foods/quick?meal_type=dinner&with=${now.data.id}`, {}, W);
+    expect(after.data.goes_with.map((x: any) => x.name)).toEqual(['Salad', 'Marinara']);
+
+    // Someone else's meal id gives nothing; without `with` there's no list.
+    expect((await api(`/foods/quick?with=${now.data.id}`, {}, { DEV_USER_EMAIL: 'goes-with-other@example.test' })).data.goes_with).toEqual([]);
+    expect((await api('/foods/quick', {}, W)).data.goes_with).toBeUndefined();
+  });
 });
