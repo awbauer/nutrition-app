@@ -146,6 +146,15 @@ describe('foods you have eaten', () => {
     expect(r2.data.items[0].food_id).not.toBe(chicken);
   });
 
+  it('forgets a custom food once you delete it', async () => {
+    const E = { DEV_USER_EMAIL: 'history-archive@example.test', AI: ai(), HISTORY: index as unknown as VectorizeIndex };
+    const food = await custom(E, 'Chicken meatballs, Kirkland', 180);
+    await eat(E, food, 'chicken meatballs', '2026-11-10T19:00:00Z');
+    expect(index.store.size).toBe(1);
+    expect((await api(`/foods/${food}`, { method: 'DELETE' }, E)).status).toBe(204);
+    expect(index.store.size).toBe(0);
+  });
+
   it('keeps each user to their own history', async () => {
     const A = { DEV_USER_EMAIL: 'history-a@example.test', AI: ai(), HISTORY: index as unknown as VectorizeIndex };
     const B = { DEV_USER_EMAIL: 'history-b@example.test', AI: ai(), HISTORY: index as unknown as VectorizeIndex };
