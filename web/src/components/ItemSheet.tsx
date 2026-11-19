@@ -117,6 +117,8 @@ export function ItemSheet(props: { itemId: string; onChange: (m: Intake) => void
   const isChosen = (c: MatchCandidate) =>
     (c.fdc_id && c.fdc_id === chosenKey) || (c.fatsecret_id && c.fatsecret_id === chosenKey) || (c.food_id && c.food_id === chosenKey) || (c.food_id && c.food_id === food?.id);
   const others = (match?.candidates ?? []).filter((c) => !isChosen(c));
+  // "1 small" saved from the AI's weight estimate: the preview and a new count use that weight, not the generic table.
+  const aiUnit = conversion?.method === 'ai-estimate' ? { unit: fromUcum(item.amount_unit), grams: conversion.grams_per_unit } : null;
   const use = (c: MatchCandidate) =>
     patch(c.food_id ? { food_id: c.food_id } : c.fdc_id ? { fdc_id: c.fdc_id } : { fatsecret_id: c.fatsecret_id }, `Switched to ${c.name}`);
 
@@ -229,6 +231,7 @@ export function ItemSheet(props: { itemId: string; onChange: (m: Intake) => void
           defaultServingGrams={food?.default_serving_grams}
           kcalPer100={per100('ENERC_KCAL')}
           hint={false}
+          knownUnit={aiUnit}
         />
         {/* How a household amount became grams; nothing to explain when it's already grams. */}
         {conversion && item.amount_unit !== 'g' && (
