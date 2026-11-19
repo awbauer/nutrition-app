@@ -8,6 +8,7 @@ import { AmountEditor } from './AmountEditor';
 const SOURCE_LABEL: Record<string, string> = {
   usda: 'USDA',
   off: 'Open Food Facts',
+  fatsecret: 'FatSecret',
   custom: 'Your food',
   recipe: 'Your recipe',
   estimate: 'AI estimate',
@@ -21,6 +22,7 @@ const VIA_LABEL: Record<string, string> = {
   barcode: 'Matched the exact product by its barcode',
   label: 'Read from the nutrition label on the package, and saved as your food',
   usda: 'Best match from a USDA search',
+  fatsecret: 'Best match from a FatSecret search',
   off: 'Matched by barcode',
   estimate: 'No good database match, so this uses the AI estimate',
 };
@@ -38,6 +40,7 @@ const n1 = (v: number | null | undefined) => (v == null ? '–' : Math.round(v *
 
 function sourceLabel(source: string | null | undefined, dataType: string | null | undefined) {
   const s = SOURCE_LABEL[source ?? ''] ?? source ?? '';
+  if (source === 'fatsecret') return dataType === 'FatSecret Brand' ? `${s} · Brand` : s;
   return dataType && source === 'usda' ? `${s} · ${dataType}` : s;
 }
 
@@ -109,10 +112,12 @@ export function ItemSheet(props: { itemId: string; onChange: (m: Intake) => void
   if (!d) return <div class="h-64 animate-pulse rounded-xl bg-sunken" />;
   const { item, food, match, conversion } = d;
   const per100 = (code: string) => food?.nutrients.find((x) => x.code === code)?.value;
-  const chosenKey = match?.chosen ?? (food?.source === 'usda' ? food.source_id : food?.id);
-  const isChosen = (c: MatchCandidate) => (c.fdc_id && c.fdc_id === chosenKey) || (c.food_id && c.food_id === chosenKey) || (c.food_id && c.food_id === food?.id);
+  const chosenKey = match?.chosen ?? (food?.source === 'usda' || food?.source === 'fatsecret' ? food.source_id : food?.id);
+  const isChosen = (c: MatchCandidate) =>
+    (c.fdc_id && c.fdc_id === chosenKey) || (c.fatsecret_id && c.fatsecret_id === chosenKey) || (c.food_id && c.food_id === chosenKey) || (c.food_id && c.food_id === food?.id);
   const others = (match?.candidates ?? []).filter((c) => !isChosen(c));
-  const use = (c: MatchCandidate) => patch(c.fdc_id ? { fdc_id: c.fdc_id } : { food_id: c.food_id }, `Switched to ${c.name}`);
+  const use = (c: MatchCandidate) =>
+    patch(c.food_id ? { food_id: c.food_id } : c.fdc_id ? { fdc_id: c.fdc_id } : { fatsecret_id: c.fatsecret_id }, `Switched to ${c.name}`);
 
   return (
     <div class="flex flex-col gap-4 pb-2">
@@ -128,6 +133,7 @@ export function ItemSheet(props: { itemId: string; onChange: (m: Intake) => void
               View on USDA
             </a>
           )}
+          {food?.source === 'fatsecret' && <FatSecretCredit />}
         </div>
         {match &&
           (match.via === 'estimate' && match.lookup_error ? (
@@ -137,7 +143,7 @@ export function ItemSheet(props: { itemId: string; onChange: (m: Intake) => void
           ) : (
             <p class="text-sm text-ink-2">
               {VIA_LABEL[match.via]}
-              {match.via === 'usda' || match.via === 'estimate' ? ` for “${match.query}”.` : '.'}
+              {match.via === 'usda' || match.via === 'fatsecret' || match.via === 'estimate' ? ` for “${match.query}”.` : '.'}
             </p>
           ))}
         {item.check_match && match?.estimate_kcal_100g != null && (
@@ -265,8 +271,18 @@ export function ItemSheet(props: { itemId: string; onChange: (m: Intake) => void
   );
 }
 
+/** FatSecret's terms: data shown from them carries this credit. */
+export function FatSecretCredit() {
+  return (
+    <a class="text-xs text-ink-2 underline" href="https://www.fatsecret.com" target="_blank" rel="noopener">
+      Powered by fatsecret
+    </a>
+  );
+}
+
 function CandidateList(props: { items: MatchCandidate[]; onUse: (c: MatchCandidate) => void; busy: boolean; isChosen?: (c: MatchCandidate) => boolean | '' | undefined }) {
   return (
+    <div class="flex flex-col gap-1.5">
     <ul class="divide-y divide-line rounded-xl ring-1 ring-line">
       {props.items.map((c) => {
         const chosen = !!props.isChosen?.(c);
@@ -295,5 +311,7 @@ function CandidateList(props: { items: MatchCandidate[]; onUse: (c: MatchCandida
         );
       })}
     </ul>
+    {props.items.some((c) => c.source === 'fatsecret') && <FatSecretCredit />}
+    </div>
   );
 }

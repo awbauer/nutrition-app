@@ -4,7 +4,7 @@
  */
 import type { Env } from '../env';
 
-export const PROMPT_VERSION = 'parse-v5';
+export const PROMPT_VERSION = 'parse-v6';
 export const PIPELINE_VERSION = '2.0';
 
 export interface QuestionEffect {
@@ -28,6 +28,8 @@ export interface ModelItem {
   estimate_per_100g?: { kcal?: number; protein?: number; fat?: number; carbs?: number };
   /** The user referred to something they've had before ("my usual", "those meatballs I like"). */
   from_history?: boolean;
+  /** A named restaurant or chain menu item, looked up by its menu name rather than generic terms. */
+  menu_item?: boolean;
 }
 
 export interface LabelFacts {
@@ -77,7 +79,8 @@ const SCHEMA_TEXT = `Return ONLY a JSON object, no prose:
                                                 // {"serving_amount": 340, "serving_unit": "ml", "kcal": 150, "protein": 30, "fat": 2.5, "carbs": 4,
                                                 //  "fiber": 1, "sugars": 2, "sat_fat": 1.5, "sodium": 230}  (sodium in mg; omit what isn't printed)
     "estimate_per_100g": {"kcal": 165, "protein": 31, "fat": 3.6, "carbs": 0},
-    "from_history": false                       // true if the user points at something they've had before
+    "from_history": false,                      // true if the user points at something they've had before
+    "menu_item": false                          // true for a named restaurant / coffee-chain menu item
   }],
   "questions": [{
     "id": "q1", "item_index": 0,
@@ -95,6 +98,13 @@ const SCHEMA_TEXT = `Return ONLY a JSON object, no prose:
 
 const RULES = `Rules:
 - List every distinct food or drink as its own item. Split mixed plates into components when sensible.
+- Restaurant and coffee-chain menu items are NOT mixed plates: never list their espresso, milk, syrup, sugar, sauce or
+  bun separately. Coffee-shop drinks with a menu name (cold brew with a named cream, shaken espresso, frappuccino,
+  refresher, macchiato with a flavor), fast-food items and chain bowls are ONE item each, for example
+  "grande pistachio cream cold brew" -> {"name": "Starbucks Pistachio Cream Cold Brew, grande", "brand": "Starbucks",
+  "menu_item": true, "amount": 1, "unit": "serving", "grams": 473, "search_terms": ["Starbucks Pistachio Cream Cold Brew"]}.
+  Set "brand" to the chain even when the user doesn't name it, if the item is clearly that chain's. Its nutrition is
+  looked up as that menu item.
 - Prefer grams for solid food you can estimate visually and ml for drinks; use household units when the user states them.
 - Name drinks with their size and milk when known (e.g. "latte, whole milk", 350 ml).
 - Ask at most 2 questions, only where the answer could change the meal's calories by about 15% or more
@@ -270,6 +280,7 @@ export function validateOutput(raw: unknown): ModelOutput {
       brand: typeof it.brand === 'string' && it.brand.trim() ? it.brand.trim().slice(0, 60) : null,
       label: validLabel(it.label),
       ...(it.from_history === true ? { from_history: true } : {}),
+      ...(it.menu_item === true ? { menu_item: true } : {}),
       ...(est
         ? {
             estimate_per_100g: Object.fromEntries(

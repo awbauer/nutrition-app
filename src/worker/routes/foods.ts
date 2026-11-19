@@ -1,10 +1,11 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../env';
-import { archiveCustomFood, backfillCategories, createCustomFood, getFood, listCustomFoods, updateCustomFood, getSnapshot, resolveFdc, searchLocal, usdaClient, type CustomFoodInput } from '../lib/foods';
+import { archiveCustomFood, backfillCategories, createCustomFood, getFood, listCustomFoods, resolveFatSecret, updateCustomFood, getSnapshot, resolveFdc, searchLocal, usdaClient, type CustomFoodInput } from '../lib/foods';
 import { HttpError } from '../lib/ids';
 import { MEAL_TYPES, type MealType } from '../lib/intake';
 import { quickFoods } from '../lib/quick';
 import { coversQuery, searchHistory } from '../lib/history';
+import { fatsecretClient } from '../lib/fatsecret';
 import { FALLBACK_MODELS, isCapacityError, MAX_PHOTOS, type PhotoInput } from '../lib/ai';
 import { LabelReadError, readLabel } from '../lib/label';
 import { getSettings } from '../lib/settings';
@@ -16,11 +17,15 @@ export const foods = new Hono<AppEnv>();
 /** bge-m3 cosine: a related food you've eaten scores ~0.6+, unrelated ones ~0.4-0.5. */
 const HISTORY_MIN_SIMILARITY = 0.6;
 
-/** GET /api/foods?q=  -> local (custom + cache) matches and USDA search results. */
+/** GET /api/foods?q=  -> foods you've eaten, local (custom + cache) matches, USDA and FatSecret search results. */
 foods.get('/', async (c) => {
   const q = (c.req.query('q') ?? '').trim();
-  if (q.length < 2) return c.json({ history: [], local: [], usda: [] });
+  if (q.length < 2) return c.json({ history: [], local: [], usda: [], fatsecret: [] });
   const user = c.get('user');
+  const remote = c.req.query('remote') !== '0';
+  const fs = remote ? fatsecretClient(c.env) : null;
+  // FatSecret runs alongside everything else.
+  const fsHits = fs ? fs.search(q, 15).catch((e) => (console.warn('FatSecret search failed', q, (e as Error).message), [])) : Promise.resolve([]);
   // Foods you've eaten that mean the same thing ("the meatballs I like"): by meaning, kept only
   // when close or when they contain every food word you typed.
   const history = (await searchHistory(c.env, user.id, q, 8))
@@ -31,7 +36,7 @@ foods.get('/', async (c) => {
   const local = (await searchLocal(c.env.DB, user.id, q)).filter((f) => !inHistory.has(f.id));
   let usda: unknown[] = [];
   let usdaError: string | undefined;
-  if (c.req.query('remote') !== '0' && c.env.USDA_API_KEY) {
+  if (remote && c.env.USDA_API_KEY) {
     try {
       const hits = await usdaClient(c.env).searchAll(q);
       const cachedIds = new Set([...history, ...local].filter((f) => f.source === 'usda').map((f) => f.source_id));
@@ -42,7 +47,16 @@ foods.get('/', async (c) => {
       usdaError = (e as Error).message;
     }
   }
-  return c.json({ history, local, usda, ...(usdaError ? { usda_error: usdaError } : {}) });
+  const cachedFs = new Set([...history, ...local].filter((f) => f.source === 'fatsecret').map((f) => f.source_id));
+  const fatsecret = (await fsHits).filter((h) => !cachedFs.has(h.sourceId));
+  return c.json({ history, local, usda, fatsecret, ...(usdaError ? { usda_error: usdaError } : {}) });
+});
+
+/** GET /api/foods/fatsecret/:id -> resolve (and cache) a FatSecret food. */
+foods.get('/fatsecret/:id', async (c) => {
+  const id = c.req.param('id');
+  if (!/^\d+$/.test(id)) throw new HttpError(400, 'bad FatSecret id');
+  return c.json(await resolveFatSecret(c.env, id));
 });
 
 /** GET /api/foods/fdc/:fdcId -> resolve (and cache) a USDA food with portions. */

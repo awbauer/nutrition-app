@@ -57,7 +57,8 @@ export const SKIP_PENALTY = 0.15;
 export async function buildPending(env: Env, user: User, out: ModelOutput, settings: Settings, method: EstimationMethod): Promise<Pending> {
   const foods = new Map<string, FoodRecord>();
   // Match every item (and every add-on in question options) in parallel; these are independent lookups.
-  const matches = await Promise.all(out.items.map((it) => matchFood(env, user.id, it)));
+  // Printed label values only exist in photos; from text or voice they'd be the model's memory.
+  const matches = await Promise.all(out.items.map((it) => matchFood(env, user.id, method === 'photo-estimate' ? it : { ...it, label: null })));
   const base: BaseItem[] = out.items.map((it, i) => {
     const m = matches[i]!;
     foods.set(m.food.id, m.food);

@@ -129,6 +129,17 @@ describe('matching with candidates', () => {
     expect(d.data.match.candidates.length).toBeGreaterThan(0);
   });
 
+  it('never reuses an earlier AI estimate as "your food"', async () => {
+    const E = { DEV_USER_EMAIL: 'estimate-reuse@example.test' };
+    const nothing = { items: [{ name: 'salmon oil capsule', amount: 2, unit: 'g', confidence: 0.8, search_terms: ['salmon'], estimate_per_100g: { kcal: 20 } }], questions: [] };
+    const first = await api('/intake', { method: 'POST', body: form('x') }, { ...E, AI: ai(nothing) });
+    expect(first.data.items[0].estimated).toBe(true);
+    // Same name again, now with something the database can match: it searches instead of reusing the estimate.
+    const second = await api('/intake', { method: 'POST', body: form('x') }, { ...E, AI: ai({ ...nothing, items: [{ ...nothing.items[0], search_terms: ['salmon raw'], estimate_per_100g: { kcal: 180 } }] }) });
+    expect(second.data.items[0].estimated).toBe(false);
+    expect((await api(`/item/${second.data.items[0].id}`, {}, E)).data.match.via).not.toBe('custom');
+  });
+
   it("isolates item details by user", async () => {
     const r = await api('/intake', { method: 'POST', body: form('salmon sashimi') }, { ...U, AI: ai(sashimi) });
     expect((await api(`/item/${r.data.items[0].id}`, {}, { DEV_USER_EMAIL: 'intruder@example.test' })).status).toBe(404);
