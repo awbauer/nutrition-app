@@ -29,6 +29,10 @@
   ],
   "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "nutrition-media" }],
   "ai": { "binding": "AI", "remote": true },
+  // Foods you've eaten, for "those chicken meatballs I like". Created once by hand (not auto-provisioned):
+  //   wrangler vectorize create nutrition-history --dimensions=1024 --metric=cosine
+  //   wrangler vectorize create-metadata-index nutrition-history --property-name=user_id --type=string
+  "vectorize": [{ "binding": "HISTORY", "index_name": "nutrition-history" }],
   // AI processing runs in the background so logging returns immediately.
   "queues": {
     "producers": [{ "binding": "JOBS", "queue": "nutrition-jobs" }],

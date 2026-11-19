@@ -4,7 +4,7 @@
  */
 import type { Env } from '../env';
 
-export const PROMPT_VERSION = 'parse-v4';
+export const PROMPT_VERSION = 'parse-v5';
 export const PIPELINE_VERSION = '2.0';
 
 export interface QuestionEffect {
@@ -26,6 +26,8 @@ export interface ModelItem {
   label?: LabelFacts | null;
   /** Rough per-100 g estimate used only when no database match exists. */
   estimate_per_100g?: { kcal?: number; protein?: number; fat?: number; carbs?: number };
+  /** The user referred to something they've had before ("my usual", "those meatballs I like"). */
+  from_history?: boolean;
 }
 
 export interface LabelFacts {
@@ -74,7 +76,8 @@ const SCHEMA_TEXT = `Return ONLY a JSON object, no prose:
     "label": null,                              // packaged foods only: numbers PRINTED on the package, else null:
                                                 // {"serving_amount": 340, "serving_unit": "ml", "kcal": 150, "protein": 30, "fat": 2.5, "carbs": 4,
                                                 //  "fiber": 1, "sugars": 2, "sat_fat": 1.5, "sodium": 230}  (sodium in mg; omit what isn't printed)
-    "estimate_per_100g": {"kcal": 165, "protein": 31, "fat": 3.6, "carbs": 0}
+    "estimate_per_100g": {"kcal": 165, "protein": 31, "fat": 3.6, "carbs": 0},
+    "from_history": false                       // true if the user points at something they've had before
   }],
   "questions": [{
     "id": "q1", "item_index": 0,
@@ -105,6 +108,8 @@ const RULES = `Rules:
   Fill "label" ONLY with numbers you can actually read on the package, for one serving; never fill it from memory.
 - If an amount is ambiguous in a way that changes calories a lot (e.g. "1/4 yogurt": a quarter cup or a quarter of a tub?),
   make your best guess and ask about it.
+- When the user refers to a food they've had before ("those chicken meatballs I like", "my usual oatmeal", "same shake as
+  yesterday"), name the food itself without the reference ("chicken meatballs") and set "from_history": true.
 - Never invent brands. Do not include nutrition totals beyond estimate_per_100g and printed label values.`;
 
 /**
@@ -264,6 +269,7 @@ export function validateOutput(raw: unknown): ModelOutput {
       barcode: normaliseBarcode(it.barcode),
       brand: typeof it.brand === 'string' && it.brand.trim() ? it.brand.trim().slice(0, 60) : null,
       label: validLabel(it.label),
+      ...(it.from_history === true ? { from_history: true } : {}),
       ...(est
         ? {
             estimate_per_100g: Object.fromEntries(

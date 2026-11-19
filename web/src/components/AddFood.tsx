@@ -54,9 +54,12 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
     setLoading(true);
     const t = setTimeout(async () => {
       try {
-        const r = await api.get<{ local: Food[]; usda: UsdaHit[]; usda_error?: string }>(`/foods?q=${encodeURIComponent(term)}`);
+        const r = await api.get<{ history?: Food[]; local: Food[]; usda: UsdaHit[]; usda_error?: string }>(`/foods?q=${encodeURIComponent(term)}`);
         if (n !== seq.current) return;
-        setHits([...r.local.map((food) => ({ kind: 'local' as const, food })), ...r.usda.map((hit) => ({ kind: 'usda' as const, hit }))]);
+        setHits([
+          ...[...(r.history ?? []), ...r.local].map((food) => ({ kind: 'local' as const, food })),
+          ...r.usda.map((hit) => ({ kind: 'usda' as const, hit })),
+        ]);
         if (r.usda_error) toast.info('Food database unavailable; showing saved foods only.', { id: 'usda' });
       } catch (e) {
         if (n === seq.current) toast.error(e, { id: 'usda' });
@@ -70,7 +73,9 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
   async function choose(h: Hit) {
     try {
       const food = h.kind === 'local' ? h.food : await api.get<Food>(`/foods/fdc/${h.hit.sourceId}`);
-      setLabel(undefined);
+      // Something you've had before: keep what you usually call it.
+      const yours = h.kind === 'local' ? h.food.history?.names[0] : undefined;
+      setLabel(yours && yours.toLowerCase() !== food.name.toLowerCase() ? yours : undefined);
       setPicked(food);
       const first = food.portions[0];
       if (first) {
@@ -185,10 +190,20 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
       {loading && hits.length === 0 && <p class="text-sm text-ink-2">Searching…</p>}
       <ul class="flex flex-col divide-y divide-line">
         {hits.map((h) => {
-          const name = h.kind === 'local' ? h.food.name : h.hit.name;
+          const past = h.kind === 'local' ? h.food.history : undefined;
+          const name = past?.names[0] ?? (h.kind === 'local' ? h.food.name : h.hit.name);
           const brand = h.kind === 'local' ? h.food.brand : h.hit.brand;
           const nutrients = h.kind === 'local' ? h.food.nutrients : h.hit.nutrients;
-          const tag = h.kind === 'local' ? (h.food.source === 'usda' ? 'Recent' : h.food.source === 'recipe' ? 'Your recipe' : 'My food') : h.hit.dataType;
+          const dbName = h.kind === 'local' ? h.food.name : h.hit.name;
+          const tag = past
+            ? `You've had this${past.times > 1 ? ` ${past.times}×` : ''}${name.toLowerCase() !== dbName.toLowerCase() ? ` · ${dbName}` : ''}`
+            : h.kind === 'local'
+              ? h.food.source === 'usda'
+                ? 'Recent'
+                : h.food.source === 'recipe'
+                  ? 'Your recipe'
+                  : 'My food'
+              : h.hit.dataType;
           return (
             <li>
               <button class="flex w-full items-center gap-3 py-3 text-left" onClick={() => choose(h)}>
