@@ -1,6 +1,94 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="114" fill="#0f172a"/>
-  <circle cx="256" cy="256" r="150" fill="none" stroke="#1e293b" stroke-width="48"/>
-  <path d="M256 106 A150 150 0 1 1 112 298" fill="none" stroke="#2dd4bf" stroke-width="48" stroke-linecap="round"/>
-  <circle cx="256" cy="256" r="38" fill="#2dd4bf"/>
+  <defs>
+    <!-- tile: sunset orange -->
+    <linearGradient id="tile" x1="0.15" y1="0" x2="0.85" y2="1">
+      <stop offset="0" stop-color="#ffb04a"/>
+      <stop offset="0.5" stop-color="#ff6b1f"/>
+      <stop offset="1" stop-color="#c9330a"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.3" cy="0.2" r="0.7">
+      <stop offset="0" stop-color="#fff3d6" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#fff3d6" stop-opacity="0"/>
+    </radialGradient>
+    <!-- plate -->
+    <radialGradient id="plate" cx="0.5" cy="0.42" r="0.6">
+      <stop offset="0" stop-color="#fffdf8"/>
+      <stop offset="0.8" stop-color="#fbf1e2"/>
+      <stop offset="1" stop-color="#ecd9bf"/>
+    </radialGradient>
+    <!-- fruit -->
+    <radialGradient id="peel" cx="0.36" cy="0.32" r="0.78">
+      <stop offset="0" stop-color="#ffc35a"/>
+      <stop offset="0.45" stop-color="#ff8a1c"/>
+      <stop offset="0.85" stop-color="#e5590b"/>
+      <stop offset="1" stop-color="#b8420a"/>
+    </radialGradient>
+    <radialGradient id="shine" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="dimples" width="14" height="14" patternUnits="userSpaceOnUse">
+      <circle cx="4" cy="4" r="1.6" fill="#b84a08" opacity="0.22"/>
+      <circle cx="11" cy="10" r="1.3" fill="#ffd38a" opacity="0.35"/>
+    </pattern>
+    <clipPath id="fruitClip"><circle cx="236" cy="262" r="128"/></clipPath>
+    <!-- leaves -->
+    <linearGradient id="leafA" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#2f8f4e"/>
+      <stop offset="1" stop-color="#7fd36b"/>
+    </linearGradient>
+    <linearGradient id="leafB" x1="1" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#26763f"/>
+      <stop offset="1" stop-color="#5fbf5c"/>
+    </linearGradient>
+    <!-- segment -->
+    <linearGradient id="seg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffd27a"/>
+      <stop offset="1" stop-color="#ff9a2e"/>
+    </linearGradient>
+    <filter id="rim" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="3"/></filter>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="10"/>
+    </filter>
+  </defs>
+
+  <rect width="512" height="512" rx="114" fill="url(#tile)"/>
+  <rect width="512" height="512" rx="114" fill="url(#glow)"/>
+
+  <!-- plate with a soft shadow -->
+  <ellipse cx="256" cy="402" rx="190" ry="54" fill="#9c3405" opacity="0.35" filter="url(#soft)"/>
+  <ellipse cx="256" cy="380" rx="192" ry="62" fill="url(#plate)"/>
+  <ellipse cx="256" cy="372" rx="146" ry="42" fill="none" stroke="#ead6b8" stroke-width="5"/>
+
+  <!-- shadow of the fruit on the plate -->
+  <ellipse cx="248" cy="382" rx="112" ry="22" fill="#7a2a03" opacity="0.28" filter="url(#soft)"/>
+
+  <!-- clementine: a dark halo lifts it off the tile, a rim of light marks its edge -->
+  <circle cx="244" cy="270" r="136" fill="#7a2203" opacity="0.32" filter="url(#soft)"/>
+  <circle cx="236" cy="262" r="128" fill="url(#peel)"/>
+  <rect x="100" y="126" width="280" height="280" fill="url(#dimples)" clip-path="url(#fruitClip)"/>
+  <path d="M330 190 A 128 128 0 0 1 300 372" fill="none" stroke="#ffd9a0" stroke-width="10" stroke-linecap="round" opacity="0.28" filter="url(#rim)" clip-path="url(#fruitClip)"/>
+  <ellipse cx="190" cy="208" rx="46" ry="30" fill="url(#shine)" transform="rotate(-32 190 208)"/>
+  <ellipse cx="176" cy="196" rx="14" ry="8" fill="#ffffff" opacity="0.9" transform="rotate(-32 176 196)"/>
+  <!-- navel and stem -->
+  <ellipse cx="248" cy="142" rx="16" ry="7" fill="#c24c08"/>
+  <path d="M246 142 C 244 126, 250 114, 260 106" stroke="#6b4a1e" stroke-width="9" fill="none" stroke-linecap="round"/>
+
+  <!-- leaves -->
+  <path d="M258 108 C 290 62, 362 52, 392 78 C 370 122, 302 140, 258 108 Z" fill="url(#leafA)"/>
+  <path d="M262 107 C 300 96, 340 86, 386 80" stroke="#1f6b37" stroke-width="5" fill="none" stroke-linecap="round" opacity="0.8"/>
+  <path d="M254 110 C 222 72, 170 70, 150 92 C 172 124, 222 132, 254 110 Z" fill="url(#leafB)"/>
+  <path d="M250 109 C 222 100, 192 94, 156 93" stroke="#1d5f32" stroke-width="4" fill="none" stroke-linecap="round" opacity="0.8"/>
+
+  <!-- a peeled segment resting on the plate -->
+  <ellipse cx="384" cy="372" rx="58" ry="12" fill="#7a2a03" opacity="0.25" filter="url(#soft)"/>
+  <g transform="rotate(-14 382 344)">
+    <path d="M326 364 C 326 300, 438 292, 442 352 C 420 372, 350 378, 326 364 Z" fill="url(#seg)" stroke="#fff1d8" stroke-width="5" stroke-linejoin="round"/>
+    <g stroke="#ffe2a6" stroke-width="3" stroke-linecap="round" opacity="0.85" fill="none">
+      <path d="M352 356 C 360 336, 372 326, 384 322"/>
+      <path d="M380 360 C 386 342, 394 332, 404 326"/>
+      <path d="M408 358 C 412 346, 418 338, 424 334"/>
+    </g>
+    <ellipse cx="362" cy="324" rx="16" ry="6" fill="#ffffff" opacity="0.6" transform="rotate(-18 362 324)"/>
+  </g>
 </svg>

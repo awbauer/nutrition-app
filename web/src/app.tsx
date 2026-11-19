@@ -11,6 +11,7 @@ import { Today } from './components/Today';
 import { Week } from './components/Week';
 import { RecipesView } from './components/Recipes';
 import { MoreView } from './components/MoreView';
+import { Logo } from './components/Logo';
 import { CoachView } from './components/CoachView';
 
 type Tab = 'today' | 'week' | 'coach' | 'recipes' | 'graph' | 'settings' | 'more';
@@ -137,8 +138,11 @@ export function App() {
 
       {/* Tablet and desktop: sidebar */}
       <aside class="fixed inset-y-0 left-0 z-20 hidden w-56 flex-col gap-1 border-r border-line bg-paper px-4 py-6 md:flex" aria-label="Main">
-        <p class="display px-3 pb-5 text-2xl font-semibold">
-          Clem<span class="text-accent">.</span>
+        <p class="display flex items-center gap-2 px-3 pb-5 text-2xl font-semibold">
+          <Logo size={30} />
+          <span>
+            Clem<span class="text-accent">.</span>
+          </span>
         </p>
         <button class="btn-primary mb-4 w-full justify-start px-4 py-3" onClick={openLog}>
           <Plus size={20} strokeWidth={2.25} /> Log food
