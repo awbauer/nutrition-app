@@ -1,11 +1,13 @@
 import { ChefHat, Minus, Plus, Trash2 } from 'lucide-preact';
 import { useEffect, useState } from 'preact/hooks';
-import { api, type Intake, type Recipe } from '../api';
+import { api, type Favorite, type Intake, type Recipe } from '../api';
 import { amountLabel, guessMeal, kcal } from '../format';
 import { LogSheet } from './LogSheet';
 import { toast } from '../toast';
 import { Sheet } from './Sheet';
 import { CustomFoodForm, MyFoodsList, type CustomFood } from './MyFoods';
+import { FavoritesList } from './Favorites';
+import { AddFood } from './AddFood';
 
 const WEIGHT_UNITS = { g: 1, kg: 1000, lb: 453.592, oz: 28.3495 } as const;
 type WeightUnit = keyof typeof WEIGHT_UNITS;
@@ -206,33 +208,63 @@ export function RecipePicks(props: { onPick: (r: Recipe) => void }) {
   );
 }
 
-/** The Recipes screen: every recipe with its per-serving numbers; start a new one or log a serving. */
+type Section = 'favorites' | 'recipes' | 'mine';
+const SECTIONS: [Section, string][] = [
+  ['favorites', 'Favorites'],
+  ['recipes', 'Recipes'],
+  ['mine', 'My foods'],
+];
+const HEAD: Record<Section, { eyebrow: string; title: string; add: string }> = {
+  favorites: { eyebrow: 'One tap from Quick add', title: 'Favorites', add: 'Add' },
+  recipes: { eyebrow: 'Cook once, eat all week', title: 'Recipes', add: 'New recipe' },
+  mine: { eyebrow: 'Not in the database', title: 'My foods', add: 'New food' },
+};
+const sectionFromHash = (): Section => (location.hash === '#my-foods' ? 'mine' : 'favorites');
+
+/** The Foods screen: favorites, recipes with their per-serving numbers, and your own foods. */
 export function RecipesView(props: { today: string }) {
   const list = useRecipes();
   const [open, setOpen] = useState<Recipe | null>(null);
-  const [log, setLog] = useState<{ batch: true } | { pick: Recipe } | { food: CustomFood } | null>(null);
-  const [section, setSection] = useState<'recipes' | 'mine'>(() => (location.hash === '#my-foods' ? 'mine' : 'recipes'));
+  const [log, setLog] = useState<{ batch: true } | { pick: Recipe } | { food: CustomFood } | { fav: Favorite } | null>(null);
+  const [section, setSection] = useState<Section>(sectionFromHash);
   const [food, setFood] = useState<CustomFood | 'new' | null>(null);
+  // Adding a favorite (from a search) or changing the amount of one.
+  const [fav, setFav] = useState<{ query: string } | { edit: Favorite } | null>(null);
+  const head = HEAD[section];
   return (
     <div class="flex flex-col gap-4">
       <header class="flex items-end justify-between gap-3 pt-2">
         <div>
-          <p class="eyebrow">{section === 'recipes' ? 'Cook once, eat all week' : 'Not in the database'}</p>
-          <h1 class="display mt-0.5 text-[2.1rem] leading-none font-semibold">{section === 'recipes' ? 'Recipes' : 'My foods'}</h1>
+          <p class="eyebrow">{head.eyebrow}</p>
+          <h1 class="display mt-0.5 text-[2.1rem] leading-none font-semibold">{head.title}</h1>
         </div>
-        <button class="btn-primary shrink-0 px-4 py-2" onClick={() => (section === 'recipes' ? setLog({ batch: true }) : setFood('new'))}>
-          <Plus size={18} strokeWidth={2.25} /> {section === 'recipes' ? 'New recipe' : 'New food'}
+        <button
+          class="btn-primary shrink-0 px-4 py-2"
+          onClick={() => (section === 'favorites' ? setFav({ query: '' }) : section === 'recipes' ? setLog({ batch: true }) : setFood('new'))}
+        >
+          <Plus size={18} strokeWidth={2.25} /> {head.add}
         </button>
       </header>
-      <div class="segmented w-full max-w-xs" role="tablist" aria-label="Your foods">
-        <button class="seg" role="tab" aria-pressed={section === 'recipes'} aria-selected={section === 'recipes'} onClick={() => setSection('recipes')}>
-          Recipes
-        </button>
-        <button class="seg" role="tab" aria-pressed={section === 'mine'} aria-selected={section === 'mine'} onClick={() => setSection('mine')}>
-          My foods
-        </button>
+      <div class="segmented w-full max-w-sm" role="tablist" aria-label="Your foods">
+        {SECTIONS.map(([key, label]) => (
+          <button class="seg" role="tab" aria-pressed={section === key} aria-selected={section === key} onClick={() => setSection(key)}>
+            {label}
+          </button>
+        ))}
       </div>
 
+      {section === 'favorites' && <FavoritesList onAdd={(query) => setFav({ query })} onOpen={(f) => setFav({ edit: f })} onLog={(f) => setLog({ fav: f })} />}
+      <Sheet open={!!fav} onClose={() => setFav(null)} title={fav && 'edit' in fav ? fav.edit.name : 'Add a favorite'}>
+        {fav && (
+          <AddFood
+            date={props.today}
+            initialQuery={'query' in fav ? fav.query : undefined}
+            initial={'edit' in fav ? fav.edit : undefined}
+            onFavorite={(f) => (toast.success('edit' in fav ? `Saved ${f.name}` : `Starred ${f.name}`), setFav(null))}
+            onDone={() => setFav(null)}
+          />
+        )}
+      </Sheet>
       {section === 'mine' && <MyFoodsList onNew={() => setFood('new')} onOpen={setFood} onLog={(f) => setLog({ food: f })} />}
       <Sheet open={!!food} onClose={() => setFood(null)} title={food === 'new' ? 'New food' : (food?.name ?? 'Food')}>
         {food && (
@@ -292,7 +324,7 @@ export function RecipesView(props: { today: string }) {
       <Sheet open={!!open} onClose={() => setOpen(null)} title={open?.name ?? 'Recipe'}>
         {open && <RecipeDetail recipe={open} onDone={() => setOpen(null)} />}
       </Sheet>
-      <Sheet open={!!log} onClose={() => setLog(null)} title={log && 'batch' in log ? 'New recipe' : log && 'food' in log ? 'Log food' : 'Log a serving'}>
+      <Sheet open={!!log} onClose={() => setLog(null)} title={log && 'batch' in log ? 'New recipe' : log && ('food' in log || 'fav' in log) ? 'Log food' : 'Log a serving'}>
         {log && (
           <LogSheet
             date={props.today}
@@ -313,10 +345,13 @@ export function RecipesView(props: { today: string }) {
                       amount: log.food.portions.some((p) => p.unit === 'serving') ? 1 : 100,
                       unit: log.food.portions.some((p) => p.unit === 'serving') ? 'serving' : 'g',
                     }
-                  : undefined
+                  : 'fav' in log
+                    ? { name: log.fav.name, food_id: log.fav.food_id, amount: log.fav.amount, unit: log.fav.unit }
+                    : undefined
             }
             onDone={() => {
               if ('pick' in log) toast.success(`Logged a serving of ${log.pick.name}`);
+              if ('fav' in log) toast.success(`Logged ${log.fav.name}`);
               if ('food' in log) {
                 toast.success(`Logged ${log.food.name}`);
                 dispatchEvent(new CustomEvent('foods-changed'));
