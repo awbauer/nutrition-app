@@ -3,7 +3,7 @@ import { ChefHat, ChevronRight, Settings2, Waypoints } from 'lucide-preact';
 /** Phone: the fifth tab. Pages that don't fit in the bottom bar live here. */
 export function MoreView(props: { onOpen: (tab: 'recipes' | 'graph' | 'settings') => void }) {
   const rows: { tab: 'recipes' | 'graph' | 'settings'; title: string; sub: string; icon: preact.ComponentChildren }[] = [
-    { tab: 'recipes', title: 'Foods', sub: 'Your recipes and your own foods', icon: <ChefHat size={20} strokeWidth={1.75} /> },
+    { tab: 'recipes', title: 'Foods', sub: 'Favorites, recipes and your own foods', icon: <ChefHat size={20} strokeWidth={1.75} /> },
     { tab: 'graph', title: 'Food graph', sub: 'How the foods you eat connect', icon: <Waypoints size={20} strokeWidth={1.75} /> },
     { tab: 'settings', title: 'Settings', sub: 'Targets, reminders, units and export', icon: <Settings2 size={20} strokeWidth={1.75} /> },
   ];

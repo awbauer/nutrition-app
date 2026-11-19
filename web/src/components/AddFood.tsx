@@ -1,11 +1,12 @@
 import { toast } from '../toast';
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { api, type FatSecretHit, type Food, type Intake, type MealType, type UsdaHit } from '../api';
+import { api, type Favorite, type FatSecretHit, type Food, type Intake, type MealType, type UsdaHit } from '../api';
 import { FatSecretCredit } from './ItemSheet';
 import { MEALS, MEAL_LABEL } from '../format';
 import { submitMeal } from '../queue';
 import { AmountEditor } from './AmountEditor';
 import { FavoriteStar } from './FavoriteStar';
+import { saveFavorite } from '../favorites';
 import { CustomFoodForm } from './MyFoods';
 import { fromUcum, sizesFor, toGrams } from '../../../src/worker/lib/units';
 
@@ -23,8 +24,21 @@ export interface QuickPick {
   unit: string;
 }
 
-export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: MealType; initial?: QuickPick; onDone: (i: Intake) => void }) {
-  const [q, setQ] = useState('');
+/**
+ * With `onFavorite`, the same search and amount picker stars the food instead of logging it
+ * (Foods → Favorites → Add).
+ */
+export function AddFood(props: {
+  date: string;
+  intakeId?: string;
+  defaultMeal?: MealType;
+  initial?: QuickPick;
+  onDone: (i: Intake) => void;
+  onFavorite?: (f: Favorite) => void;
+  /** Start with this search typed in. */
+  initialQuery?: string;
+}) {
+  const [q, setQ] = useState(props.initialQuery ?? '');
   const [hits, setHits] = useState<Hit[]>([]);
   const [loading, setLoading] = useState(false);
   const [picked, setPicked] = useState<Food | null>(null);
@@ -100,6 +114,11 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
     if (!picked || !(amount > 0)) return;
     setSaving(true);
     try {
+      if (props.onFavorite) {
+        const fav = await saveFavorite({ name: label ?? picked.name, food_id: picked.id, amount, unit });
+        props.onFavorite(fav);
+        return;
+      }
       // Keep the user's own wording for a quick pick ("salmon sashimi" rather than the USDA name).
       const item = { food_id: picked.id, amount, unit, ...(label ? { display_name: label } : {}) };
       // Into a specific meal (its Add item), or from the main button: breakfast/lunch/dinner join the day's meal.
@@ -147,7 +166,7 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
             {picked.brand && <p class="text-sm text-ink-2">{picked.brand}</p>}
           </div>
           {/* Stars it with the amount chosen below. */}
-          {amount > 0 && <FavoriteStar name={label ?? picked.name} food_id={picked.id} amount={amount} unit={unit} size={22} class="-mr-2 -mt-1" />}
+          {amount > 0 && !props.onFavorite && <FavoriteStar name={label ?? picked.name} food_id={picked.id} amount={amount} unit={unit} size={22} class="-mr-2 -mt-1" />}
         </div>
         <AmountEditor
           category={picked.category}
@@ -169,7 +188,7 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
             <div class="text-xs text-ink-2">g protein</div>
           </div>
         </div>
-        {!props.intakeId && (
+        {!props.intakeId && !props.onFavorite && (
           <div class="flex flex-wrap gap-2">
             {MEALS.map((m) => (
               <button class={m === meal ? 'chip-on' : 'chip'} onClick={() => setMeal(m)}>
@@ -179,7 +198,7 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
           </div>
         )}
         <button class="btn-primary w-full py-3" disabled={saving || !(amount > 0)} onClick={save}>
-          {saving ? 'Saving…' : props.intakeId ? 'Add to meal' : 'Log food'}
+          {saving ? 'Saving…' : props.onFavorite ? 'Add to favorites' : props.intakeId ? 'Add to meal' : 'Log food'}
         </button>
       </div>
     );

@@ -62,3 +62,10 @@ export async function toggleFavorite(item: { name: string; food_id: string; amou
     throw e;
   }
 }
+
+/** Star a food with this amount, or update the amount of one already starred under that name. */
+export async function saveFavorite(item: { name: string; food_id: string; amount: number; unit: string }): Promise<Favorite> {
+  const saved = await api.post<Favorite>('/foods/favorites', item);
+  setFavorites([...(list ?? []).filter((f) => norm(f.name) !== norm(item.name)), saved]);
+  return saved;
+}
