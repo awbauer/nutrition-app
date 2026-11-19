@@ -10,7 +10,7 @@ import { itemStatements, refreshConfidence, type EstimationMethod, type MealType
 import { ESTIMATE_CONFIDENCE_CAP, matchFood, type MatchInfo } from './matcher';
 import { mergeDraft, resolveTarget, type MergeSpec } from './merge';
 import type { Settings } from './settings';
-import { toGrams } from './units';
+import { countUnit, normaliseUnit, toGrams } from './units';
 
 export interface BaseItem {
   name: string;
@@ -175,7 +175,9 @@ export async function materialise(db: D1Database, userId: string, p: Pending, an
     const food = await load(b.food_id);
     // "1 medium croissant" with no portion data would hit the generic table (medium = 150 g);
     // the model's own weight estimate is much closer. Scale it if a question changed the amount.
-    const conv = toGrams(b.amount, b.unit, food);
+    // "3 Oreos" logged as pieces reads as 3 cookies, in the food's own word for one.
+    const unit = (normaliseUnit(b.unit) === 'piece' && countUnit(food.portions)) || b.unit;
+    const conv = toGrams(b.amount, unit, food);
     const base = p.base.find((x) => x.food_id === b.food_id && x.name === b.name);
     const grams =
       conv.method === 'generic' && b.grams_estimate && base && base.unit === b.unit ? (b.grams_estimate * b.amount) / base.amount : undefined;
@@ -183,7 +185,7 @@ export async function materialise(db: D1Database, userId: string, p: Pending, an
       food,
       display_name: b.name,
       amount: b.amount,
-      unit: b.unit,
+      unit,
       confidence: b.estimated ? Math.min(b.confidence, ESTIMATE_CONFIDENCE_CAP) : b.confidence,
       method: b.method,
       estimated: b.estimated,

@@ -53,7 +53,9 @@ export function amountLabel(amount: number, unit: string): string {
   const whole = Math.floor(amount);
   const frac = amount - whole;
   const count = Math.abs(frac - 0.5) < 0.01 ? `${whole || ''}½` : Number.isInteger(amount) ? String(amount) : String(Math.round(amount * 100) / 100);
-  const word = amount > 1 && !NO_PLURAL.has(u) ? (PLURAL[u] ?? u) : u;
+  // The food's own words ("cookie", "nugget") take a plain plural.
+  const plural = PLURAL[u] ?? (/^[a-z]+$/.test(u) ? (/[^aeiou]y$/.test(u) ? u.slice(0, -1) + 'ies' : /(s|x|ch|sh)$/.test(u) ? u + 'es' : u + 's') : u);
+  const word = amount > 1 && !NO_PLURAL.has(u) ? plural : u;
   return `${count} ${word}`;
 }
 

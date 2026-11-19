@@ -57,9 +57,65 @@ const ALIASES: Record<string, string> = {
   sm: 'small', med: 'medium', lg: 'large',
 };
 
+const KNOWN = new Set([...Object.keys(MASS), ...Object.keys(VOLUME_ML), ...Object.keys(GENERIC_GRAMS)]);
+
 export function normaliseUnit(unit: string): string {
   const u = unit.trim().toLowerCase().replace(/\.$/, '');
-  return ALIASES[u] ?? ALIASES[unit.trim()] ?? u;
+  const alias = ALIASES[u] ?? ALIASES[unit.trim()];
+  if (alias || KNOWN.has(u)) return alias ?? u;
+  // Counted things in the food's own words: "cookies" -> "cookie", "patties" -> "patty".
+  if (/(?:patt|pastr|berr|cand|jell|gumm)ies$/.test(u)) return u.slice(0, -3) + 'y';
+  if (/^[a-z]{3,}[^s]s$/.test(u)) return u.slice(0, -1);
+  return u;
+}
+
+/** Parse "1 cup, chopped" / "2 slices" / "3 cookies (34g)" into {amount, unit}. */
+export function parsePortionText(text: string): { amount: number; unit: string } {
+  const m = /^\s*(\d+\s+\d\/\d|\d+(?:[./]\d+)?)?\s*(.*)$/.exec(text) ?? [];
+  const num = m[1] ? evalFraction(m[1]) : 1;
+  const unitWord = (m[2] ?? '').split(/[ ,(]/)[0] ?? '';
+  return { amount: num || 1, unit: normaliseUnit(unitWord || 'serving') };
+}
+
+function evalFraction(s: string): number {
+  return s
+    .trim()
+    .split(/\s+/)
+    .reduce((acc, p) => {
+      if (p.includes('/')) {
+        const [a, b] = p.split('/').map(Number);
+        return acc + (b ? a! / b : 0);
+      }
+      return acc + Number(p);
+    }, 0);
+}
+
+/**
+ * The food's portions plus the household measure hidden in a labelled serving: branded foods
+ * only say "1 serving = 36 g" with the text "2 cookies (36g)", which also means 1 cookie = 18 g.
+ */
+export function withCounts(portions: Portion[]): Portion[] {
+  const out = [...portions];
+  for (const p of portions) {
+    if (p.unit !== 'serving' || p.amount <= 0) continue;
+    const parsed = parsePortionText(p.label);
+    if (parsed.unit === 'serving' || parsed.unit in MASS || !/^[a-z][a-z ]*$/.test(parsed.unit)) continue;
+    if (out.some((x) => x.unit === parsed.unit)) continue;
+    out.push({ label: parsed.unit, unit: parsed.unit, amount: parsed.amount, grams: p.grams / p.amount });
+  }
+  return out;
+}
+
+/** A portion counted in whole things (cookie, breast, medium), not a serving or a measure. */
+const isCounted = (p: Portion) => p.unit !== 'serving' && !(p.unit in VOLUME_ML) && !(p.unit in MASS);
+
+/** The food's own word for one of it ("cookie"), for items counted as pieces. */
+export function countUnit(portions: Portion[]): string | null {
+  // Only a count read from the food's own serving label ("2 cookies"); a "1 medium" portion
+  // shouldn't turn "2 pieces" of banana into "2 mediums".
+  const derived = withCounts(portions).slice(portions.length);
+  const p = derived.find((x) => isCounted(x) && x.unit !== 'piece' && !(x.unit in GENERIC_GRAMS) && /^[a-z]+$/.test(x.unit));
+  return p?.unit ?? null;
 }
 
 export function toGrams(
@@ -70,10 +126,12 @@ export function toGrams(
   const unit = normaliseUnit(rawUnit);
   if (unit in MASS) return { grams: amount * MASS[unit]!, method: 'mass' };
 
-  const portions = food?.portions ?? [];
+  const portions = withCounts(food?.portions ?? []);
   const portion =
     portions.find((p) => p.unit === unit) ??
     portions.find((p) => normaliseUnit(p.label.split(/[ ,(]/)[0] ?? '') === unit) ??
+    // A piece is one of the things counted ("3 Oreos" is 3 cookies, not 3 servings of 2 cookies).
+    (unit === 'piece' ? portions.find(isCounted) : undefined) ??
     (unit === 'serving' || unit === 'piece' ? portions[0] : undefined);
   if (portion && portion.amount > 0) return { grams: (amount * portion.grams) / portion.amount, method: 'portion' };
 

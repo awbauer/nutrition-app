@@ -4,7 +4,7 @@
  */
 import type { Env } from '../env';
 
-export const PROMPT_VERSION = 'parse-v6';
+export const PROMPT_VERSION = 'parse-v7';
 export const PIPELINE_VERSION = '2.0';
 
 export interface QuestionEffect {
@@ -106,6 +106,8 @@ const RULES = `Rules:
   Set "brand" to the chain even when the user doesn't name it, if the item is clearly that chain's. Its nutrition is
   looked up as that menu item.
 - Prefer grams for solid food you can estimate visually and ml for drinks; use household units when the user states them.
+- When the user counts things ("3 oreos", "2 eggs", "4 nuggets"), keep their count: amount 3, unit "piece".
+  Never turn a count into servings, even when you know how many come in a serving.
 - Name drinks with their size and milk when known (e.g. "latte, whole milk", 350 ml).
 - Ask at most 2 questions, only where the answer could change the meal's calories by about 15% or more
   (cooking fat, portion size, dressing or sauce, drink size, milk type). Fewer is better; zero is fine.
