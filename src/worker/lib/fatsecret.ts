@@ -16,6 +16,14 @@ import { normaliseUnit } from './units';
 const ENDPOINT = 'https://platform.fatsecret.com/rest/server.api';
 const SEARCH_METHOD = 'foods.search.v3';
 const GET_METHOD = 'food.get.v4';
+/** Basic-tier search (names and a text summary, no servings): used until the key has Premier. */
+const BASIC_SEARCH_METHOD = 'foods.search';
+/** Basic search: how many hits are fetched in full (each is one more call; Basic allows 5,000 a day). */
+const BASIC_DETAIL_LIMIT = 8;
+/** FatSecret error codes meaning "this method isn't available to your key" (10 unknown method, 12/14 not permitted). */
+const PREMIER_MISSING = new Set([10, 12, 14]);
+/** Keys found to lack Premier search, so later searches skip straight to Basic (per isolate). */
+const basicOnly = new Set<string>();
 
 export class FatSecretError extends Error {
   constructor(
@@ -177,14 +185,30 @@ export class FatSecretClient {
   }
 
   async search(query: string, max = 20): Promise<ExternalFood[]> {
-    const r = await this.call<{ foods_search?: { results?: { food?: FsFood | FsFood[] } } }>(SEARCH_METHOD, {
+    if (!basicOnly.has(this.key)) {
+      try {
+        const r = await this.call<{ foods_search?: { results?: { food?: FsFood | FsFood[] } } }>(SEARCH_METHOD, {
+          search_expression: query,
+          max_results: String(Math.min(50, max)),
+          flag_default_serving: 'true',
+        });
+        return list(r.foods_search?.results?.food)
+          .map(normaliseFatSecret)
+          .filter((f): f is ExternalFood => !!f);
+      } catch (e) {
+        if (!(e instanceof FatSecretError && PREMIER_MISSING.has(Number(e.code)))) throw e;
+        basicOnly.add(this.key);
+        console.warn('FatSecret: no Premier search on this key, using the Basic search');
+      }
+    }
+    // Basic: search returns names and a text summary only, so fetch each top hit for its servings.
+    const r = await this.call<{ foods?: { food?: FsFood | FsFood[] } }>(BASIC_SEARCH_METHOD, {
       search_expression: query,
-      max_results: String(Math.min(50, max)),
-      flag_default_serving: 'true',
+      max_results: String(Math.min(BASIC_DETAIL_LIMIT, max)),
     });
-    return list(r.foods_search?.results?.food)
-      .map(normaliseFatSecret)
-      .filter((f): f is ExternalFood => !!f);
+    const hits = list(r.foods?.food).slice(0, BASIC_DETAIL_LIMIT);
+    const details = await Promise.allSettled(hits.map((h) => this.food(String(h.food_id))));
+    return details.flatMap((d) => (d.status === 'fulfilled' && d.value ? [d.value] : []));
   }
 
   async food(id: string): Promise<ExternalFood | null> {

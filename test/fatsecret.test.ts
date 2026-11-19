@@ -71,6 +71,26 @@ describe('FatSecret client', () => {
     expect(one?.portions).toHaveLength(1);
   });
 
+  it('falls back to the Basic search, fetching servings for each hit, when the key has no Premier', async () => {
+    const methods: string[] = [];
+    const c = new FatSecretClient('basic-key', 's', async (input) => {
+      const m = new URL(String(input)).searchParams.get('method')!;
+      methods.push(m);
+      if (m === 'foods.search.v3') return json({ error: { code: 10, message: 'Unknown method' } });
+      if (m === 'foods.search') return json({ foods: { food: [{ food_id: '123456', food_name: DRINK.food_name, food_description: 'Per 1 serving - Calories: 250kcal' }] } });
+      if (m === 'food.get.v4') return json({ food: DRINK });
+      return json({ error: { code: 0, message: 'unexpected' } });
+    });
+    const hits = await c.search('pistachio cold brew');
+    expect(hits).toHaveLength(1);
+    expect(hits[0]).toMatchObject({ sourceId: '123456', portions: [{ label: '1 grande', grams: 473 }] });
+    expect(methods).toEqual(['foods.search.v3', 'foods.search', 'food.get.v4']);
+    // Remembered: the next search goes straight to Basic.
+    methods.length = 0;
+    await c.search('again');
+    expect(methods).toEqual(['foods.search', 'food.get.v4']);
+  });
+
   it('reports errors FatSecret sends in a 200 body', async () => {
     const c = new FatSecretClient('k', 's', async () => json({ error: { code: 21, message: 'Invalid IP address detected' } }));
     await expect(c.search('x')).rejects.toBeInstanceOf(FatSecretError);
