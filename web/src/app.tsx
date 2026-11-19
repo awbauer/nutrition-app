@@ -1,4 +1,4 @@
-import { ChartColumn, ChefHat, NotebookPen, Plus, Settings2 } from 'lucide-preact';
+import { ChartColumn, ChefHat, ChevronLeft, Ellipsis, NotebookPen, Plus, Settings2, Waypoints } from 'lucide-preact';
 import { useEffect, useState } from 'preact/hooks';
 import { api, ApiError } from './api';
 import { isIOS, isStandalone } from './push';
@@ -10,9 +10,12 @@ import { SettingsView } from './components/SettingsView';
 import { Today } from './components/Today';
 import { Week } from './components/Week';
 import { RecipesView } from './components/Recipes';
+import { MoreView } from './components/MoreView';
 
-type Tab = 'today' | 'week' | 'recipes' | 'settings';
-const TABS: Tab[] = ['today', 'week', 'recipes', 'settings'];
+type Tab = 'today' | 'week' | 'recipes' | 'graph' | 'settings' | 'more';
+const TABS: Tab[] = ['today', 'week', 'recipes', 'graph', 'settings', 'more'];
+/** Phone: pages reached from More (the bottom bar has room for four tabs and the log button). */
+const UNDER_MORE: Tab[] = ['graph', 'settings', 'more'];
 /** Tab from the URL hash; old links to #weight land on Week, where the trend now lives. */
 const tabFromHash = (): Tab => {
   const h = location.hash.slice(1);
@@ -119,6 +122,7 @@ export function App() {
     ['today', 'Today', <NotebookPen size={22} strokeWidth={1.75} />],
     ['week', 'Week', <ChartColumn size={22} strokeWidth={1.75} />],
     ['recipes', 'Foods', <ChefHat size={22} strokeWidth={1.75} />],
+    ['graph', 'Graph', <Waypoints size={22} strokeWidth={1.75} />],
     ['settings', 'Settings', <Settings2 size={22} strokeWidth={1.75} />],
   ];
 
@@ -150,10 +154,17 @@ export function App() {
       {/* Content is centred in the space beside the sidebar. */}
       <main class="safe-top px-5 pb-32 md:pt-8 md:pr-10 md:pb-16 md:pl-[calc(14rem+2.5rem)]">
         <div class={`mx-auto ${tab === 'settings' ? 'max-w-lg md:max-w-3xl lg:max-w-5xl' : 'max-w-lg md:max-w-3xl lg:max-w-6xl'}`}>
+          {(tab === 'graph' || tab === 'settings') && (
+            <button class="-mb-1 flex items-center gap-1 pt-2 text-sm font-medium text-accent-ink md:hidden" onClick={() => setTab('more')}>
+              <ChevronLeft size={18} /> More
+            </button>
+          )}
           {me && today && tab === 'today' && <Today key={today} today={today} weightUnit={me.settings.weight_unit} />}
           {me && today && tab === 'week' && <Week key={today} today={today} weightUnit={me.settings.weight_unit} />}
           {today && tab === 'recipes' && <RecipesView today={today} />}
+          {tab === 'graph' && <LazyGraph />}
           {today && tab === 'settings' && <SettingsView today={today} onSaved={loadMe} />}
+          {tab === 'more' && <MoreView onOpen={setTab} />}
         </div>
       </main>
 
@@ -172,7 +183,7 @@ export function App() {
             </button>
           </div>
           <NavItem tab="recipes" current={tab} onSelect={setTab} label="Foods" icon={tabs[2][2]} />
-          <NavItem tab="settings" current={tab} onSelect={setTab} label="Settings" icon={tabs[3][2]} />
+          <NavItem tab="more" current={UNDER_MORE.includes(tab) ? 'more' : tab} onSelect={setTab} label="More" icon={<Ellipsis size={22} strokeWidth={1.75} />} />
         </div>
       </nav>
     </div>
@@ -192,4 +203,16 @@ function NavItem(props: { tab: Tab; current: Tab; onSelect: (t: Tab) => void; la
       <span class={`h-1 w-1 rounded-full ${on ? 'bg-accent' : 'bg-transparent'}`} aria-hidden="true" />
     </button>
   );
+}
+
+/** The graph pulls in d3, so it loads only when the Graph page is opened. */
+function LazyGraph() {
+  const [C, setC] = useState<preact.ComponentType | null>(null);
+  useEffect(() => {
+    import('./components/GraphView').then(
+      (m) => setC(() => m.GraphView),
+      (e) => toast.error(e),
+    );
+  }, []);
+  return C ? <C /> : <div class="card mt-16 h-[58dvh] animate-pulse" />;
 }
