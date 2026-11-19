@@ -4,6 +4,7 @@ import { amountLabel, CONFIDENCE_LEVELS, confidenceLevel, kcal } from '../format
 import { toast } from '../toast';
 import { fromUcum } from '../../../src/worker/lib/units';
 import { AmountEditor } from './AmountEditor';
+import { FavoriteStar } from './FavoriteStar';
 
 const SOURCE_LABEL: Record<string, string> = {
   usda: 'USDA',
@@ -123,8 +124,15 @@ export function ItemSheet(props: { itemId: string; onChange: (m: Intake) => void
     <div class="flex flex-col gap-4 pb-2">
       {/* What it matched */}
       <section class="flex flex-col gap-1">
-        <p class="eyebrow">Matched to</p>
-        <p class="font-semibold">{food?.name ?? 'Unknown food'}</p>
+        <div class="flex items-start gap-2">
+          <div class="min-w-0 flex-1">
+            <p class="eyebrow">Matched to</p>
+            <p class="font-semibold">{food?.name ?? 'Unknown food'}</p>
+          </div>
+          {item.food_id && (
+            <FavoriteStar name={item.display_name} food_id={item.food_id} amount={item.amount_value} unit={item.amount_unit} size={22} class="-mr-2 -mt-1" />
+          )}
+        </div>
         <div class="flex flex-wrap items-center gap-2 text-xs text-ink-2">
           <span class="rounded bg-sunken px-1.5 py-0.5 ">{sourceLabel(food?.source, food?.data_type)}</span>
           {food?.brand && <span>{food.brand}</span>}

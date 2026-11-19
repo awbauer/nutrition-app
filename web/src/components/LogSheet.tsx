@@ -1,12 +1,14 @@
 import { ArrowUp, Camera, ChefHat, ImagePlus, Mic, Plus, Search, X } from 'lucide-preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { watch } from '../analysis';
-import { api, type Intake, type MealType } from '../api';
+import { api, type Favorite, type Intake, type MealType } from '../api';
 import { amountLabel, kcal, MEALS, MEAL_LABEL } from '../format';
 import { resizeImage } from '../image';
 import { submitMeal } from '../queue';
 import { toast } from '../toast';
 import { AddFood, occurrenceFor, type QuickPick } from './AddFood';
+import { FavoriteStar } from './FavoriteStar';
+import { findFavorite, setFavorites, useFavorites } from '../favorites';
 import { Questions } from './Questions';
 import { Recorder } from './Recorder';
 import { emptyRecipeFields, RecipeFields, recipeBody, RecipePicks } from './Recipes';
@@ -268,46 +270,53 @@ interface Quick {
   count: number;
 }
 
-/** Recent and frequent foods: tap one to log it again with the amount you used last time. */
+/** Starred, frequent and recent foods: tap one to log it with its amount; tap the star to keep it on top. */
 function QuickAdd(props: { mealType: MealType; onPick: (q: QuickPick) => void }) {
   const [data, setData] = useState<{ recent: Quick[]; frequent: Quick[] } | null>(null);
-  const [tab, setTab] = useState<'frequent' | 'recent'>('frequent');
+  const [tab, setTab] = useState<'favorites' | 'frequent' | 'recent' | null>(null);
+  const favorites = useFavorites();
   useEffect(() => {
-    api.get<{ recent: Quick[]; frequent: Quick[] }>(`/foods/quick?meal_type=${props.mealType}`).then(
+    api.get<{ favorites: Favorite[]; recent: Quick[]; frequent: Quick[] }>(`/foods/quick?meal_type=${props.mealType}`).then(
       (d) => {
+        setFavorites(d.favorites);
         setData(d);
-        if (!d.frequent.length) setTab('recent');
+        setTab((t) => t ?? (d.favorites.length ? 'favorites' : d.frequent.length ? 'frequent' : 'recent'));
       },
       () => setData({ recent: [], frequent: [] }),
     );
   }, [props.mealType]);
 
-  if (!data || (!data.recent.length && !data.frequent.length)) return null;
-  const list = tab === 'frequent' ? data.frequent : data.recent;
+  if (!data || (!favorites.length && !data.recent.length && !data.frequent.length)) return null;
+  // Unstarring the last favorite falls back to another list.
+  const shown = tab === 'favorites' && !favorites.length ? (data.frequent.length ? 'frequent' : 'recent') : tab;
+  const list: (Quick | Favorite)[] = shown === 'favorites' ? favorites : shown === 'frequent' ? data.frequent : data.recent;
+  const tabs: ['favorites' | 'frequent' | 'recent', string][] = [];
+  if (favorites.length) tabs.push(['favorites', 'Starred']);
+  if (data.frequent.length) tabs.push(['frequent', 'Frequent']);
+  if (data.recent.length) tabs.push(['recent', 'Recent']);
   return (
     <section class="flex flex-col gap-2" aria-label="Quick add">
-      <div class="flex items-center justify-between">
-        <p class="eyebrow">Quick add</p>
-        <div class="segmented w-48 text-xs" role="tablist">
-          {data.frequent.length > 0 && (
-            <button class="seg py-1 text-xs" role="tab" aria-pressed={tab === 'frequent'} aria-selected={tab === 'frequent'} onClick={() => setTab('frequent')}>
-              Frequent
-            </button>
-          )}
-          <button class="seg py-1 text-xs" role="tab" aria-pressed={tab === 'recent'} aria-selected={tab === 'recent'} onClick={() => setTab('recent')}>
-            Recent
-          </button>
-        </div>
+      <div class="flex items-center justify-between gap-2">
+        <p class="eyebrow whitespace-nowrap">Quick add</p>
+        {tabs.length > 1 && (
+          <div class={`segmented min-w-0 text-xs ${tabs.length > 2 ? 'w-60' : 'w-48'}`} role="tablist">
+            {tabs.map(([key, label]) => (
+              <button class="seg py-1 text-xs" role="tab" aria-pressed={shown === key} aria-selected={shown === key} onClick={() => setTab(key)}>
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
       <ul class="card divide-y divide-line">
         {list.map((q) => (
-          <li>
-            <button class="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-sunken/70 active:bg-sunken" onClick={() => props.onPick(q)}>
+          <li class="flex items-center pr-1.5">
+            <button class="flex min-w-0 flex-1 items-center gap-3 py-2.5 pl-4 text-left hover:bg-sunken/70 active:bg-sunken" onClick={() => props.onPick(q)}>
               <div class="min-w-0 flex-1">
                 <p class="truncate text-[0.95rem]">{q.name}</p>
                 <p class="truncate text-xs text-faint">
                   {amountLabel(q.amount, q.unit)}
-                  {tab === 'frequent' && ` · ${q.count}× lately`}
+                  {shown === 'frequent' && 'count' in q && ` · ${q.count}× lately`}
                 </p>
               </div>
               {q.kcal != null && <span class="num text-ink-2">{kcal(q.kcal)}</span>}
@@ -315,6 +324,8 @@ function QuickAdd(props: { mealType: MealType; onPick: (q: QuickPick) => void })
                 <Plus size={16} />
               </span>
             </button>
+            {/* A starred food keeps its saved amount; starring from Recent saves the latest one. */}
+            <FavoriteStar {...(findFavorite(favorites, q.name) ?? q)} />
           </li>
         ))}
       </ul>
