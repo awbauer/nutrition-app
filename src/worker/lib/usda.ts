@@ -1,6 +1,8 @@
 /** USDA FoodData Central client. Nutrient values for all data types are per 100 g. */
 import { fromUsda, type NutrientValue } from './nutrients';
-import { normaliseUnit, type Portion } from './units';
+import { normaliseUnit, parsePortionText, type Portion } from './units';
+
+export { parsePortionText };
 
 const BASE = 'https://api.nal.usda.gov/fdc/v1';
 
@@ -195,25 +197,6 @@ export function snapshotOf<T extends object>(f: T): T {
         return keep;
       }),
   } as T;
-}
-
-/** Parse "1 cup, chopped" / "2 slices" into {amount, unit}. */
-export function parsePortionText(text: string): { amount: number; unit: string } {
-  const m = /^\s*(\d+(?:[./]\d+)?|\d+\s+\d\/\d)?\s*(.*)$/.exec(text) ?? [];
-  const num = m[1] ? evalFraction(m[1]) : 1;
-  const unitWord = (m[2] ?? '').split(/[ ,(]/)[0] ?? '';
-  return { amount: num || 1, unit: normaliseUnit(unitWord || 'serving') };
-}
-
-function evalFraction(s: string): number {
-  const parts = s.trim().split(/\s+/);
-  return parts.reduce((acc, p) => {
-    if (p.includes('/')) {
-      const [a, b] = p.split('/').map(Number);
-      return acc + (b ? a! / b : 0);
-    }
-    return acc + Number(p);
-  }, 0);
 }
 
 export function normaliseSearchFood(f: UsdaSearchFood): NormalisedFood {

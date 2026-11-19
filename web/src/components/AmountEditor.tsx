@@ -1,6 +1,6 @@
 import { Minus, Plus } from 'lucide-preact';
 import { useEffect, useRef } from 'preact/hooks';
-import { EXACT_UNITS, SIZE_LABEL, sizesFor, toGrams, type Portion } from '../../../src/worker/lib/units';
+import { EXACT_UNITS, SIZE_LABEL, sizesFor, toGrams, withCounts, type Portion } from '../../../src/worker/lib/units';
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -47,7 +47,8 @@ export function AmountEditor(props: {
   const estimate = toGrams(props.amount || 0, props.unit, food);
   const fit = sizesFor({ name: props.name, category: props.category, portions: props.portions });
   // The food's own portions (exact units already have their own chip), then the sizes that suit it.
-  const own = (props.portions ?? [])
+  // Includes the count inside a labelled serving ("2 cookies (36g)" offers a Cookie chip).
+  const own = withCounts(props.portions ?? [])
     .filter((p, i, a) => !(p.unit in EXACT_UNITS) && a.findIndex((x) => x.unit === p.unit) === i)
     .filter((p, i) => i < MAX_OWN || p.unit === props.unit);
   const shown = new Set([...fit.exact, ...own.map((p) => p.unit)]);

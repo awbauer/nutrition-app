@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { addDays, logDate, mealTypeForTime, localParts } from '../src/worker/lib/dates';
 import { fromUsda } from '../src/worker/lib/nutrients';
-import { EXACT_UNITS, foodKind, sizesFor, toGrams, ucum, type Portion } from '../src/worker/lib/units';
+import { countUnit, EXACT_UNITS, foodKind, sizesFor, toGrams, ucum, withCounts, type Portion } from '../src/worker/lib/units';
 import { normaliseDetailFood, parsePortionText } from '../src/worker/lib/usda';
 import { normaliseOff } from '../src/worker/lib/off';
 import { chickenDetail, foundationEgg } from './fixtures/usda';
@@ -40,6 +40,22 @@ describe('serving to grams', () => {
     expect(toGrams(2, 'serving', { default_serving_grams: 40 })).toEqual({ grams: 80, method: 'default-serving' });
     expect(toGrams(1, 'cup').grams).toBe(240);
     expect(toGrams(1, 'slice').grams).toBe(30);
+  });
+  it('counts pieces of a labelled multi-item serving one at a time', () => {
+    // Branded Oreos: one serving is "2 cookies (36g)".
+    const oreo = { portions: [{ label: '2 cookies (36g)', unit: 'serving', amount: 1, grams: 36 }], default_serving_grams: 36 };
+    expect(toGrams(3, 'piece', oreo).grams).toBe(54);
+    expect(toGrams(3, 'cookies', oreo).grams).toBe(54);
+    expect(toGrams(1.5, 'serving', oreo).grams).toBe(54);
+    expect(countUnit(oreo.portions)).toBe('cookie');
+    // Each food's own label sets the size: a different brand's cookie isn't an Oreo's.
+    expect(toGrams(3, 'cookies', { portions: [{ label: '1 cookie (85g)', unit: 'serving', amount: 1, grams: 85 }] }).grams).toBe(255);
+    expect(countUnit([{ label: '1 medium', unit: 'medium', amount: 1, grams: 118 }])).toBeNull();
+    expect(withCounts(oreo.portions)).toContainEqual({ label: 'cookie', unit: 'cookie', amount: 2, grams: 36 });
+    // A measure in the label is a portion too; a weight in it adds nothing.
+    expect(toGrams(1, 'tbsp', { portions: [{ label: '1/4 cup', unit: 'serving', amount: 1, grams: 58 }] }).grams).toBe(15);
+    expect(toGrams(1, 'cup', { portions: [{ label: '1/4 cup', unit: 'serving', amount: 1, grams: 58 }] }).grams).toBe(232);
+    expect(withCounts([{ label: '28 g', unit: 'serving', amount: 1, grams: 28 }])).toHaveLength(1);
   });
   it('maps UCUM units', () => {
     expect(ucum('ml')).toBe('mL');
