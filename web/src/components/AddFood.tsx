@@ -5,6 +5,7 @@ import { FatSecretCredit } from './ItemSheet';
 import { MEALS, MEAL_LABEL } from '../format';
 import { submitMeal } from '../queue';
 import { AmountEditor } from './AmountEditor';
+import { FavoriteStar } from './FavoriteStar';
 import { CustomFoodForm } from './MyFoods';
 import { fromUcum, sizesFor, toGrams } from '../../../src/worker/lib/units';
 
@@ -139,10 +140,14 @@ export function AddFood(props: { date: string; intakeId?: string; defaultMeal?: 
             ← Back to results
           </button>
         )}
-        <div>
-          <h3 class="display text-lg font-semibold">{label ?? picked.name}</h3>
-          {label && label.toLowerCase() !== picked.name.toLowerCase() && <p class="text-sm text-ink-2">{picked.name}</p>}
-          {picked.brand && <p class="text-sm text-ink-2">{picked.brand}</p>}
+        <div class="flex items-start gap-2">
+          <div class="min-w-0 flex-1">
+            <h3 class="display text-lg font-semibold">{label ?? picked.name}</h3>
+            {label && label.toLowerCase() !== picked.name.toLowerCase() && <p class="text-sm text-ink-2">{picked.name}</p>}
+            {picked.brand && <p class="text-sm text-ink-2">{picked.brand}</p>}
+          </div>
+          {/* Stars it with the amount chosen below. */}
+          {amount > 0 && <FavoriteStar name={label ?? picked.name} food_id={picked.id} amount={amount} unit={unit} size={22} class="-mr-2 -mt-1" />}
         </div>
         <AmountEditor
           category={picked.category}

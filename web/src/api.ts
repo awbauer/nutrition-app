@@ -41,6 +41,16 @@ export const api = {
 };
 
 // ---- types mirrored from the Worker ----
+/** A starred food (GET /foods/favorites): logged by this name and amount. */
+export interface Favorite {
+  id: string;
+  name: string;
+  food_id: string;
+  amount: number;
+  unit: string;
+  grams: number;
+  kcal: number | null;
+}
 export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
 export interface Portion {
   label: string;

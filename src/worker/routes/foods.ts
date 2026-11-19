@@ -4,6 +4,7 @@ import { archiveCustomFood, backfillCategories, createCustomFood, getFood, listC
 import { HttpError } from '../lib/ids';
 import { MEAL_TYPES, type MealType } from '../lib/intake';
 import { quickFoods } from '../lib/quick';
+import { addFavorite, listFavorites, removeFavorite } from '../lib/favorites';
 import { coversQuery, searchHistory } from '../lib/history';
 import { fatsecretClient } from '../lib/fatsecret';
 import { FALLBACK_MODELS, isCapacityError, MAX_PHOTOS, type PhotoInput } from '../lib/ai';
@@ -66,11 +67,25 @@ foods.get('/fdc/:fdcId', async (c) => {
   return c.json(await resolveFdc(c.env, fdcId));
 });
 
-/** GET /api/foods/quick?meal_type= -> recent and frequent foods (frequent ranked for that meal). */
+/** GET /api/foods/quick?meal_type= -> starred, recent and frequent foods (frequent ranked for that meal). */
 foods.get('/quick', async (c) => {
   const mt = c.req.query('meal_type');
   const mealType = mt && MEAL_TYPES.includes(mt as MealType) ? (mt as MealType) : null;
-  return c.json(await quickFoods(c.env.DB, c.get('user').id, mealType));
+  const user = c.get('user');
+  const [quick, favorites] = await Promise.all([quickFoods(c.env.DB, user.id, mealType), listFavorites(c.env.DB, user.id)]);
+  return c.json({ favorites, ...quick });
+});
+
+/** GET /api/foods/favorites -> starred foods, oldest first, with kcal for their amount. */
+foods.get('/favorites', async (c) => c.json(await listFavorites(c.env.DB, c.get('user').id)));
+
+/** POST /api/foods/favorites {name, food_id, amount, unit} -> star a food (same name again updates it). */
+foods.post('/favorites', async (c) => c.json(await addFavorite(c.env.DB, c.get('user').id, await c.req.json()), 201));
+
+/** DELETE /api/foods/favorites/:id -> unstar. */
+foods.delete('/favorites/:id', async (c) => {
+  await removeFavorite(c.env.DB, c.get('user').id, c.req.param('id'));
+  return c.body(null, 204);
 });
 
 /** GET /api/foods/mine -> the user's custom foods (not recipes). */
