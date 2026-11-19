@@ -48,6 +48,10 @@ describe('serving to grams', () => {
     expect(toGrams(3, 'cookies', oreo).grams).toBe(54);
     expect(toGrams(1.5, 'serving', oreo).grams).toBe(54);
     expect(countUnit(oreo.portions)).toBe('cookie');
+    // The model sometimes writes a placeholder for a bare count.
+    expect(toGrams(3, 'none', oreo).grams).toBe(54);
+    expect(toGrams(3, 'None', oreo).grams).toBe(54);
+    expect(toGrams(2, 'count', oreo).grams).toBe(36);
     // Each food's own label sets the size: a different brand's cookie isn't an Oreo's.
     expect(toGrams(3, 'cookies', { portions: [{ label: '1 cookie (85g)', unit: 'serving', amount: 1, grams: 85 }] }).grams).toBe(255);
     expect(countUnit([{ label: '1 medium', unit: 'medium', amount: 1, grams: 118 }])).toBeNull();
