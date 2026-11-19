@@ -55,6 +55,8 @@ const ALIASES: Record<string, string> = {
   servings: 'serving', portion: 'serving',
   handfuls: 'handful', bowls: 'bowl', bowlful: 'bowl', glasses: 'glass', mugs: 'mug', plates: 'plate', scoops: 'scoop', cans: 'can', bottles: 'bottle', shots: 'shot',
   sm: 'small', med: 'medium', lg: 'large',
+  // Placeholders a model writes for a bare count ("3 oreos" -> unit "none"): it's a number of pieces.
+  none: 'piece', null: 'piece', count: 'piece', counts: 'piece', unit: 'piece', units: 'piece', ea: 'piece', x: 'piece', '': 'piece',
 };
 
 const KNOWN = new Set([...Object.keys(MASS), ...Object.keys(VOLUME_ML), ...Object.keys(GENERIC_GRAMS)]);
