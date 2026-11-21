@@ -10,6 +10,7 @@ import { itemStatements, refreshConfidence, requireStatus, type EstimationMethod
 import { recordAiLogged, recordEvents, snapshotMeal } from './events';
 import { applyFavorites, favoriteMatch } from './favorites';
 import { ESTIMATE_CONFIDENCE_CAP, matchFood, type MatchInfo } from './matcher';
+import { MATCH_CONFIG } from './match-config';
 import { mergeDraft, resolveTarget, type MergeSpec } from './merge';
 import type { Settings } from './settings';
 import { countUnit, normaliseUnit, toGrams } from './units';
@@ -53,7 +54,7 @@ export interface Pending {
 const kcalPer100 = (f: FoodRecord) => f.nutrients.find((n) => n.code === 'ENERC_KCAL')?.value ?? 0;
 const itemKcal = (f: FoodRecord, amount: number, unit: string) => (kcalPer100(f) * toGrams(amount, unit, f).grams) / 100;
 
-export const SKIP_PENALTY = 0.15;
+export const SKIP_PENALTY = MATCH_CONFIG.questions.skipPenalty;
 
 /** Resolve model items and question effects against food databases, then pick which questions to ask. */
 export async function buildPending(env: Env, user: User, out: ModelOutput, settings: Settings, method: EstimationMethod): Promise<Pending> {
@@ -129,7 +130,8 @@ export async function buildPending(env: Env, user: User, out: ModelOutput, setti
   const questions = candidates
     .filter((q) => {
       const share = q.kcal_spread / denom;
-      return share >= 0.15 || (base[q.item_index]!.confidence < settings.question_confidence_threshold && share >= 0.05);
+      const { minShare, shakyMinShare } = MATCH_CONFIG.questions;
+      return share >= minShare || (base[q.item_index]!.confidence < settings.question_confidence_threshold && share >= shakyMinShare);
     })
     .sort((a, b) => b.kcal_spread - a.kcal_spread)
     .slice(0, settings.max_questions)

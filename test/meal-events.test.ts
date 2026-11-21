@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loggingQuality } from '../src/worker/lib/events';
-import { MATCHER_VERSION } from '../src/worker/lib/scoring';
+import { MATCHER_VERSION } from '../src/worker/lib/match-config';
 import { api, testEnv } from './helpers';
 
 afterEach(() => vi.restoreAllMocks());

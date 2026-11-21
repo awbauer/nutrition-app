@@ -5,6 +5,7 @@ import { chunks, HttpError, newId, nowIso } from './ids';
 import { round, sumNutrients } from './nutrients';
 import { getSettings } from './settings';
 import type { MatchInfo } from './matcher';
+import { MATCH_CONFIG } from './match-config';
 import type { MergeSpec } from './merge';
 import { toGrams, ucum } from './units';
 
@@ -345,8 +346,9 @@ function needsCheck(matchJson: string | null, kcal100: number | null): boolean {
   try {
     const m = JSON.parse(matchJson) as MatchInfo;
     if (m.via === 'alias' || m.via === 'custom' || m.estimate_kcal_100g == null || m.estimate_kcal_100g <= 0) return false;
-    const ratio = (kcal100 + 10) / (m.estimate_kcal_100g + 10);
-    return ratio > 2 || ratio < 0.5;
+    const k = MATCH_CONFIG.plausibility.kcalOffset;
+    const ratio = (kcal100 + k) / (m.estimate_kcal_100g + k);
+    return ratio > MATCH_CONFIG.checkMatchKcalRatio || ratio < 1 / MATCH_CONFIG.checkMatchKcalRatio;
   } catch {
     return false;
   }

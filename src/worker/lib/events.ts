@@ -11,7 +11,7 @@
  * App and MCP changes are recorded by diffing the meal before and after the request (see app.ts),
  * so new routes are covered without wiring each one.
  */
-import { MATCHER_VERSION } from './scoring';
+import { MATCHER_VERSION } from './match-config';
 import type { Env } from '../env';
 import { newId } from './ids';
 

@@ -23,13 +23,14 @@ import { fatsecretClient } from '../lib/fatsecret';
 import { FALLBACK_MODELS, isCapacityError, MAX_PHOTOS, type PhotoInput } from '../lib/ai';
 import { LabelReadError, readLabel } from '../lib/label';
 import { getSettings } from '../lib/settings';
+import { MATCH_CONFIG } from '../lib/match-config';
 
 const MAX_PHOTO = 8 * 1024 * 1024;
 
 export const foods = new Hono<AppEnv>();
 
 /** bge-m3 cosine: a related food you've eaten scores ~0.6+, unrelated ones ~0.4-0.5. */
-const HISTORY_MIN_SIMILARITY = 0.6;
+const HISTORY_MIN_SIMILARITY = MATCH_CONFIG.history.searchMinSimilarity;
 
 /** GET /api/foods?q=  -> foods you've eaten, local (custom + cache) matches, USDA and FatSecret search results. */
 foods.get('/', async (c) => {

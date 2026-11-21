@@ -22,6 +22,7 @@ import { NUTRIENT_BY_CODE } from './nutrients';
 import { offByBarcode } from './off';
 import { historyBonus, searchHistory } from './history';
 import { ACCEPT_SCORE, CONFIDENT_SCORE, rankCandidates, scoreCandidate } from './scoring';
+import { MATCH_CONFIG } from './match-config';
 import type { NormalisedFood } from './usda';
 
 export interface MatchRequest {
@@ -100,8 +101,8 @@ export interface MatchResult {
   fromPackage?: boolean;
 }
 
-export const ESTIMATE_CONFIDENCE_CAP = 0.4;
-const MAX_CANDIDATES = 8;
+export const ESTIMATE_CONFIDENCE_CAP = MATCH_CONFIG.decision.estimateConfidenceCap;
+const MAX_CANDIDATES = MATCH_CONFIG.decision.maxCandidates;
 
 const per100 = (n: { code: string; value: number }[], code: string) => n.find((x) => x.code === code)?.value ?? null;
 
