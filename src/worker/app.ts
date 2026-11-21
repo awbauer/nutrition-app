@@ -3,6 +3,7 @@ import { requireUser } from './auth';
 import type { AppEnv } from './env';
 import { refreshHistory } from './lib/history';
 import { HttpError } from './lib/ids';
+import { authorize } from './routes/authorize';
 import { coach } from './routes/coach';
 import { day } from './routes/day';
 import { exporter } from './routes/export';
@@ -52,4 +53,6 @@ api.route('/recipes', recipes);
 api.notFound((c) => c.json({ error: 'not found' }, 404));
 
 app.route('/api', api);
+// OAuth consent for MCP clients (Claude etc.); the rest of OAuth is served by OAuthProvider in index.ts.
+app.route('/', authorize);
 app.all('*', (c) => c.env.ASSETS.fetch(c.req.raw));

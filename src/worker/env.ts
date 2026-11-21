@@ -1,5 +1,11 @@
 export interface Env {
   DB: D1Database;
+  /** OAuth grants, tokens and registered clients for the MCP server (workers-oauth-provider). */
+  OAUTH_KV: KVNamespace;
+  /** Helpers injected by OAuthProvider into the default handler (the /authorize page). */
+  OAUTH_PROVIDER?: import('@cloudflare/workers-oauth-provider').OAuthHelpers;
+  /** Set only by the MCP handler: the user an OAuth token was granted for. Never comes from a request. */
+  MCP_USER?: User;
   MEDIA: R2Bucket;
   AI: Ai;
   ASSETS: Fetcher;
