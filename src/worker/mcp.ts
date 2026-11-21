@@ -68,6 +68,115 @@ async function finished(api: Api, meal: Meal): Promise<Meal> {
   return m;
 }
 
+type Rec = Record<string, any>;
+const per100 = (nutrients: Rec[] | undefined, code: string) => {
+  const v = nutrients?.find((n) => n.code === code)?.value;
+  return v == null ? null : Math.round(v * 10) / 10;
+};
+/** First named portion: what "1 serving" means for this food. */
+const portionOf = (f: Rec) => {
+  const p = (f.portions as Rec[] | undefined)?.[0];
+  return p
+    ? `${/^\d/.test(p.label) ? p.label : `${p.amount} ${p.label}`} = ${Math.round(p.grams)} g`
+    : f.default_serving_grams
+      ? `1 serving = ${Math.round(f.default_serving_grams)} g`
+      : null;
+};
+
+/**
+ * One compact search row: ids to log it, what it is, per-100 g energy and macros, its serving.
+ * The full records (every nutrient, every portion) run to hundreds of KB per search.
+ */
+function searchRow(f: Rec, kind: string): Rec {
+  const local = "id" in f;
+  const ids = local
+    ? { food_id: f.id }
+    : f.source === "fatsecret"
+      ? { fatsecret_id: f.sourceId }
+      : { fdc_id: f.sourceId };
+  return {
+    kind,
+    ...ids,
+    name: f.history?.names?.[0] ?? f.name,
+    ...(f.history?.names?.[0] && f.history.names[0] !== f.name
+      ? { food_name: f.name }
+      : {}),
+    brand: f.brand ?? null,
+    source: local ? f.source : (f.source ?? "usda"),
+    kcal_100g: per100(f.nutrients, "ENERC_KCAL"),
+    protein_100g: per100(f.nutrients, "PROCNT"),
+    fat_100g: per100(f.nutrients, "FAT"),
+    carbs_100g: per100(f.nutrients, "CHOCDF"),
+    serving: portionOf(f),
+    ...(f.history
+      ? {
+          times_eaten: f.history.times,
+          last_eaten: f.history.last_at?.slice(0, 10),
+        }
+      : {}),
+  };
+}
+
+/**
+ * search_foods, for agents: the user's favorites, then foods they've eaten, then their own foods and
+ * recipes, then the shared cache, then USDA and FatSecret alternated. Compact rows, `limit` in all.
+ */
+async function searchFoods(api: Api, query: string, limit: number) {
+  const words = query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((w) => w.length > 1);
+  const [r, favs] = await Promise.all([
+    api("GET", `/foods?q=${encodeURIComponent(query)}`) as Promise<Rec>,
+    api("GET", "/foods/favorites") as Promise<Rec[]>,
+  ]);
+  const rows: Rec[] = [];
+  const seen = new Set<string>();
+  const push = (row: Rec) => {
+    // A favorite is a portion of a food; the food itself can still be listed.
+    const key = row.favorite_id
+      ? `fav:${row.favorite_id}`
+      : (row.food_id ??
+        (row.fdc_id ? `usda:${row.fdc_id}` : `fs:${row.fatsecret_id}`));
+    if (seen.has(key) || rows.length >= limit) return;
+    seen.add(key);
+    rows.push(row);
+  };
+  for (const f of favs.filter((f) =>
+    words.every((w) => f.name.toLowerCase().includes(w)),
+  ))
+    push({
+      kind: "favorite",
+      favorite_id: f.id,
+      food_id: f.food_id,
+      name: f.name,
+      amount: f.amount,
+      unit: f.unit,
+      grams: f.grams,
+      kcal: f.kcal,
+    });
+  for (const f of r.history ?? []) push(searchRow(f, "eaten before"));
+  const local: Rec[] = r.local ?? [];
+  for (const f of local.filter((f) => f.owner_user_id))
+    push(searchRow(f, f.source === "recipe" ? "your recipe" : "your food"));
+  for (const f of local.filter((f) => !f.owner_user_id))
+    push(searchRow(f, "logged before"));
+  const usda: Rec[] = r.usda ?? [];
+  const fs: Rec[] = r.fatsecret ?? [];
+  for (let i = 0; i < Math.max(usda.length, fs.length); i++) {
+    const u = usda[i];
+    if (u) push(searchRow(u, "database"));
+    const f = fs[i];
+    if (f) push(searchRow(f, "database"));
+  }
+  return {
+    query,
+    results: rows,
+    note: "Nutrients are per 100 g. Log a row with log_food (its food_id, fdc_id or fatsecret_id), or log_favorite for a favorite.",
+    ...(r.usda_error ? { usda_error: r.usda_error } : {}),
+  };
+}
+
 const ok = (data: unknown) => ({
   content: [{ type: "text" as const, text: JSON.stringify(data, null, 1) }],
 });
@@ -323,12 +432,137 @@ export function buildServer(api: Api, appUrl = ""): McpServer {
     {
       title: "Search foods",
       description:
-        'Search the user’s history (foods they’ve eaten, by meaning: "those chicken meatballs I like"), their own foods and recipes, USDA and FatSecret. Nutrients are per 100 g. Use the ids with log_food or edit_item.',
-      inputSchema: z.object({ query: z.string().min(2) }),
+        "Find foods to log. Returns up to `limit` compact rows, best first: the user's favorites (saved portions), foods they've eaten (by meaning: \"those chicken meatballs I like\"), their own foods and recipes, then USDA and FatSecret. Each row has the id to log it with log_food, per-100 g kcal, protein, fat and carbs, and its serving size.",
+      inputSchema: z.object({
+        query: z.string().min(2),
+        limit: z.number().int().min(1).max(25).default(10),
+      }),
       annotations: read,
     },
-    async ({ query }) =>
-      run(() => api("GET", `/foods?q=${encodeURIComponent(query)}`)),
+    async ({ query, limit }) => run(() => searchFoods(api, query, limit)),
+  );
+
+  // ---- favorites: saved portions, one call to log ----
+  server.registerTool(
+    "list_favorites",
+    {
+      title: "Favorites",
+      description:
+        'The user\'s favorites: foods saved with the amount they eat ("usual nuts" = 1 oz almonds), with grams and kcal for that amount. Log one with log_favorite.',
+      annotations: read,
+    },
+    async () => run(() => api("GET", "/foods/favorites")),
+  );
+  server.registerTool(
+    "save_favorite",
+    {
+      title: "Save a favorite portion",
+      description:
+        'Save a food with a fixed amount under a name ("usual nuts", 1 oz almonds), so it logs in one call with the same amount every time. Use any id from search_foods. Saving an existing name replaces it.',
+      inputSchema: z.object({
+        name: z.string().min(1).max(200),
+        food_id: z.string().optional(),
+        fdc_id: z.string().optional(),
+        fatsecret_id: z.string().optional(),
+        amount: z.number().positive(),
+        unit: z
+          .string()
+          .describe(
+            "g, ml, oz, cup, tbsp, piece, serving, or a portion unit the food lists",
+          ),
+      }),
+      annotations: write,
+    },
+    async (a) =>
+      run(async () => {
+        let foodId = a.food_id;
+        if (!foodId && a.fdc_id)
+          foodId = (
+            (await api(
+              "GET",
+              `/foods/fdc/${encodeURIComponent(a.fdc_id)}`,
+            )) as Rec
+          ).id;
+        if (!foodId && a.fatsecret_id)
+          foodId = (
+            (await api(
+              "GET",
+              `/foods/fatsecret/${encodeURIComponent(a.fatsecret_id)}`,
+            )) as Rec
+          ).id;
+        if (!foodId) throw new Error("give food_id, fdc_id or fatsecret_id");
+        return api("POST", "/foods/favorites", {
+          name: a.name,
+          food_id: foodId,
+          amount: a.amount,
+          unit: a.unit,
+        });
+      }),
+  );
+  registerAppTool(
+    server,
+    "log_favorite",
+    {
+      title: "Log a favorite",
+      description:
+        'Log a saved favorite at its saved amount (by name, e.g. "usual nuts", or favorite_id). `times` logs a multiple of it (2 = two portions).',
+      inputSchema: z.object({
+        name: z.string().optional(),
+        favorite_id: z.string().optional(),
+        times: z.number().positive().default(1),
+        meal_type: mealType.optional(),
+        occurrence_at: z.string().optional(),
+        add_to_meal_id: z.string().optional(),
+      }),
+      annotations: write,
+      _meta: CARD_META,
+    },
+    async (a) =>
+      meal(async () => {
+        const favs = (await api("GET", "/foods/favorites")) as Rec[];
+        const want = a.name?.trim().toLowerCase();
+        const fav =
+          favs.find((f) => f.id === a.favorite_id) ??
+          (want
+            ? (favs.find((f) => f.name.toLowerCase() === want) ??
+              favs.find((f) => f.name.toLowerCase().includes(want)))
+            : undefined);
+        if (!fav)
+          throw new Error(
+            `no favorite ${a.name ? `named "${a.name}"` : a.favorite_id}; saved: ${favs.map((f) => f.name).join(", ") || "none"}`,
+          );
+        const item = {
+          food_id: fav.food_id,
+          amount: Math.round(fav.amount * a.times * 1000) / 1000,
+          unit: fav.unit,
+          display_name: fav.name,
+        };
+        return api(
+          "POST",
+          "/intake",
+          a.add_to_meal_id
+            ? { append_to: a.add_to_meal_id, items: [item] }
+            : {
+                meal_type: a.meal_type,
+                merge: true,
+                ...(a.occurrence_at ? { occurrence_at: a.occurrence_at } : {}),
+                items: [item],
+              },
+        );
+      }),
+  );
+  server.registerTool(
+    "remove_favorite",
+    {
+      title: "Remove a favorite",
+      description: "Delete a saved favorite (meals already logged keep it).",
+      inputSchema: z.object({ favorite_id: z.string() }),
+      annotations: destroy,
+    },
+    async ({ favorite_id }) =>
+      run(() =>
+        api("DELETE", `/foods/favorites/${encodeURIComponent(favorite_id)}`),
+      ),
   );
   server.registerTool(
     "edit_item",

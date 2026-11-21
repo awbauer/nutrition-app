@@ -37,7 +37,7 @@ export interface MatchRequest {
   menu_item?: boolean;
 }
 
-export type Via = 'alias' | 'custom' | 'history' | 'cache' | 'barcode' | 'label' | 'usda' | 'fatsecret' | 'off' | 'estimate';
+export type Via = 'alias' | 'favorite' | 'custom' | 'history' | 'cache' | 'barcode' | 'label' | 'usda' | 'fatsecret' | 'off' | 'estimate';
 
 /** Grams in one labelled serving, when the serving is given in a unit we can convert. */
 export function labelServingGrams(l: LabelFacts): number | null {

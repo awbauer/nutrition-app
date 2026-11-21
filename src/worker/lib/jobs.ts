@@ -11,6 +11,7 @@ import { HttpError } from './ids';
 import type { MealType } from './intake';
 import { mergeDraft, resolveTarget, type MergeSpec } from './merge';
 import { buildPending, finishDraft, materialise } from './pipeline';
+import { listFavorites } from './favorites';
 import { recipeNames, saveRecipe } from './recipes';
 import { getSettings, type Settings } from './settings';
 
@@ -77,7 +78,8 @@ export async function processIntake(env: Env, msg: JobMessage, final: boolean): 
     let out: ModelOutput;
     let model: string;
     let rawText = row.raw_input_text;
-    const ctx = { recipes: await recipeNames(env.DB, user.id), batch: !!state.job.recipe };
+    const [recipes, favorites] = await Promise.all([recipeNames(env.DB, user.id), listFavorites(env.DB, user.id)]);
+    const ctx = { recipes, batch: !!state.job.recipe, favorites: favorites.map((f) => ({ name: f.name, portion: `${f.amount} ${f.unit}, ${f.grams} g` })) };
 
     if (row.source === 'photo') {
       const photos = await loadPhotos(env, msg.intakeId);

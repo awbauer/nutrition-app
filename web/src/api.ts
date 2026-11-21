@@ -125,7 +125,7 @@ export interface MatchCandidate {
 
 export interface MatchInfo {
   query: string;
-  via: 'alias' | 'custom' | 'history' | 'cache' | 'barcode' | 'label' | 'usda' | 'fatsecret' | 'off' | 'estimate';
+  via: 'alias' | 'favorite' | 'custom' | 'history' | 'cache' | 'barcode' | 'label' | 'usda' | 'fatsecret' | 'off' | 'estimate';
   estimate_kcal_100g: number | null;
   candidates: MatchCandidate[];
   chosen: string | null;

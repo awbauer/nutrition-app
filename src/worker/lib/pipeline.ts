@@ -7,6 +7,7 @@ import { PIPELINE_VERSION, PROMPT_VERSION, type ModelOutput, type QuestionEffect
 import { getFood, type FoodRecord } from './foods';
 import { HttpError, nowIso } from './ids';
 import { itemStatements, refreshConfidence, type EstimationMethod, type MealType, type ResolvedItem } from './intake';
+import { applyFavorites, favoriteMatch } from './favorites';
 import { ESTIMATE_CONFIDENCE_CAP, matchFood, type MatchInfo } from './matcher';
 import { mergeDraft, resolveTarget, type MergeSpec } from './merge';
 import type { Settings } from './settings';
@@ -56,9 +57,13 @@ export const SKIP_PENALTY = 0.15;
 /** Resolve model items and question effects against food databases, then pick which questions to ask. */
 export async function buildPending(env: Env, user: User, out: ModelOutput, settings: Settings, method: EstimationMethod): Promise<Pending> {
   const foods = new Map<string, FoodRecord>();
+  // A favorite named by the user logs as its saved food at its saved portion (times the count given).
+  out = { ...out, items: await applyFavorites(env.DB, user.id, out.items) };
   // Match every item (and every add-on in question options) in parallel; these are independent lookups.
   // Printed label values only exist in photos; from text or voice they'd be the model's memory.
-  const matches = await Promise.all(out.items.map((it) => matchFood(env, user.id, method === 'photo-estimate' ? it : { ...it, label: null })));
+  const matches = await Promise.all(
+    out.items.map((it) => (it.favorite ? favoriteMatch(it.favorite) : matchFood(env, user.id, method === 'photo-estimate' ? it : { ...it, label: null }))),
+  );
   const base: BaseItem[] = out.items.map((it, i) => {
     const m = matches[i]!;
     foods.set(m.food.id, m.food);
