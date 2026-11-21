@@ -53,9 +53,11 @@ export async function resolveRef(env: Env, user: User, ref: ItemRef): Promise<Fo
   throw new HttpError(400, 'item needs food_id, fdc_id or fatsecret_id');
 }
 
-export function validAmount(ref: { amount: unknown; unit: unknown }): void {
+export function validAmount(ref: { amount: unknown; unit: unknown; grams?: unknown }): void {
   if (typeof ref.amount !== 'number' || !(ref.amount > 0) || ref.amount > 100000) throw new HttpError(400, 'amount must be a positive number');
   if (typeof ref.unit !== 'string' || !ref.unit.trim()) throw new HttpError(400, 'unit is required');
+  // Explicit grams override the conversion, so they need the same checks (negative grams made negative kcal).
+  if (ref.grams != null && (typeof ref.grams !== 'number' || !(ref.grams > 0) || ref.grams > 100000)) throw new HttpError(400, 'grams must be a positive number');
 }
 
 /** Statements inserting one consumed_item and its nutrient totals. */

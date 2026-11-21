@@ -133,7 +133,7 @@ items.patch('/:id', async (c) => {
   if (!food) throw new HttpError(400, 'item has no food; supply food_id, fdc_id or fatsecret_id');
   const amount = body.amount ?? row.amount_value;
   const unit = body.unit ?? row.amount_unit;
-  validAmount({ amount, unit });
+  validAmount({ amount, unit, grams: body.grams });
   const amountChanged = body.amount !== undefined || body.unit !== undefined;
   // Same household unit, new count, and the saved weight came from the AI's estimate rather than the
   // generic size table: keep its weight per unit ("2 small" bananas = 2 × its 80 g, not 2 × 100 g).
