@@ -16,12 +16,18 @@ const MASS: Record<string, number> = { g: 1, kg: 1000, mg: 0.001, oz: 28.3495, l
 // so a food's grams per cup (CUP_GRAMS, its own portions) scales cleanly to every other measure.
 const VOLUME_ML: Record<string, number> = {
   ml: 1,
+  cl: 10,
+  dl: 100,
   l: 1000,
   'fl oz': 29.5735,
   floz: 29.5735,
   cup: 240,
   tbsp: 15,
   tsp: 5,
+  // US liquid measures.
+  pint: 473.176,
+  quart: 946.353,
+  gallon: 3785.41,
 };
 const CUP_ML = VOLUME_ML.cup!;
 /** A bowl, when the food's grams per cup are known: about a cup and a half (cereal, soup, rice). */
@@ -197,6 +203,16 @@ const ALIASES: Record<string, string> = {
   teaspoons: 'tsp',
   'fluid ounce': 'fl oz',
   'fluid ounces': 'fl oz',
+  centiliter: 'cl',
+  centilitre: 'cl',
+  deciliter: 'dl',
+  decilitre: 'dl',
+  pt: 'pint',
+  pints: 'pint',
+  qt: 'quart',
+  quarts: 'quart',
+  gal: 'gallon',
+  gallons: 'gallon',
   slices: 'slice',
   pieces: 'piece',
   pc: 'piece',
@@ -236,11 +252,18 @@ const ALIASES: Record<string, string> = {
   '[tbs_us]': 'tbsp',
   '[tsp_us]': 'tsp',
   '[foz_us]': 'fl oz',
+  '[pt_us]': 'pint',
+  '[qt_us]': 'quart',
+  '[gal_us]': 'gallon',
 };
+
+/** "fl oz", "fl. oz", "fl.oz.", "floz", "fluid ounce(s)": every way people write it. */
+const FL_OZ = /^(?:fl\.?\s*oz\.?|fluid\s+ounces?)$/i;
 
 const KNOWN = new Set([...Object.keys(MASS), ...Object.keys(VOLUME_ML), ...Object.keys(GENERIC_GRAMS)]);
 
 export function normaliseUnit(unit: string): string {
+  if (FL_OZ.test(unit.trim())) return 'fl oz';
   const u = unit.trim().toLowerCase().replace(/\.$/, '');
   const alias = ALIASES[u] ?? ALIASES[unit.trim()];
   if (alias || KNOWN.has(u)) return alias ?? u;
@@ -255,7 +278,9 @@ export function normaliseUnit(unit: string): string {
 export function parsePortionText(text: string): { amount: number; unit: string } {
   const m = /^\s*(\d+\s+\d\/\d|\d+(?:[./]\d+)?)?\s*(.*)$/.exec(text) ?? [];
   const num = m[1] ? evalFraction(m[1]) : 1;
-  const unitWord = (m[2] ?? '').split(/[ ,(]/)[0] ?? '';
+  // The one two-word unit: "8 fl oz (240 ml)" is fluid ounces, not 8 "fl".
+  const flOz = /^(fl\.?\s*oz\.?|fluid\s+ounces?)(?=$|[\s,(])/i.exec(m[2] ?? '');
+  const unitWord = flOz ? flOz[1]! : ((m[2] ?? '').split(/[ ,(]/)[0] ?? '');
   return { amount: num || 1, unit: normaliseUnit(unitWord || 'serving') };
 }
 
@@ -353,6 +378,8 @@ export function toGrams(amount: number, rawUnit: string, food?: FoodForGrams): C
 export function ucum(rawUnit: string): string {
   const u = normaliseUnit(rawUnit);
   if (u === 'ml') return 'mL';
+  if (u === 'cl') return 'cL';
+  if (u === 'dl') return 'dL';
   if (u === 'l') return 'L';
   if (u === 'fl oz') return '[foz_us]';
   if (u === 'oz') return '[oz_av]';
@@ -360,6 +387,9 @@ export function ucum(rawUnit: string): string {
   if (u === 'cup') return '[cup_us]';
   if (u === 'tbsp') return '[tbs_us]';
   if (u === 'tsp') return '[tsp_us]';
+  if (u === 'pint') return '[pt_us]';
+  if (u === 'quart') return '[qt_us]';
+  if (u === 'gallon') return '[gal_us]';
   return u;
 }
 
@@ -395,6 +425,11 @@ export const SIZE_LABEL: Record<string, string> = {
   shot: 'Shot',
   serving: 'Serving',
   l: 'Litre',
+  dl: 'dl',
+  cl: 'cl',
+  pint: 'Pint',
+  quart: 'Quart',
+  gallon: 'Gallon',
   kg: 'kg',
   lb: 'lb',
 };
@@ -874,6 +909,20 @@ export function sizesFor(food: FoodLike): { kind: FoodKind; exact: string[]; siz
 
 /** Stored UCUM unit back to the editor's unit name. */
 export function fromUcum(u: string): string {
-  const map: Record<string, string> = { '[cup_us]': 'cup', '[tbs_us]': 'tbsp', '[tsp_us]': 'tsp', '[oz_av]': 'oz', '[lb_av]': 'lb', '[foz_us]': 'fl oz', mL: 'ml', L: 'l' };
+  const map: Record<string, string> = {
+    '[cup_us]': 'cup',
+    '[tbs_us]': 'tbsp',
+    '[tsp_us]': 'tsp',
+    '[oz_av]': 'oz',
+    '[lb_av]': 'lb',
+    '[foz_us]': 'fl oz',
+    '[pt_us]': 'pint',
+    '[qt_us]': 'quart',
+    '[gal_us]': 'gallon',
+    mL: 'ml',
+    cL: 'cl',
+    dL: 'dl',
+    L: 'l',
+  };
   return map[u] ?? normaliseUnit(u);
 }

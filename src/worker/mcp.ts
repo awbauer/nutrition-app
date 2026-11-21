@@ -360,7 +360,7 @@ export function buildServer(api: Api, appUrl = ''): McpServer {
     {
       title: 'Log a specific food',
       description:
-        'Log an exact food from search_foods (food_id for the user’s own/cached foods, fdc_id for USDA, fatsecret_id for FatSecret) with an amount. Units: g, ml, oz, cup, tbsp, tsp, piece, slice, serving, or a portion unit the food lists.',
+        'Log an exact food from search_foods (food_id for the user’s own/cached foods, fdc_id for USDA, fatsecret_id for FatSecret) with an amount. Units: g, ml, oz, fl oz, cup, tbsp, tsp, pint, quart, piece, slice, serving, or a portion unit the food lists.',
       inputSchema: z.object({
         food_id: z.string().optional(),
         fdc_id: z.string().optional(),
@@ -435,7 +435,7 @@ export function buildServer(api: Api, appUrl = ''): McpServer {
         fdc_id: z.string().optional(),
         fatsecret_id: z.string().optional(),
         amount: z.number().positive(),
-        unit: z.string().describe('g, ml, oz, cup, tbsp, piece, serving, or a portion unit the food lists'),
+        unit: z.string().describe('g, ml, oz, fl oz, cup, tbsp, pint, piece, serving, or a portion unit the food lists'),
       }),
       annotations: write,
     },

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cupWeight, toGrams } from '../src/worker/lib/units';
+import { cupWeight, fromUcum, normaliseUnit, parsePortionText, toGrams, ucum } from '../src/worker/lib/units';
 import { api } from './helpers';
 
 describe('cups of foods lighter or heavier than water', () => {
@@ -47,6 +47,38 @@ describe('cups of foods lighter or heavier than water', () => {
   });
 });
 
+describe('US liquid measures and metric volumes', () => {
+  it('converts pints, quarts, gallons, cl and dl', () => {
+    expect(toGrams(1, 'pint').grams).toBeCloseTo(473.2, 1);
+    expect(toGrams(2, 'pints').grams).toBeCloseTo(946.4, 1);
+    expect(toGrams(1, 'qt').grams).toBeCloseTo(946.4, 1);
+    expect(toGrams(1, 'quart').grams).toBeCloseTo(946.4, 1);
+    expect(toGrams(0.5, 'gallon').grams).toBeCloseTo(1892.7, 1);
+    expect(toGrams(1, 'gal').grams).toBeCloseTo(3785.4, 1);
+    expect(toGrams(33, 'cl').grams).toBe(330);
+    expect(toGrams(2, 'dl').grams).toBe(200);
+    expect(toGrams(5, 'centilitres').grams).toBe(50);
+    // Through the same density logic: a pint of ice cream isn't a pint of water.
+    expect(toGrams(1, 'pint', { name: 'Ice cream, vanilla' }).grams).toBeCloseTo(260.2, 1);
+  });
+
+  it('parses every spelling of fluid ounces', () => {
+    for (const u of ['fl oz', 'fl. oz', 'fl.oz', 'fl.oz.', 'Fl. Oz.', 'floz', 'fluid ounce', 'fluid ounces']) expect(normaliseUnit(u), u).toBe('fl oz');
+    expect(toGrams(8, 'fl. oz').grams).toBeCloseTo(236.6, 1);
+    expect(parsePortionText('8 fl oz (240 ml)')).toEqual({ amount: 8, unit: 'fl oz' });
+    expect(parsePortionText('12 fl. oz')).toEqual({ amount: 12, unit: 'fl oz' });
+    // A labelled serving in fluid ounces is a volume portion for the other measures.
+    const drink = { portions: [{ label: '8 fl oz (240ml)', unit: 'serving', amount: 1, grams: 248 }] };
+    expect(toGrams(16, 'fl oz', drink).grams).toBe(496);
+  });
+
+  it('stores and reads back the new units', () => {
+    for (const u of ['pint', 'quart', 'gallon', 'cl', 'dl']) expect(fromUcum(ucum(u))).toBe(u);
+    expect(ucum('pints')).toBe('[pt_us]');
+    expect(ucum('dl')).toBe('dL');
+  });
+});
+
 describe('logging a cup of a light food', () => {
   it('weighs it from the cup table, marks it as an estimate and explains it in Food details', async () => {
     const E = { DEV_USER_EMAIL: 'cups@example.test' };
@@ -65,7 +97,8 @@ describe('logging a cup of a light food', () => {
     expect(weighed.data.items[0]).toMatchObject({ grams: 100, confidence: 1 });
     // Milk by the cup is a plain volume: no cap.
     const milk = await api('/foods', { method: 'POST', json: { name: 'Milk test', per_100g: { ENERC_KCAL: 61 } } }, E);
-    const glass = await api('/intake', { method: 'POST', json: { items: [{ food_id: milk.data.id, amount: 2, unit: 'cup' }] } }, E);
-    expect(glass.data.items[0]).toMatchObject({ amount_unit: '[cup_us]', grams: 480, confidence: 1 });
+    const glass = await api('/intake', { method: 'POST', json: { items: [{ food_id: milk.data.id, amount: 1, unit: 'pint' }] } }, E);
+    expect(glass.data.items[0]).toMatchObject({ amount_unit: '[pt_us]', confidence: 1 });
+    expect(glass.data.items[0].grams).toBeCloseTo(473.2, 1);
   });
 });
