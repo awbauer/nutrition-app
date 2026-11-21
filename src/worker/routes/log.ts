@@ -27,6 +27,8 @@ const EXT: Record<string, string> = {
   'audio/wav': 'wav',
 };
 
+const mimeOf = (file: File, fallback: string) => (file.type || fallback).split(';')[0]!.trim().toLowerCase();
+
 /**
  * POST /api/intake with multipart form: one or more `photo` fields (up to MAX_PHOTOS, read together as one meal),
  * or audio, or text; plus meal_type?, occurrence_at?, note?. With photos, text is a hint for the model.
@@ -54,11 +56,15 @@ export async function createFromMedia(c: Context<AppEnv>): Promise<Response> {
     if (photos.length > MAX_PHOTOS) throw new HttpError(413, `up to ${MAX_PHOTOS} photos per meal`);
     for (const p of photos) {
       if (p.size > MAX_PHOTO) throw new HttpError(413, 'photo is too large (max 8 MB)');
-      if (!(p.type || 'image/jpeg').startsWith('image/')) throw new HttpError(415, 'photo must be an image');
+      // Only the formats we store and serve back: an SVG (also image/*) can carry script.
+      const mime = mimeOf(p, 'image/jpeg');
+      if (!mime.startsWith('image/') || !EXT[mime]) throw new HttpError(415, 'photo must be a JPEG, PNG, WebP or HEIC image');
     }
     source = 'photo';
   } else if (audio instanceof File) {
     if (audio.size > MAX_AUDIO) throw new HttpError(413, 'audio is too large (max 10 MB)');
+    const mime = mimeOf(audio, 'audio/mp4');
+    if (!mime.startsWith('audio/') || !EXT[mime]) throw new HttpError(415, 'unsupported audio format');
     source = 'voice';
     clip = audio;
   } else if (text) {
@@ -68,7 +74,7 @@ export async function createFromMedia(c: Context<AppEnv>): Promise<Response> {
   }
 
   const store = async (file: File, fallbackMime: string) => {
-    const mime = (file.type || fallbackMime).split(';')[0]!;
+    const mime = mimeOf(file, fallbackMime);
     const key = `media/${user.id}/${newId()}.${EXT[mime] ?? 'bin'}`;
     await c.env.MEDIA.put(key, await file.arrayBuffer(), { httpMetadata: { contentType: mime } });
     return key;
@@ -195,9 +201,12 @@ export async function photo(c: Context<AppEnv>): Promise<Response> {
 async function serve(c: Context<AppEnv>, key: string | null | undefined): Promise<Response> {
   const obj = key ? await c.env.MEDIA.get(key) : null;
   if (!obj) throw new HttpError(404, 'no media');
+  const type = obj.httpMetadata?.contentType ?? '';
   return new Response(obj.body, {
     headers: {
-      'Content-Type': obj.httpMetadata?.contentType ?? 'application/octet-stream',
+      // Never a type outside the allowlist (older uploads kept whatever the client sent), and never sniffed.
+      'Content-Type': EXT[type] ? type : 'application/octet-stream',
+      'X-Content-Type-Options': 'nosniff',
       'Cache-Control': 'private, max-age=86400',
     },
   });

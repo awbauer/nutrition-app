@@ -153,6 +153,53 @@ describe('AI job and answers run once', () => {
   });
 });
 
+describe('meal media', () => {
+  it('accepts only stored image formats, serves them unsniffed and only to the owner', async () => {
+    const E = U('qa-media@example.test');
+    const svg = new FormData();
+    svg.append('photo', new File(['<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'], 'x.svg', { type: 'image/svg+xml' }));
+    expect((await api('/intake', { method: 'POST', body: svg }, E)).status).toBe(415);
+
+    const ok = new FormData();
+    ok.append('photo', new File([new Uint8Array([0xff, 0xd8, 0xff])], 'a.jpg', { type: 'image/jpeg' }));
+    const sent: unknown[] = [];
+    const r = await api('/intake', { method: 'POST', body: ok }, { ...E, JOBS: { send: async (m: unknown) => void sent.push(m) } as unknown as Queue });
+    expect(r.status).toBe(202);
+    const img = await api(`/intake/${r.data.id}/photos/0`, {}, E);
+    expect(img.status).toBe(200);
+    expect(img.res.headers.get('Content-Type')).toBe('image/jpeg');
+    expect(img.res.headers.get('X-Content-Type-Options')).toBe('nosniff');
+    // Another user can't see the meal, its photo or its media, or change it.
+    const B = U('qa-media-other@example.test');
+    expect((await api(`/intake/${r.data.id}/photos/0`, {}, B)).status).toBe(404);
+    expect((await api(`/intake/${r.data.id}/media`, {}, B)).status).toBe(404);
+    expect((await api(`/intake/${r.data.id}`, {}, B)).status).toBe(404);
+    expect((await api(`/intake/${r.data.id}/history`, {}, B)).status).toBe(404);
+    expect((await api(`/intake/${r.data.id}`, { method: 'PATCH', json: { note: 'x' } }, B)).status).toBe(404);
+    expect((await api(`/intake/${r.data.id}`, { method: 'DELETE' }, B)).status).toBe(404);
+    expect((await api(`/intake/${r.data.id}/retry`, { method: 'POST' }, B)).status).toBe(404);
+    expect((await api(`/intake/${r.data.id}/copy`, { method: 'POST', json: {} }, B)).status).toBe(404);
+  });
+
+  it('keeps items and foods private to their owner', async () => {
+    const A = U('qa-owner-a@example.test');
+    const B = U('qa-owner-b@example.test');
+    const fid = await food(A);
+    const m = await api('/intake', { method: 'POST', json: { items: [{ food_id: fid, amount: 1, unit: 'serving' }] } }, A);
+    const itemId = m.data.items[0].id;
+    expect((await api(`/item/${itemId}`, {}, B)).status).toBe(404);
+    expect((await api(`/item/${itemId}`, { method: 'DELETE' }, B)).status).toBe(404);
+    expect((await api(`/item/${itemId}/search?q=bar`, {}, B)).status).toBe(404);
+    expect((await api(`/foods/${fid}`, {}, B)).status).toBe(404);
+    // B can't log A's custom food, or add to A's meal.
+    expect((await api('/intake', { method: 'POST', json: { items: [{ food_id: fid, amount: 1, unit: 'serving' }] } }, B)).status).toBe(404);
+    const bf = await food(B);
+    expect((await api(`/intake/${m.data.id}/items`, { method: 'POST', json: { food_id: bf, amount: 1, unit: 'serving' } }, B)).status).toBe(404);
+    expect((await api('/intake', { method: 'POST', json: { append_to: m.data.id, items: [{ food_id: bf, amount: 1, unit: 'serving' }] } }, B)).status).toBe(404);
+    expect((await api(`/intake/${m.data.id}`, {}, A)).data.items).toHaveLength(1);
+  });
+});
+
 describe('food cache', () => {
   it('caches the same new food twice at once without failing', async () => {
     const f = { source: 'estimate' as const, sourceId: `qa-race-${Date.now()}`, name: 'Race food', brand: null, dataType: null, category: null, defaultServingGrams: null, portions: [], nutrients: [{ code: 'ENERC_KCAL', usdaId: 1008, value: 100, unit: 'kcal' }] };
