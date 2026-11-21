@@ -74,11 +74,20 @@ function dismiss(id: string, byUser = true): void {
 
 const text = (m: unknown) => (m instanceof Error ? m.message : String(m));
 
+/** fetch() failing for want of a connection ("Failed to fetch", Safari's "Load failed"), not an answer from the server. */
+const isOffline = (m: unknown) => m instanceof TypeError && /failed to fetch|load failed|networkerror|network connection/i.test(m.message);
+const OFFLINE_ID = 'offline';
+// Every screen's failed request while offline shares one message, gone once the connection is back.
+if (typeof addEventListener === 'function') addEventListener('online', () => dismiss(OFFLINE_ID, false));
+
 export const toast = {
   show,
   dismiss,
   info: (m: string, o: Partial<Toast> = {}) => show({ ...o, message: m, tone: 'info' }),
   success: (m: string, o: Partial<Toast> = {}) => show({ ...o, message: m, tone: 'success' }),
-  error: (m: unknown, o: Partial<Toast> = {}) => show({ ...o, message: text(m), tone: 'error' }),
+  error: (m: unknown, o: Partial<Toast> = {}) =>
+    isOffline(m)
+      ? show({ id: OFFLINE_ID, message: "You're offline. This will update when you're back online.", tone: 'error', sticky: true, dismissible: true })
+      : show({ ...o, message: text(m), tone: 'error' }),
   progress: (m: string, o: Partial<Toast> = {}) => show({ ...o, message: m, tone: 'progress', sticky: true }),
 };
