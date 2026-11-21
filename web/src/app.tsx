@@ -5,7 +5,7 @@ import { isIOS, isStandalone } from './push';
 import { applyUpdate, onUpdateAvailable } from './update';
 import { toast } from './toast';
 import { useRefreshOnReturn } from './refresh';
-import { logToday } from './format';
+import { logToday } from './today';
 import { Toaster } from './components/Toaster';
 import { SettingsView } from './components/SettingsView';
 import { Today } from './components/Today';

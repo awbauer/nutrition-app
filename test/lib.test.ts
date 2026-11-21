@@ -5,7 +5,7 @@ import { countUnit, EXACT_UNITS, foodKind, normaliseUnit, sizesFor, toGrams, ucu
 import { normaliseDetailFood, parsePortionText } from '../src/worker/lib/usda';
 import { normaliseOff } from '../src/worker/lib/off';
 import { chickenDetail, foundationEgg } from './fixtures/usda';
-import { logToday } from '../web/src/format';
+import { logToday } from '../web/src/today';
 
 describe('day boundary', () => {
   it('counts meals before the cutoff toward the previous day', () => {
