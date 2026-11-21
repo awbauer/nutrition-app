@@ -214,6 +214,21 @@ describe('stored units', () => {
   });
 });
 
+describe('errors', () => {
+  it('answers 400 only for a bad request body, not for corrupt stored JSON', async () => {
+    const E = U('qa-errors@example.test');
+    const fid = await food(E);
+    const m = await api('/intake', { method: 'POST', json: { items: [{ food_id: fid, amount: 1, unit: 'serving' }] } }, E);
+    const bad = await api(`/intake/${m.data.id}`, { method: 'PATCH', body: '{nope', headers: { 'Content-Type': 'application/json' } }, E);
+    expect(bad.status).toBe(400);
+    expect(bad.data.error).toBe('invalid JSON body');
+    await testEnv.DB.prepare("UPDATE nutrition_intake SET status = 'preparation', pending_json = '{broken' WHERE id = ?").bind(m.data.id).run();
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect((await api(`/intake/${m.data.id}/retry`, { method: 'POST' }, E)).status).toBe(500);
+    expect(spy).toHaveBeenCalled();
+  });
+});
+
 describe('food cache', () => {
   it('caches the same new food twice at once without failing', async () => {
     const f = { source: 'estimate' as const, sourceId: `qa-race-${Date.now()}`, name: 'Race food', brand: null, dataType: null, category: null, defaultServingGrams: null, portions: [], nutrients: [{ code: 'ENERC_KCAL', usdaId: 1008, value: 100, unit: 'kcal' }] };
