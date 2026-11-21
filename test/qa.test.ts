@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { api, json, mockFetch } from './helpers';
+import { failStaleJobs } from '../src/worker/lib/jobs';
+import { finishDraft } from '../src/worker/lib/pipeline';
+import { api, json, mockFetch, testEnv } from './helpers';
 import { DETAILS, searchResults } from './fixtures/usda';
 
 beforeEach(() => {
@@ -96,6 +98,57 @@ describe('a draft waiting on answers', () => {
     // Marking it as an error and back is still allowed.
     expect((await api(`/intake/${m.data.id}`, { method: 'PATCH', json: { status: 'entered-in-error' } }, E)).status).toBe(200);
     expect((await api(`/intake/${m.data.id}`, { method: 'PATCH', json: { status: 'completed' } }, E)).status).toBe(200);
+  });
+});
+
+describe('AI job and answers run once', () => {
+  it('takes only the first of two simultaneous sets of answers', async () => {
+    const E = U('qa-twice@example.test');
+    const draft = await draftWithQuestion(E);
+    const [a, b] = await Promise.all([
+      api(`/intake/${draft.id}/answers`, { method: 'POST', json: { answers: { q1: 'Large' } } }, E),
+      api(`/intake/${draft.id}/answers`, { method: 'POST', json: { answers: { q1: 'Small' } } }, E),
+    ]);
+    expect([a.status, b.status].sort()).toEqual([200, 409]);
+    const winner = a.status === 200 ? a : b;
+    const now = await api(`/intake/${draft.id}`, {}, E);
+    expect(now.data.items).toHaveLength(1);
+    expect(now.data.items[0].grams).toBe(winner.data.items[0].grams);
+  });
+
+  it('does not let a late job run replace a finished meal', async () => {
+    const E = U('qa-late@example.test');
+    const draft = await draftWithQuestion(E);
+    const done = await api(`/intake/${draft.id}/answers`, { method: 'POST', json: { answers: { q1: 'Large' } } }, E);
+    const user = await testEnv.DB.prepare('SELECT id, access_sub, email, timezone FROM users WHERE email = ?').bind(E.DEV_USER_EMAIL).first<any>();
+    const pending = {
+      base: [{ name: 'late', food_id: done.data.items[0].food_id, via: 'search', amount: 5, unit: 'g', confidence: 1, method: 'described' as const, estimated: false }],
+      questions: [],
+    };
+    expect(await finishDraft(testEnv, user, draft.id, { model_id: 'm', raw_input_text: 'late' }, pending)).toBe(false);
+    const now = await api(`/intake/${draft.id}`, {}, E);
+    expect(now.data.status).toBe('completed');
+    expect(now.data.items.map((i: any) => i.grams)).toEqual([400]);
+  });
+
+  it('retries only a failed job, and fails jobs that died silently', async () => {
+    const E = U('qa-retry@example.test');
+    const f = new FormData();
+    f.append('text', 'chicken');
+    // A queue is bound: the job waits there, so the meal stays in preparation.
+    const sent: unknown[] = [];
+    const r = await api('/intake', { method: 'POST', body: f }, { ...E, JOBS: { send: async (m: unknown) => void sent.push(m) } as unknown as Queue });
+    expect(r.data.status).toBe('preparation');
+    expect((await api(`/intake/${r.data.id}/retry`, { method: 'POST' }, E)).status).toBe(409);
+
+    expect(await failStaleJobs(testEnv)).toBe(0);
+    await testEnv.DB.prepare("UPDATE nutrition_intake SET updated_at = '2020-01-01T00:00:00.000Z' WHERE id = ?").bind(r.data.id).run();
+    expect(await failStaleJobs(testEnv)).toBeGreaterThanOrEqual(1);
+    const failed = await api(`/intake/${r.data.id}`, {}, E);
+    expect(failed.data.pending.error).toMatch(/too long/);
+    const again = await api(`/intake/${r.data.id}/retry`, { method: 'POST' }, { ...E, AI: fakeAi(questionOutput) });
+    expect(again.status).toBe(202);
+    expect(again.data.status).toBe('in-progress');
   });
 });
 

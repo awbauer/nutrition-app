@@ -68,6 +68,14 @@ export function assertItemsEditable(status: string): void {
   if (status === 'preparation' || status === 'in-progress') throw new HttpError(409, 'finish this meal (answer its questions) before changing its items');
 }
 
+/**
+ * First statement of a batch that rebuilds a meal's items: aborts the whole batch (status would be
+ * NULL) unless the meal is still in `status`, so a second job run or a second set of answers that
+ * checked the status before the first finished can't replace items that were already settled.
+ */
+export const requireStatus = (db: D1Database, intakeId: string, status: Status) =>
+  db.prepare('UPDATE nutrition_intake SET status = CASE WHEN status = ? THEN status END WHERE id = ?').bind(status, intakeId);
+
 /** Statements inserting one consumed_item and its nutrient totals. */
 export function itemStatements(db: D1Database, userId: string, intakeId: string, item: ResolvedItem, position: number, id = newId()) {
   const grams = item.grams ?? toGrams(item.amount, item.unit, item.food).grams;

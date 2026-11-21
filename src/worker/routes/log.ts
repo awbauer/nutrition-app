@@ -150,8 +150,12 @@ export async function retry(c: Context<AppEnv>): Promise<Response> {
   if (!row) throw new HttpError(404, 'intake not found');
   if (row.status !== 'preparation') throw new HttpError(409, 'this meal is not waiting on the AI');
   const state = (row.pending_json ? JSON.parse(row.pending_json) : { job: { meal_explicit: false, hint: null } }) as JobState;
+  // Only a failed job: retrying one still running would run the AI twice on the same meal.
+  if (!state.error) throw new HttpError(409, 'this meal is still being read');
   const { error: _drop, ...rest } = state;
-  await c.env.DB.prepare('UPDATE nutrition_intake SET pending_json = ? WHERE id = ?').bind(JSON.stringify(rest), id).run();
+  await c.env.DB.prepare(`UPDATE nutrition_intake SET pending_json = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ? AND user_id = ?`)
+    .bind(JSON.stringify(rest), id, user.id)
+    .run();
   await enqueue(c.env, { intakeId: id, userId: user.id }, waitUntil(c));
   return c.json(await currentView(c.env.DB, user.id, id), 202);
 }

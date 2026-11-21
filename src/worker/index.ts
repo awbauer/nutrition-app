@@ -2,7 +2,7 @@ import { OAuthProvider } from '@cloudflare/workers-oauth-provider';
 import { app } from './app';
 import { mcpApiHandler } from './mcp';
 import type { Env } from './env';
-import { consume, type JobMessage } from './lib/jobs';
+import { consume, failStaleJobs, type JobMessage } from './lib/jobs';
 import { runDueReports } from './lib/coach';
 import { refreshHistory } from './lib/history';
 import { dispatchReminders } from './lib/reminders';
@@ -48,6 +48,13 @@ export default {
       dispatchReminders(env, new Date(controller.scheduledTime)).then((r) => {
         if (r.sent || r.skipped || r.removed) console.log('reminders', r);
       }),
+    );
+    // Meals whose AI job died without recording an error get one, so the app offers "Try again".
+    ctx.waitUntil(
+      failStaleJobs(env, new Date(controller.scheduledTime)).then(
+        (n) => n && console.log('stale intake jobs failed', n),
+        (e) => console.error('stale intake jobs check failed', e),
+      ),
     );
     // Daily insights: each user's report for the day that just ended (after their day cutoff, 04:00 by default).
     ctx.waitUntil(

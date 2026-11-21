@@ -107,7 +107,8 @@ export async function processIntake(env: Env, msg: JobMessage, final: boolean): 
     const pending = await buildPending(env, user, out, settings, row.source === 'photo' ? 'photo-estimate' : 'described');
     const mealGuess: MealType | undefined = state.job.meal_explicit ? undefined : (out.meal_type_guess ?? undefined);
     pending.merge = state.job.merge ?? null;
-    await finishDraft(env, user, msg.intakeId, { model_id: model, raw_input_text: rawText, meal_type: mealGuess }, pending);
+    // Another run of this job finished first (a redelivered message, or a retry): leave its result alone.
+    if (!(await finishDraft(env, user, msg.intakeId, { model_id: model, raw_input_text: rawText, meal_type: mealGuess }, pending))) return 'skipped';
     // No questions: it's complete, so add it to the meal it belongs to now (meal type is final).
     if (!pending.questions.length) {
       const target = await resolveTarget(env, user.id, msg.intakeId, state.job.merge);
@@ -168,6 +169,26 @@ async function loadPhotos(env: Env, intakeId: string): Promise<PhotoInput[]> {
   const photos: PhotoInput[] = [];
   for (const obj of objs) if (obj) photos.push({ bytes: new Uint8Array(await obj.arrayBuffer()), mime: obj.httpMetadata?.contentType ?? 'image/jpeg' });
   return photos;
+}
+
+/** How long a meal may wait on the AI (queue retries included) before it's shown as failed. */
+export const STALE_JOB_MINUTES = 15;
+
+/**
+ * Meals still in `preparation` long after they were sent, with no error recorded: the job died before
+ * it could record one (worker evicted, last queue attempt lost). Record an error so the app offers
+ * "Try again" instead of "Reading" forever. Run from the cron.
+ */
+export async function failStaleJobs(env: Env, now = new Date()): Promise<number> {
+  const before = new Date(now.getTime() - STALE_JOB_MINUTES * 60_000).toISOString();
+  const r = await env.DB.prepare(
+    `UPDATE nutrition_intake SET pending_json = json_set(COALESCE(pending_json, '{"job":{"meal_explicit":false,"hint":null}}'), '$.error', ?),
+       updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+     WHERE status = 'preparation' AND json_extract(COALESCE(pending_json, '{}'), '$.error') IS NULL AND updated_at < ?`,
+  )
+    .bind('reading this meal took too long, try again', before)
+    .run();
+  return r.meta.changes ?? 0;
 }
 
 /** Queue consumer: one message per meal; retried by the queue, error recorded on the last attempt. */
