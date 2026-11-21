@@ -5,6 +5,7 @@ import { countUnit, EXACT_UNITS, foodKind, normaliseUnit, sizesFor, toGrams, ucu
 import { normaliseDetailFood, parsePortionText } from '../src/worker/lib/usda';
 import { normaliseOff } from '../src/worker/lib/off';
 import { chickenDetail, foundationEgg } from './fixtures/usda';
+import { logToday } from '../web/src/format';
 
 describe('day boundary', () => {
   it('counts meals before the cutoff toward the previous day', () => {
@@ -15,6 +16,17 @@ describe('day boundary', () => {
   it('honours a midnight cutoff and other zones', () => {
     expect(logDate('2026-11-15T07:30:00Z', 'America/New_York', '00:00')).toBe('2026-11-15');
     expect(logDate('2026-11-15T23:30:00Z', 'Asia/Tokyo', '04:00')).toBe('2026-11-16');
+  });
+  it('compares with the cutoff on the local clock on the days clocks change', () => {
+    const tz = 'America/New_York';
+    // 04:30 EDT on the spring-forward day is after the cutoff; 03:30 EST on the fall-back day is before it.
+    expect(logDate('2026-03-08T08:30:00Z', tz, '04:00')).toBe('2026-03-08');
+    expect(logDate('2026-11-01T08:30:00Z', tz, '04:00')).toBe('2026-10-31');
+    expect(logDate('2026-06-10T07:59:00Z', tz, '04:00')).toBe('2026-06-09');
+    expect(logDate('2026-06-10T08:00:00Z', tz, '04:00')).toBe('2026-06-10');
+    // The web app's "today" agrees with the server.
+    for (const iso of ['2026-03-08T08:30:00Z', '2026-11-01T08:30:00Z', '2026-06-10T07:59:00Z', '2026-06-10T08:00:00Z', '2026-06-10T04:30:00Z'])
+      expect(logToday(tz, '04:00', new Date(iso))).toBe(logDate(iso, tz, '04:00'));
   });
   it('local parts and helpers', () => {
     expect(localParts(new Date('2026-11-15T17:05:00Z'), 'America/Chicago')).toMatchObject({ date: '2026-11-15', time: '11:05', weekday: 0 });

@@ -5,6 +5,7 @@ import { isIOS, isStandalone } from './push';
 import { applyUpdate, onUpdateAvailable } from './update';
 import { toast } from './toast';
 import { useRefreshOnReturn } from './refresh';
+import { logToday } from './format';
 import { Toaster } from './components/Toaster';
 import { SettingsView } from './components/SettingsView';
 import { Today } from './components/Today';
@@ -29,13 +30,6 @@ const tabFromHash = (): Tab => {
 interface Me {
   timezone: string;
   settings: { day_cutoff: string; weight_unit: 'kg' | 'lb'; home_blocks?: HomeBlock[] };
-}
-
-/** Today's log date in the user's zone with the configured cutoff. */
-function logToday(tz: string, cutoff: string): string {
-  const [h, m] = cutoff.split(':').map(Number);
-  const shifted = new Date(Date.now() - ((h ?? 4) * 60 + (m ?? 0)) * 60000);
-  return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(shifted);
 }
 
 export function App() {
