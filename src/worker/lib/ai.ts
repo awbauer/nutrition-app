@@ -4,7 +4,7 @@
  */
 import type { Env } from '../env';
 
-export const PROMPT_VERSION = 'parse-v7';
+export const PROMPT_VERSION = 'parse-v8';
 export const PIPELINE_VERSION = '2.0';
 
 export interface QuestionEffect {
@@ -107,6 +107,22 @@ const RULES = `Rules:
   "menu_item": true, "amount": 1, "unit": "serving", "grams": 473, "search_terms": ["Starbucks Pistachio Cream Cold Brew"]}.
   Set "brand" to the chain even when the user doesn't name it, if the item is clearly that chain's. Its nutrition is
   looked up as that menu item.
+- Generic dishes that are made many different ways (an omelet, a sandwich or wrap someone made or ordered generically,
+  a salad, a breakfast plate, a stir-fry, a grain bowl, a burrito from an unnamed place) are logged as their components,
+  so each can be matched in the food database. Break them down with the typical way that kind of place makes them:
+  "diner omelet" -> 3 large eggs (unit "piece"), 1 tbsp butter (diners cook on a buttered griddle), plus any fillings
+  named ("ham and cheese": 2 oz diced ham, 1 oz american cheese). "Diner", "restaurant" or "deli" means restaurant
+  portions and cooking fat; "homemade" or no place means a modest home portion. Name each component plainly so it
+  can be searched ("egg, whole, cooked", "butter", "cheddar cheese"), never by the dish ("omelet").
+  If the fillings or main ingredients aren't given and would change calories by 15% or more, use the plain version
+  and ask about them (e.g. "What was in it?": Plain / Cheese / Ham & cheese / Veggie, each an add_item effect).
+  Don't add sides the user didn't mention (no home fries or toast unless they say so).
+- Keep a dish as ONE item when it's a standard dish with a well-known database entry and doesn't vary much
+  (a slice of pepperoni pizza, chicken noodle soup, lasagna, mac and cheese, a plain bagel, a banana muffin).
+- NEVER break down anything pre-made by a named restaurant, chain or brand (a Chick-fil-A chicken sandwich, a Big Mac,
+  a Chipotle burrito, a Starbucks egg bite, a frozen meal, a protein bar): you don't know how they make it, and its
+  real nutrition is looked up by its name. Log it as ONE menu or packaged item as described below, even if the user
+  mentions what's in it. Add only what the user says they added on top (an extra sauce packet, a side) as separate items.
 - Prefer grams for solid food you can estimate visually and ml for drinks; use household units when the user states them.
 - When the user counts things ("3 oreos", "2 eggs", "4 nuggets"), keep their count: amount 3, unit "piece".
   Never turn a count into servings, even when you know how many come in a serving.
