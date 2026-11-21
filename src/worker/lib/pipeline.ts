@@ -7,6 +7,7 @@ import { PIPELINE_VERSION, PROMPT_VERSION, type ModelOutput, type QuestionEffect
 import { getFood, type FoodRecord } from './foods';
 import { HttpError, nowIso } from './ids';
 import { itemStatements, refreshConfidence, type EstimationMethod, type MealType, type ResolvedItem } from './intake';
+import { recordAiLogged, recordEvents, snapshotMeal } from './events';
 import { applyFavorites, favoriteMatch } from './favorites';
 import { ESTIMATE_CONFIDENCE_CAP, matchFood, type MatchInfo } from './matcher';
 import { mergeDraft, resolveTarget, type MergeSpec } from './merge';
@@ -239,6 +240,13 @@ export async function finishDraft(
     refreshConfidence(env.DB, intakeId),
   );
   await env.DB.batch(stmts);
+  // The change log: what the AI logged, with how each item was matched.
+  await recordAiLogged(env, user.id, intakeId, {
+    model_id: input.model_id,
+    prompt_version: PROMPT_VERSION,
+    raw_input_text: input.raw_input_text,
+    questions: pending.questions.length,
+  }).catch((e) => console.warn('meal log: ai_logged failed', (e as Error).message));
 }
 
 /** Apply answers to an in-progress draft and complete it. Returns the id of the meal now holding the items. */
@@ -249,6 +257,7 @@ export async function applyAnswers(env: Env, user: User, intakeId: string, answe
   if (!row) throw new HttpError(404, 'intake not found');
   if (row.status !== 'in-progress' || !row.pending_json) throw new HttpError(409, 'intake has no open questions');
   const pending = JSON.parse(row.pending_json) as Pending;
+  const before = await snapshotMeal(env.DB, user.id, intakeId);
   for (const [qid, a] of Object.entries(answers)) {
     const q = pending.questions.find((x) => x.id === qid);
     if (!q) throw new HttpError(400, `unknown question ${qid}`);
@@ -267,6 +276,32 @@ export async function applyAnswers(env: Env, user: User, intakeId: string, answe
     refreshConfidence(env.DB, intakeId),
   );
   await env.DB.batch(stmts);
+  // The change log: the answers, then the AI's items they produced (new rows replace the draft's).
+  try {
+    const after = await snapshotMeal(env.DB, user.id, intakeId);
+    const meta = await env.DB.prepare('SELECT model_id, prompt_version, raw_input_text FROM nutrition_intake WHERE id = ?')
+      .bind(intakeId)
+      .first<{ model_id: string; prompt_version: string; raw_input_text: string | null }>();
+    const questions = Object.fromEntries(pending.questions.map((q) => [q.id, q.text]));
+    await recordEvents(env.DB, user.id, [
+      {
+        intake_id: intakeId,
+        actor: env.MCP_USER ? 'mcp' : 'app',
+        kind: 'answered',
+        before: before?.items,
+        after: after?.items,
+        detail: { answers: Object.fromEntries(pending.questions.map((q) => [questions[q.id], answers[q.id] ?? q.default])) },
+      },
+    ]);
+    await recordAiLogged(env, user.id, intakeId, {
+      model_id: meta?.model_id ?? '',
+      prompt_version: meta?.prompt_version ?? PROMPT_VERSION,
+      raw_input_text: meta?.raw_input_text ?? null,
+      source: 'after answers',
+    });
+  } catch (e) {
+    console.warn('meal log: answers failed', (e as Error).message);
+  }
   const target = await resolveTarget(env, user.id, intakeId, pending.merge);
   return target ? mergeDraft(env, user.id, intakeId, target) : intakeId;
 }

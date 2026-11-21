@@ -1,4 +1,4 @@
-import { ChefHat, Copy, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-preact';
+import { ChefHat, Copy, History, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { watch } from '../analysis';
 import { api, type Intake, type Item } from '../api';
@@ -6,6 +6,7 @@ import { amountLabel, confidenceTone, kcal, MEAL_LABEL, time } from '../format';
 import { toast } from '../toast';
 import { ItemSheet } from './ItemSheet';
 import { MealEdit } from './MealEdit';
+import { MealHistory } from './MealHistory';
 import { Questions } from './Questions';
 import { SaveAsRecipe } from './Recipes';
 import { Sheet } from './Sheet';
@@ -16,6 +17,7 @@ export function MealCard(props: { meal: Intake; onChange: (m: Intake | null) => 
   const [editing, setEditing] = useState(false);
   const [savingRecipe, setSavingRecipe] = useState(false);
   const [menu, setMenu] = useState(false);
+  const [history, setHistory] = useState(false);
   const [busy, setBusy] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -99,6 +101,7 @@ export function MealCard(props: { meal: Intake; onChange: (m: Intake | null) => 
               {meal.status !== 'preparation' && <MenuItem icon={<Pencil size={16} />} label="Edit time, meal or note" onClick={() => (setMenu(false), setEditing(true))} />}
               {done && <MenuItem icon={<Copy size={16} />} label="Copy to now" onClick={copy} />}
               {done && meal.items.length > 0 && <MenuItem icon={<ChefHat size={16} />} label="Save as recipe" onClick={() => (setMenu(false), setSavingRecipe(true))} />}
+              <MenuItem icon={<History size={16} />} label="Change history" onClick={() => (setMenu(false), setHistory(true))} />
               <MenuItem icon={<Trash2 size={16} />} label="Delete" danger onClick={remove} />
             </div>
           )}
@@ -168,6 +171,9 @@ export function MealCard(props: { meal: Intake; onChange: (m: Intake | null) => 
 
       <Sheet open={!!openItem} onClose={() => setOpenItem(null)} title="Food details">
         {openItem && <ItemSheet itemId={openItem} onChange={props.onChange} onClose={() => setOpenItem(null)} />}
+      </Sheet>
+      <Sheet open={history} onClose={() => setHistory(false)} title="Change history">
+        {history && <MealHistory mealId={meal.id} />}
       </Sheet>
       <Sheet open={savingRecipe} onClose={() => setSavingRecipe(false)} title="Save as recipe">
         {savingRecipe && (

@@ -17,6 +17,7 @@ import {
   type Status,
 } from '../lib/intake';
 import { getFood } from '../lib/foods';
+import { mealHistory } from '../lib/events';
 import { assertAppendable, findMergeTarget, mergedInto, parseMergeSpec } from '../lib/merge';
 import { answer, createFromMedia, media, photo, retry } from './log';
 
@@ -92,6 +93,18 @@ intake.post('/:id/answers', answer);
 intake.post('/:id/retry', retry);
 intake.get('/:id/media', media);
 intake.get('/:id/photos/:n', photo);
+
+/** GET /api/intake/:id/history -> the meal's change log, oldest first (an entry merged away shows its new meal's). */
+intake.get('/:id/history', async (c) => {
+  const user = c.get('user');
+  let id = c.req.param('id');
+  if (!(await getIntake(c.env.DB, user.id, id))) {
+    const to = await mergedInto(c.env.DB, user.id, id);
+    if (!to) throw new HttpError(404, 'intake not found');
+    id = to;
+  }
+  return c.json({ meal_id: id, events: await mealHistory(c.env.DB, user.id, id) });
+});
 
 /** GET /api/intake/:id -> the meal; an entry merged into another meal returns that meal with `merged_from`. */
 intake.get('/:id', async (c) => {
