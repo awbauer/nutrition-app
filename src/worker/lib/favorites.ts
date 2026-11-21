@@ -2,9 +2,11 @@
  * Starred foods: something you log often, saved with the name and amount you log it by,
  * so it's one tap from Quick add. Keyed by name, like the quick list.
  */
-import { getFood } from './foods';
+import type { ModelItem } from './ai';
+import { getFood, normName, type FoodRecord } from './foods';
+import { localCandidate, type MatchResult } from './matcher';
 import { HttpError, newId } from './ids';
-import { toGrams } from './units';
+import { normaliseUnit, toGrams } from './units';
 
 export interface Favorite {
   id: string;
@@ -66,4 +68,45 @@ export async function addFavorite(db: D1Database, userId: string, input: { name?
 export async function removeFavorite(db: D1Database, userId: string, id: string): Promise<void> {
   const r = await db.prepare('DELETE FROM favorite_food WHERE id = ? AND user_id = ?').bind(id, userId).run();
   if (!r.meta.changes) throw new HttpError(404, 'favorite not found');
+}
+
+/** Units that state an exact amount: "40 g of usual nuts" keeps its 40 g. Anything else counts portions. */
+const EXPLICIT = new Set(['g', 'kg', 'mg', 'oz', 'lb', 'ml', 'l', 'fl oz', 'cup', 'tbsp', 'tsp']);
+
+/**
+ * Items the model named after a favorite ("usual nuts", unit "favorite") become that favorite: its
+ * food, and its saved amount times the number of portions. An explicit weight or volume is kept.
+ */
+export async function applyFavorites(db: D1Database, userId: string, items: ModelItem[]): Promise<ModelItem[]> {
+  if (!items.length) return items;
+  const favs = await listFavorites(db, userId);
+  if (!favs.length) return items;
+  const byName = new Map(favs.map((f) => [normName(f.name), f]));
+  return Promise.all(
+    items.map(async (it) => {
+      const fav = byName.get(normName(it.name));
+      if (!fav) return it;
+      const food = await getFood(db, userId, fav.food_id);
+      if (!food) return it;
+      const explicit = EXPLICIT.has(normaliseUnit(it.unit));
+      const { grams: _g, ...rest } = it; // the saved portion sets the weight, not the model's guess
+      return {
+        ...(explicit ? it : rest),
+        name: fav.name,
+        ...(explicit ? {} : { amount: Math.round(fav.amount * (it.amount > 0 ? it.amount : 1) * 1000) / 1000, unit: fav.unit }),
+        confidence: Math.max(it.confidence, explicit ? it.confidence : 0.95),
+        favorite: { food, name: fav.name },
+      };
+    }),
+  );
+}
+
+/** The match for a favorite: no search, the saved food. */
+export function favoriteMatch(f: { food: FoodRecord; name: string }): MatchResult {
+  return {
+    food: f.food,
+    via: 'favorite',
+    match: { query: f.name, via: 'favorite', estimate_kcal_100g: null, candidates: [localCandidate(f.food, 9, ['your favorite'])], chosen: f.food.id },
+    matchConfidence: 1,
+  };
 }

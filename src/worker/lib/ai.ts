@@ -13,6 +13,8 @@ export interface QuestionEffect {
 }
 
 export interface ModelItem {
+  /** Set by the pipeline (never by the model): the user named one of their favorites. */
+  favorite?: { food: import('./foods').FoodRecord; name: string };
   name: string;
   amount: number;
   unit: string;
@@ -133,6 +135,8 @@ export interface PromptContext {
   recipes?: string[];
   /** The input describes a batch being cooked (a recipe's ingredients), not something eaten. */
   batch?: boolean;
+  /** The user's favorites: a name and the portion it stands for ("usual nuts" = 1 oz almonds). */
+  favorites?: { name: string; portion: string }[];
 }
 
 const BATCH_RULES = `
@@ -143,7 +147,16 @@ This is NOT a meal. The user is describing a batch they cooked (a recipe), to be
 - Ask NO questions: "questions" must be []. meal_type_guess is null.`;
 
 function contextRules(ctx: PromptContext = {}): string {
-  return (ctx.batch ? BATCH_RULES : '') + recipeRules(ctx.recipes);
+  return (ctx.batch ? BATCH_RULES : '') + recipeRules(ctx.recipes) + (ctx.batch ? '' : favoriteRules(ctx.favorites));
+}
+
+/** Saved portions: named, they log at exactly the saved amount, so the model shouldn't guess one. */
+export function favoriteRules(favorites: { name: string; portion: string }[] = []): string {
+  if (!favorites.length) return '';
+  return `\nThe user has saved these favorites, each a food at a fixed portion: ${favorites.map((f) => `${JSON.stringify(f.name)} (${f.portion})`).join(', ')}.
+- When they log one by its name ("my usual nuts", "a usual nuts", "2 usual nuts"), list it as ONE item named exactly as the favorite,
+  unit "favorite", amount = how many portions (1 unless they say otherwise). The saved portion sets the weight: don't estimate one.
+- If they give an explicit weight or volume for it ("40 g of usual nuts"), keep their amount and unit instead.`;
 }
 
 export function recipeRules(recipes: string[] = []): string {

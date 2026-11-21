@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import worker from '../src/worker/index';
 import type { Env } from '../src/worker/env';
 import { mcpApiHandler } from '../src/worker/mcp';
-import { api } from './helpers';
+import { afterEach, vi } from 'vitest';
+import { api, json, mockFetch } from './helpers';
 
 const E = env as unknown as Env;
 const ORIGIN = 'https://clem.example.test';
@@ -115,6 +116,63 @@ describe('MCP server', () => {
     const bad = await rpc(uid, 'tools/call', { name: 'get_meal', arguments: { meal_id: 'nope' } });
     expect(bad.result).toMatchObject({ isError: true });
     expect(bad.result.structuredContent).toBeUndefined();
+  });
+
+  it('search_foods returns compact rows, favorites and history first, capped', async () => {
+    const uid = await userId('mcp-search@example.test');
+    // USDA answers with 40 full records: every nutrient, lots of portions.
+    const big = (i: number) => ({
+      fdcId: 1000 + i,
+      description: `Milk, reduced fat, 2% milkfat, variant ${i}`,
+      dataType: 'Survey (FNDDS)',
+      foodNutrients: Array.from({ length: 60 }, (_, k) => ({ nutrientId: k === 0 ? 1008 : 1003 + k, unitName: k === 0 ? 'KCAL' : 'G', value: k === 0 ? 50 : 1 })),
+      foodMeasures: Array.from({ length: 12 }, (_, k) => ({ disseminationText: `${k + 1} cup`, gramWeight: 244 * (k + 1), rank: k })),
+    });
+    const spy = mockFetch((url) => (url.hostname === 'api.nal.usda.gov' ? json({ foods: Array.from({ length: 40 }, (_, i) => big(i)) }) : undefined));
+    try {
+      const mine = await call(uid, 'create_food', { name: 'Milk 2% (my carton)', serving_grams: 240, serving_label: '1 cup', per_serving: { ENERC_KCAL: 122, PROCNT: 8 } });
+      await call(uid, 'save_favorite', { name: 'milk 2% splash', food_id: mine.data.id, amount: 0.25, unit: 'serving' });
+      const r = await rpc(uid, 'tools/call', { name: 'search_foods', arguments: { query: 'milk 2%' } }, { USDA_API_KEY: 'k' });
+      const text = r.result.content[0].text as string;
+      expect(text.length).toBeLessThan(6000);
+      const out = JSON.parse(text);
+      expect(out.results).toHaveLength(10);
+      expect(out.results[0]).toMatchObject({ kind: 'favorite', name: 'milk 2% splash', amount: 0.25, unit: 'serving' });
+      expect(out.results[1]).toMatchObject({ kind: 'your food', food_id: mine.data.id, kcal_100g: 50.8, serving: '1 cup = 240 g' });
+      expect(out.results[2]).toMatchObject({ kind: 'database', fdc_id: '1000', kcal_100g: 50 });
+      expect(out.results.every((row: any) => !('nutrients' in row) && !('portions' in row))).toBe(true);
+      const few = JSON.parse((await rpc(uid, 'tools/call', { name: 'search_foods', arguments: { query: 'milk', limit: 3 } }, { USDA_API_KEY: 'k' })).result.content[0].text);
+      expect(few.results).toHaveLength(3);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('saves favorite portions and logs them at the saved amount', async () => {
+    const uid = await userId('mcp-fav@example.test');
+    const almonds = await call(uid, 'create_food', { name: 'Almonds', serving_grams: 28.35, serving_label: '1 oz', per_serving: { ENERC_KCAL: 164, PROCNT: 6 } });
+    const fav = await call(uid, 'save_favorite', { name: 'Usual nuts', food_id: almonds.data.id, amount: 28.35, unit: 'g' });
+    expect(fav.data).toMatchObject({ name: 'Usual nuts', grams: 28.4, kcal: 164 });
+    expect((await call(uid, 'list_favorites')).data.map((f: any) => f.name)).toEqual(['Usual nuts']);
+
+    const one = await call(uid, 'log_favorite', { name: 'usual nuts' });
+    expect(one.data.items[0]).toMatchObject({ display_name: 'Usual nuts' });
+    expect(one.data.items[0].grams).toBeCloseTo(28.35, 0);
+    const two = await call(uid, 'log_favorite', { name: 'Usual nuts', times: 2 });
+    expect(two.data.items.at(-1).nutrients.ENERC_KCAL).toBe(328);
+    expect(await call(uid, 'log_favorite', { name: 'usual chips' })).toMatchObject({ isError: true });
+
+    // Named in a description, a favorite logs at its saved portion: the model's guess is ignored.
+    const say = (items: unknown[]) => ({ run: async () => ({ response: { items, questions: [] } }) }) as unknown as Ai;
+    const r = await call(uid, 'log_meal', { description: '2 usual nuts' }, { JOBS: undefined, AI: say([{ name: 'usual nuts', amount: 2, unit: 'favorite', grams: 90, confidence: 0.6, search_terms: ['nuts'] }]) });
+    expect(r.data.items[0]).toMatchObject({ food_id: almonds.data.id, grams: 56.7 });
+    expect(r.data.items[0].nutrients.ENERC_KCAL).toBe(328);
+    // An explicit weight keeps its weight, with the favorite's food.
+    const g = await call(uid, 'log_meal', { description: '40 g of usual nuts' }, { JOBS: undefined, AI: say([{ name: 'Usual nuts', amount: 40, unit: 'g', confidence: 0.9, search_terms: ['nuts'] }]) });
+    expect(g.data.items[0]).toMatchObject({ food_id: almonds.data.id, grams: 40 });
+
+    expect((await call(uid, 'remove_favorite', { favorite_id: fav.data.id })).isError).toBe(false);
+    expect((await call(uid, 'list_favorites')).data).toEqual([]);
   });
 
   it("keeps each user's data separate", async () => {
