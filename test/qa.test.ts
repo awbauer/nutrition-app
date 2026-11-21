@@ -200,6 +200,20 @@ describe('meal media', () => {
   });
 });
 
+describe('stored units', () => {
+  it('weighs a favorite starred from an item in ounces, and labels the conversion honestly', async () => {
+    const E = U('qa-ucum@example.test');
+    const fid = await food(E);
+    const m = await api('/intake', { method: 'POST', json: { items: [{ food_id: fid, amount: 2, unit: 'oz' }] } }, E);
+    const it = m.data.items[0];
+    expect(it.amount_unit).toBe('[oz_av]');
+    const fav = await api('/foods/favorites', { method: 'POST', json: { name: 'qa bar', food_id: fid, amount: it.amount_value, unit: it.amount_unit } }, E);
+    expect(fav.data.grams).toBeCloseTo(56.7, 1);
+    const detail = await api(`/item/${it.id}`, {}, E);
+    expect(detail.data.conversion.method).toBe('mass');
+  });
+});
+
 describe('food cache', () => {
   it('caches the same new food twice at once without failing', async () => {
     const f = { source: 'estimate' as const, sourceId: `qa-race-${Date.now()}`, name: 'Race food', brand: null, dataType: null, category: null, defaultServingGrams: null, portions: [], nutrients: [{ code: 'ENERC_KCAL', usdaId: 1008, value: 100, unit: 'kcal' }] };

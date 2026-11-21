@@ -127,6 +127,13 @@ const ALIASES: Record<string, string> = {
   ea: 'piece',
   x: 'piece',
   '': 'piece',
+  // The UCUM codes items are stored with (see ucum()), when a stored unit is converted again.
+  '[oz_av]': 'oz',
+  '[lb_av]': 'lb',
+  '[cup_us]': 'cup',
+  '[tbs_us]': 'tbsp',
+  '[tsp_us]': 'tsp',
+  '[foz_us]': 'fl oz',
 };
 
 const KNOWN = new Set([...Object.keys(MASS), ...Object.keys(VOLUME_ML), ...Object.keys(GENERIC_GRAMS)]);

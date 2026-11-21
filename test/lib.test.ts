@@ -50,6 +50,13 @@ describe('serving to grams', () => {
     expect(toGrams(2, 'litres').grams).toBe(2000);
     expect(toGrams(250, 'millilitres').grams).toBe(250);
   });
+  it('converts the UCUM codes items are stored with', () => {
+    expect(toGrams(2, '[oz_av]').grams).toBeCloseTo(56.7, 1);
+    expect(toGrams(1, '[cup_us]', food)).toEqual({ grams: 140, method: 'portion' });
+    expect(toGrams(1, '[tbs_us]').grams).toBe(15);
+    expect(toGrams(1, '[foz_us]').grams).toBeCloseTo(29.6, 1);
+    for (const u of ['g', 'oz', 'lb', 'cup', 'tbsp', 'tsp', 'fl oz', 'ml', 'l', 'slice']) expect(normaliseUnit(ucum(u))).toBe(normaliseUnit(u));
+  });
   it('prefers the food portion table', () => {
     expect(toGrams(1, 'cup', food)).toEqual({ grams: 140, method: 'portion' });
     expect(toGrams(0.5, 'cups', food).grams).toBe(70);
