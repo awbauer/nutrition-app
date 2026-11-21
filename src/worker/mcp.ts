@@ -230,7 +230,7 @@ export function buildServer(api: Api, appUrl = ''): McpServer {
     'get_day',
     {
       title: 'Get a day',
-      description: `Meals, items and totals for one log date, with targets and what's left. ${NUTRIENTS_NOTE}`,
+      description: `Meals, items and totals for one log date, with targets and what's left. Totals include meals still waiting on answers, at their default answers; \`unconfirmed\` says how many. ${NUTRIENTS_NOTE}`,
       inputSchema: z.object({ date: date.default('today') }),
       annotations: read,
       _meta: CARD_META,
@@ -242,7 +242,8 @@ export function buildServer(api: Api, appUrl = ''): McpServer {
     'get_range',
     {
       title: 'Daily totals for a range',
-      description: 'Per-day totals and meal counts between two dates (inclusive, up to a year), plus current targets. Defaults to the last 7 days.',
+      description:
+        'Per-day totals and meal counts between two dates (inclusive, up to a year), plus current targets. Defaults to the last 7 days. Meals still waiting on answers count at their default answers (`unconfirmed` per day).',
       inputSchema: z.object({
         from: z.string().optional().describe('YYYY-MM-DD'),
         to: z.string().optional().describe('YYYY-MM-DD'),

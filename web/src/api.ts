@@ -202,7 +202,10 @@ export interface Recipe {
 export interface Day {
   date: string;
   meals: Intake[];
+  /** Includes meals still waiting on answers, at their default answers. */
   totals: Record<string, number>;
+  /** How many of those meals the totals include. */
+  unconfirmed: number;
   targets: Record<string, number>;
   remaining: Record<string, number>;
 }

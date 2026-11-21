@@ -16,7 +16,7 @@ import { addDays, localParts, logDate } from './dates';
 import { weightTrend } from './energy';
 import { goalsOn, targetsFromGoals } from './goals';
 import { HttpError, newId } from './ids';
-import { dailyTotals, type MealType } from './intake';
+import { COUNTED_STATUSES, dailyTotals, type MealType } from './intake';
 import { getSettings } from './settings';
 
 export const COACH_MODEL = '@cf/zai-org/glm-5.3';
@@ -58,7 +58,10 @@ export interface Digest {
   partial: boolean;
   weekday: string;
   targets: Record<string, number>;
-  day: PeriodStats & { meals: { meal_type: string; time: string; items: { name: string; kcal: number; protein: number; estimated: boolean }[] }[] };
+  day: PeriodStats & {
+    /** `unconfirmed`: still has a question open; counted at its default answers, like the day totals. */
+    meals: { meal_type: string; time: string; unconfirmed?: true; items: { name: string; kcal: number; protein: number; estimated: boolean }[] }[];
+  };
   week: PeriodStats;
   previous_week: PeriodStats;
   month: PeriodStats;
@@ -130,6 +133,8 @@ interface ItemRow {
 }
 
 const r1 = (n: number) => Math.round(n * 10) / 10;
+/** Meals whose items count toward totals (see COUNTED_STATUSES): finished, or waiting on answers at their defaults. */
+const counted = (status: string) => status === 'completed' || status === 'in-progress';
 const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0);
 
 function median(xs: number[]): number | null {
@@ -156,10 +161,13 @@ function periodStats(
   const rs = rows.filter((r) => inRange(r.log_date));
   const meals = new Map<string, ItemRow>();
   for (const r of rs) meals.set(r.intake_id, r);
-  const completed = [...meals.values()].filter((m) => m.status === 'completed');
+  // Coverage counts every meal the totals count; how carefully it was logged (items, delay,
+  // source) only looks at finished meals, and open questions are scored on their own.
+  const logged = [...meals.values()].filter((m) => counted(m.status));
+  const completed = logged.filter((m) => m.status === 'completed');
   const items = rs.filter((r) => r.food_id && r.status === 'completed');
   const mealDays: Record<string, number> = {};
-  for (const mt of MAIN_MEALS) mealDays[mt] = new Set(completed.filter((m) => m.meal_type === mt).map((m) => m.log_date)).size;
+  for (const mt of MAIN_MEALS) mealDays[mt] = new Set(logged.filter((m) => m.meal_type === mt).map((m) => m.log_date)).size;
   const delays = completed
     .filter((m) => m.source !== 'copy')
     .map((m) => (Date.parse(m.recorded_at) - Date.parse(m.occurrence_at)) / 60000)
@@ -175,7 +183,7 @@ function periodStats(
     avg,
     days_within_10pct_kcal: kT ? ds.filter((d) => Math.abs((d.totals.ENERC_KCAL ?? 0) - kT) <= kT * 0.1).length : 0,
     days_protein_target_met: pT ? ds.filter((d) => (d.totals.PROCNT ?? 0) >= pT * 0.95).length : 0,
-    meals_per_logged_day: ds.length ? r1(completed.length / ds.length) : 0,
+    meals_per_logged_day: ds.length ? r1(logged.length / ds.length) : 0,
     meal_days: mealDays,
     items: items.length,
     pct_items_ai_estimate: pct(items.filter((i) => i.estimated).length, items.length),
@@ -307,10 +315,11 @@ export async function coachDigest(db: D1Database, user: User, reviewed: string, 
 
   const day = stats(0, 1);
   const dayMeals = new Map<string, Digest['day']['meals'][number]>();
-  for (const r of rows.filter((r) => r.log_date === reviewed && r.status === 'completed' && r.food_id)) {
+  for (const r of rows.filter((r) => r.log_date === reviewed && counted(r.status) && r.food_id)) {
     let m = dayMeals.get(r.intake_id);
     if (!m) {
       m = { meal_type: r.meal_type, time: localParts(new Date(r.occurrence_at), user.timezone).time, items: [] };
+      if (r.status === 'in-progress') m.unconfirmed = true;
       dayMeals.set(r.intake_id, m);
     }
     m.items.push({ name: r.display_name ?? '', kcal: Math.round(r.kcal ?? 0), protein: r1(r.protein ?? 0), estimated: !!r.estimated });
@@ -318,7 +327,7 @@ export async function coachDigest(db: D1Database, user: User, reviewed: string, 
 
   // Top foods this month, by times eaten, with their share of the month's calories.
   const month = stats(0, 30);
-  const monthItems = rows.filter((r) => r.log_date >= month.from && r.status === 'completed' && r.food_id);
+  const monthItems = rows.filter((r) => r.log_date >= month.from && counted(r.status) && r.food_id);
   const monthKcal = monthItems.reduce((a, r) => a + (r.kcal ?? 0), 0);
   const byName = new Map<string, { times: number; kcal: number; protein: number }>();
   for (const r of monthItems) {
@@ -401,9 +410,9 @@ export async function coachDigest(db: D1Database, user: User, reviewed: string, 
   }
 
   // Plans: protein per meal, past meals that hit the bar, this week's fat sources.
-  const mealsById = new Map<string, { date: string; type: MealType; items: string[]; protein: number; kcal: number }>();
-  for (const r of rows.filter((r) => r.status === 'completed' && r.food_id)) {
-    const m = mealsById.get(r.intake_id) ?? { date: r.log_date, type: r.meal_type, items: [], protein: 0, kcal: 0 };
+  const mealsById = new Map<string, { date: string; type: MealType; items: string[]; protein: number; kcal: number; confirmed: boolean }>();
+  for (const r of rows.filter((r) => counted(r.status) && r.food_id)) {
+    const m = mealsById.get(r.intake_id) ?? { date: r.log_date, type: r.meal_type, items: [], protein: 0, kcal: 0, confirmed: r.status === 'completed' };
     m.items.push((r.display_name ?? '').trim());
     m.protein += r.protein ?? 0;
     m.kcal += r.kcal ?? 0;
@@ -425,7 +434,8 @@ export async function coachDigest(db: D1Database, user: User, reviewed: string, 
     const seenSet = new Set<string>();
     const best = allMeals
       // Everyday meals to repeat: a 1,500 kcal brunch isn't a breakfast plan.
-      .filter((m) => m.type === t && m.kcal <= BIG_MEAL_KCAL && m.protein >= (t === 'snack' ? bar / 2 : bar))
+      // Only finished meals: an unanswered amount isn't a plan to repeat.
+      .filter((m) => m.confirmed && m.type === t && m.kcal <= BIG_MEAL_KCAL && m.protein >= (t === 'snack' ? bar / 2 : bar))
       .sort((a, b) => b.protein - a.protein)
       .filter((m) => {
         const key = [...m.items]
@@ -440,7 +450,7 @@ export async function coachDigest(db: D1Database, user: User, reviewed: string, 
       .map((m) => ({ date: m.date, items: m.items, protein_g: Math.round(m.protein), kcal: Math.round(m.kcal) }));
     if (best.length) high[t] = best;
   }
-  const weekItems = rows.filter((r) => r.log_date >= week.from && r.status === 'completed' && r.food_id);
+  const weekItems = rows.filter((r) => r.log_date >= week.from && counted(r.status) && r.food_id);
   const weekFat = weekItems.reduce((a, r) => a + (r.fat ?? 0), 0);
   const fatBy = new Map<string, { fat: number; times: number }>();
   for (const r of weekItems) {
@@ -749,7 +759,7 @@ export async function runDueReports(env: Env, now: Date): Promise<{ written: num
     if (existing && existing.status === 'ready' && !existing.partial) continue;
     if (existing && existing.status === 'failed' && !existing.partial && existing.attempts >= MAX_ATTEMPTS) continue;
     // Nothing logged that day or the six before: no report.
-    const any = await env.DB.prepare(`SELECT 1 FROM nutrition_intake WHERE user_id = ? AND status = 'completed' AND log_date BETWEEN ? AND ? LIMIT 1`)
+    const any = await env.DB.prepare(`SELECT 1 FROM nutrition_intake WHERE user_id = ? AND status IN ${COUNTED_STATUSES} AND log_date BETWEEN ? AND ? LIMIT 1`)
       .bind(user.id, addDays(yesterday, -6), yesterday)
       .first();
     if (!any) continue;

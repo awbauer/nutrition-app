@@ -45,7 +45,7 @@ Single user at launch. Every table is keyed by user from day one so more people 
 5. Worker resolves each food against the food cache, then USDA FoodData Central, then Open Food Facts.
 6. If any item is below the confidence threshold or ambiguous in a way that changes calories by more than about 15%, the Worker returns up to two clarifying questions with tap options.
 7. User answers or accepts defaults. Worker computes nutrient totals from database values times amounts.
-8. Intake status becomes `completed`. Daily totals update.
+8. Intake status becomes `completed`. Daily totals update. (While questions are open the meal is `in-progress` with its items at the default answers; it already counts toward totals, flagged as unconfirmed.)
 
 ### Model roles
 
