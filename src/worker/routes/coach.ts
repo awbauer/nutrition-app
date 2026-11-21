@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../env';
 import { generateReport, getReport, listReports } from '../lib/coach';
 import { isDate } from '../lib/dates';
+import { loggingQuality } from '../lib/events';
 import { HttpError } from '../lib/ids';
 import { today } from './day';
 
@@ -13,6 +14,12 @@ coach.get('/', async (c) => {
   const list = await listReports(c.env.DB, user.id);
   const latest = list.find((r) => r.status === 'ready') ?? list[0];
   return c.json({ today: await today(c.env.DB, user.id, user.timezone), latest: latest ? await getReport(c.env.DB, user.id, latest.log_date) : null, reports: list });
+});
+
+/** GET /api/coach/quality?days= -> how often the AI's items needed fixing. */
+coach.get('/quality', async (c) => {
+  const days = Math.min(365, Math.max(1, Number(c.req.query('days') ?? 30) || 30));
+  return c.json(await loggingQuality(c.env.DB, c.get('user').id, days));
 });
 
 /** GET /api/coach/:date -> one report. */

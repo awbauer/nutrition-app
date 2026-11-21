@@ -3,6 +3,7 @@ import type { AppEnv } from '../env';
 import { HttpError } from '../lib/ids';
 import { round } from '../lib/nutrients';
 import { getIntake, itemStatements, refreshConfidence, resolveRef, validAmount, type ItemRef } from '../lib/intake';
+import { recordEvents } from '../lib/events';
 import { getFood, searchLocal } from '../lib/foods';
 import { localCandidate, rankedUsda, rememberChoice, fatsecretCandidate, rankedFatSecret, usdaCandidate, type MatchInfo } from '../lib/matcher';
 import { rankCandidates } from '../lib/scoring';
@@ -88,7 +89,23 @@ items.get('/:id/search', async (c) => {
   else error = (usda.reason as Error).message;
   if (fs.status === 'fulfilled') remote.push(...fs.value.filter((r) => !seenFs.has(r.candidate.sourceId)).map((r) => fatsecretCandidate(r.candidate, r.score, r.reasons)));
   else console.warn('FatSecret search failed', q, (fs.reason as Error).message);
-  return c.json({ query: q, estimate_kcal_100g: est, candidates: [...rankedLocal, ...remote].sort((a, b) => b.score - a.score).slice(0, 20), ...(error ? { error } : {}) });
+  const candidates = [...rankedLocal, ...remote].sort((a, b) => b.score - a.score).slice(0, 20);
+  // The change log: a search for a different food usually means the match was wrong.
+  const logged = recordEvents(c.env.DB, user.id, [
+    {
+      intake_id: row.intake_id,
+      item_id: row.id,
+      actor: c.env.MCP_USER ? 'mcp' : 'app',
+      kind: 'searched',
+      detail: { query: q, item_name: row.display_name, results: candidates.slice(0, 5).map((x) => x.name) },
+    },
+  ]).catch((e) => console.warn('meal log: search failed', (e as Error).message));
+  try {
+    c.executionCtx.waitUntil(logged);
+  } catch {
+    await logged;
+  }
+  return c.json({ query: q, estimate_kcal_100g: est, candidates, ...(error ? { error } : {}) });
 });
 
 /**

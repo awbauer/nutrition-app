@@ -319,6 +319,36 @@ export function buildServer(api: Api, appUrl = ""): McpServer {
       run(() => api("GET", `/item/${encodeURIComponent(item_id)}`)),
   );
 
+  server.registerTool(
+    "get_meal_history",
+    {
+      title: "Get a meal’s change log",
+      description:
+        "Every change to one meal, oldest first: what the AI logged and how it matched each item, answers to its questions, searches, food swaps, amount changes, items added or removed, and who made each change (AI, the app, or Claude). Use it to see why a meal needed fixing.",
+      inputSchema: z.object({ meal_id: z.string() }),
+      annotations: read,
+    },
+    async ({ meal_id }) =>
+      run(async () => {
+        const h = (await api("GET", `/intake/${encodeURIComponent(meal_id)}/history`)) as {
+          meal_id: string;
+          events: { at: string; actor: string; kind: string; item_id: string | null; summary: string }[];
+        };
+        return { meal_id: h.meal_id, events: h.events.map(({ at, actor, kind, item_id, summary }) => ({ at, actor, kind, item_id, summary })) };
+      }),
+  );
+  server.registerTool(
+    "get_logging_quality",
+    {
+      title: "How accurate the AI logging is",
+      description:
+        "How often the AI's logged items were later fixed (food swapped, amount changed, removed), by match source and prompt version, with the most common swaps. Use it to judge whether logging is working or needs adjustment.",
+      inputSchema: z.object({ days: z.number().int().min(1).max(365).optional().describe("Defaults to 30") }),
+      annotations: read,
+    },
+    async ({ days }) => run(() => api("GET", `/coach/quality?days=${days ?? 30}`)),
+  );
+
   // ---- logging ----
   registerAppTool(
     server,

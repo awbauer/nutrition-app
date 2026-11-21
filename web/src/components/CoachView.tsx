@@ -200,7 +200,64 @@ function ReportView(props: { stored: Stored; label: string; compact?: boolean })
           )}
         </div>
       </section>
+      <Accuracy />
     </div>
+  );
+}
+
+interface Quality {
+  days: number;
+  ai_items: number;
+  pct_swapped: number;
+  pct_amount_changed: number;
+  pct_removed: number;
+  pct_any_fix: number;
+  items_added_after_ai: number;
+  searches: number;
+  top_swaps: { name: string; from: string; to: string; times: number }[];
+}
+
+/** How often the AI's items needed fixing, from the change log. */
+function Accuracy() {
+  const [q, setQ] = useState<Quality | null>(null);
+  useEffect(() => {
+    api.get<Quality>('/coach/quality?days=30').then(setQ).catch(() => setQ(null));
+  }, []);
+  if (!q || q.ai_items === 0) return null;
+  const tiles = [
+    { label: 'Kept as logged', value: `${100 - q.pct_any_fix}%` },
+    { label: 'Food swapped', value: `${q.pct_swapped}%` },
+    { label: 'Amount changed', value: `${q.pct_amount_changed}%` },
+    { label: 'Searches', value: String(q.searches) },
+  ];
+  return (
+    <section class="card p-4">
+      <p class="eyebrow">AI logging accuracy · last {q.days} days</p>
+      <p class="mt-1 text-sm text-ink-2">
+        {q.ai_items} items logged by the AI{q.items_added_after_ai ? `, ${q.items_added_after_ai} added by hand after` : ''}.
+      </p>
+      <div class="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4">
+        {tiles.map((t) => (
+          <div class="rounded-xl bg-sunken px-3 py-2">
+            <p class="text-lg font-semibold tabular-nums">{t.value}</p>
+            <p class="text-xs text-ink-2">{t.label}</p>
+          </div>
+        ))}
+      </div>
+      {q.top_swaps.length > 0 && (
+        <div class="mt-3">
+          <p class="text-xs font-medium text-ink-2">Most common fixes</p>
+          <ul class="mt-1 flex flex-col gap-1 text-sm">
+            {q.top_swaps.slice(0, 5).map((s) => (
+              <li>
+                {s.name}: {s.from} → {s.to}
+                {s.times > 1 ? ` (${s.times}×)` : ''}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
   );
 }
 
