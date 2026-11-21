@@ -5,7 +5,7 @@ import { countUnit, EXACT_UNITS, foodKind, normaliseUnit, sizesFor, toGrams, ucu
 import { normaliseDetailFood, parsePortionText } from '../src/worker/lib/usda';
 import { normaliseOff } from '../src/worker/lib/off';
 import { chickenDetail, foundationEgg } from './fixtures/usda';
-import { logToday } from '../web/src/today';
+import { logToday, occurrenceFor } from '../web/src/today';
 
 describe('day boundary', () => {
   it('counts meals before the cutoff toward the previous day', () => {
@@ -27,6 +27,11 @@ describe('day boundary', () => {
     // The web app's "today" agrees with the server.
     for (const iso of ['2026-03-08T08:30:00Z', '2026-11-01T08:30:00Z', '2026-06-10T07:59:00Z', '2026-06-10T08:00:00Z', '2026-06-10T04:30:00Z'])
       expect(logToday(tz, '04:00', new Date(iso))).toBe(logDate(iso, tz, '04:00'));
+  });
+  it('logs entries for today (the log date, even before the cutoff) at the real time', () => {
+    // 00:30 before a 04:00 cutoff: the log date is yesterday's calendar date, and it's still "now".
+    expect(occurrenceFor('2026-06-09', '2026-06-09')).toBeUndefined();
+    expect(occurrenceFor('2026-06-08', '2026-06-09')).toBe(new Date('2026-06-08T12:00:00').toISOString());
   });
   it('local parts and helpers', () => {
     expect(localParts(new Date('2026-11-15T17:05:00Z'), 'America/Chicago')).toMatchObject({ date: '2026-11-15', time: '11:05', weekday: 0 });

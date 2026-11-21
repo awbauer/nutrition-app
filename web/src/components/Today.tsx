@@ -172,6 +172,7 @@ export function Today(props: { today: string; weightUnit: 'kg' | 'lb'; blocks: H
         {adding && (
           <LogSheet
             date={date}
+            today={props.today}
             target={adding.intake}
             defaultMeal={isToday ? guessMeal() : 'snack'}
             onDone={() => {

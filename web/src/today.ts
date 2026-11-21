@@ -17,3 +17,14 @@ export function logToday(tz: string, cutoff: string, now = new Date()): string {
   d.setUTCDate(d.getUTCDate() - 1);
   return d.toISOString().slice(0, 10);
 }
+
+/**
+ * occurrence_at for an entry logged for `date`: none (the server uses now) for today, noon local time
+ * for another day. Today is the log date, which before the day cutoff is still yesterday's calendar
+ * date: comparing with the device's calendar date stamped a 00:30 entry as noon the day before.
+ */
+export function occurrenceFor(date: string, today?: string): string | undefined {
+  const local = new Date();
+  const todayLocal = today ?? new Date(local.getTime() - local.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  return date === todayLocal ? undefined : new Date(`${date}T12:00:00`).toISOString();
+}
