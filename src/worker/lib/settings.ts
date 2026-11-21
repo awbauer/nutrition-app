@@ -7,7 +7,12 @@ export interface Settings {
   model_vision: string;
   model_parser: string;
   model_speech: string;
+  /** The order of the blocks on the Today screen. */
+  home_blocks: HomeBlock[];
 }
+
+export const HOME_BLOCKS = ['summary', 'weight', 'repeat', 'meals'] as const;
+export type HomeBlock = (typeof HOME_BLOCKS)[number];
 
 export const DEFAULT_SETTINGS: Settings = {
   day_cutoff: '04:00',
@@ -19,6 +24,7 @@ export const DEFAULT_SETTINGS: Settings = {
   model_vision: '@cf/thinkingmachines/inkling-2-small',
   model_parser: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
   model_speech: '@cf/openai/whisper-large-v3-turbo',
+  home_blocks: [...HOME_BLOCKS],
 };
 
 const VALIDATORS: { [K in keyof Settings]: (v: unknown) => boolean } = {
@@ -30,6 +36,9 @@ const VALIDATORS: { [K in keyof Settings]: (v: unknown) => boolean } = {
   model_vision: (v) => typeof v === 'string' && v.length > 0,
   model_parser: (v) => typeof v === 'string' && v.length > 0,
   model_speech: (v) => typeof v === 'string' && v.length > 0,
+  // Each known block at most once; blocks left out (e.g. added later) go at the end.
+  home_blocks: (v) =>
+    Array.isArray(v) && v.length <= HOME_BLOCKS.length && v.every((b) => (HOME_BLOCKS as readonly unknown[]).includes(b)) && new Set(v).size === v.length,
 };
 
 export async function getSettings(db: D1Database, userId: string): Promise<Settings> {

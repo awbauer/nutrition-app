@@ -1,6 +1,7 @@
+import { ArrowDown, ArrowUp } from 'lucide-preact';
 import { toast } from '../toast';
 import { useEffect, useState } from 'preact/hooks';
-import { api, type Settings } from '../api';
+import { api, homeOrder, type HomeBlock, type Settings } from '../api';
 import { Export } from './Export';
 import { Reminders } from './Reminders';
 import { Targets } from './Targets';
@@ -64,10 +65,51 @@ export function SettingsView(props: { today: string; onSaved: () => void }) {
           </label>
         </div>
       </section>
+      <HomeLayout order={homeOrder(s.home_blocks)} onChange={(home_blocks) => save({ home_blocks })} />
       <Targets weightUnit={s.weight_unit} />
       <Reminders />
       <Export today={props.today} />
       <p class="pb-2 text-center text-xs text-faint">Version {APP_VERSION}</p>
     </div>
+  );
+}
+
+const BLOCK_LABEL: Record<HomeBlock, { title: string; detail: string }> = {
+  summary: { title: 'Day summary', detail: 'Calories, protein and macros' },
+  weight: { title: 'Weigh-in', detail: "Today's weight" },
+  repeat: { title: 'Repeat yesterday', detail: "Shortcuts to log yesterday's meals again" },
+  meals: { title: 'Meals', detail: "The day's meals. On a wide screen they get their own column" },
+};
+
+/** The order of the blocks on the Today screen. */
+function HomeLayout(props: { order: HomeBlock[]; onChange: (order: HomeBlock[]) => void }) {
+  const move = (i: number, by: -1 | 1) => {
+    const next = [...props.order];
+    [next[i], next[i + by]] = [next[i + by]!, next[i]!];
+    props.onChange(next);
+  };
+  return (
+    <section class="card flex flex-col gap-3 p-4">
+      <div>
+        <h2 class="display text-xl font-semibold">Today screen</h2>
+        <p class="mt-1 text-xs text-ink-2">The order of the blocks, top to bottom.</p>
+      </div>
+      <ol class="flex flex-col divide-y divide-line">
+        {props.order.map((b, i) => (
+          <li class="flex items-center gap-3 py-2">
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-medium">{BLOCK_LABEL[b].title}</p>
+              <p class="text-xs text-ink-2">{BLOCK_LABEL[b].detail}</p>
+            </div>
+            <button class="icon-btn disabled:opacity-25" onClick={() => move(i, -1)} disabled={i === 0} aria-label={`Move ${BLOCK_LABEL[b].title} up`}>
+              <ArrowUp size={18} />
+            </button>
+            <button class="icon-btn disabled:opacity-25" onClick={() => move(i, 1)} disabled={i === props.order.length - 1} aria-label={`Move ${BLOCK_LABEL[b].title} down`}>
+              <ArrowDown size={18} />
+            </button>
+          </li>
+        ))}
+      </ol>
+    </section>
   );
 }

@@ -1,6 +1,6 @@
 import { ChartColumn, ChefHat, ChevronLeft, Ellipsis, NotebookPen, Plus, Settings2, Sparkles, Waypoints } from 'lucide-preact';
 import { useEffect, useState } from 'preact/hooks';
-import { api, ApiError } from './api';
+import { api, ApiError, homeOrder, type HomeBlock } from './api';
 import { isIOS, isStandalone } from './push';
 import { applyUpdate, onUpdateAvailable } from './update';
 import { toast } from './toast';
@@ -28,7 +28,7 @@ const tabFromHash = (): Tab => {
 
 interface Me {
   timezone: string;
-  settings: { day_cutoff: string; weight_unit: 'kg' | 'lb' };
+  settings: { day_cutoff: string; weight_unit: 'kg' | 'lb'; home_blocks?: HomeBlock[] };
 }
 
 /** Today's log date in the user's zone with the configured cutoff. */
@@ -168,7 +168,7 @@ export function App() {
               <ChevronLeft size={18} /> More
             </button>
           )}
-          {me && today && tab === 'today' && <Today key={today} today={today} weightUnit={me.settings.weight_unit} />}
+          {me && today && tab === 'today' && <Today key={today} today={today} weightUnit={me.settings.weight_unit} blocks={homeOrder(me.settings.home_blocks)} />}
           {me && today && tab === 'week' && <Week key={today} today={today} weightUnit={me.settings.weight_unit} />}
           {today && tab === 'recipes' && <RecipesView today={today} />}
           {tab === 'coach' && <CoachView />}

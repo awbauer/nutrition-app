@@ -39,6 +39,14 @@ describe('settings', () => {
     const badTz = await api('/settings', { method: 'PUT', json: { timezone: 'Mars/Base' } });
     expect(badTz.status).toBe(400);
   });
+  it('saves the order of the Today screen blocks', async () => {
+    expect((await api('/settings')).data.home_blocks).toEqual(['summary', 'weight', 'repeat', 'meals']);
+    const ok = await api('/settings', { method: 'PUT', json: { home_blocks: ['summary', 'repeat', 'meals', 'weight'] } });
+    expect(ok.data.home_blocks).toEqual(['summary', 'repeat', 'meals', 'weight']);
+    expect((await api('/me')).data.settings.home_blocks).toEqual(['summary', 'repeat', 'meals', 'weight']);
+    for (const bad of [['summary', 'summary'], ['summary', 'nope'], 'summary'])
+      expect((await api('/settings', { method: 'PUT', json: { home_blocks: bad } })).status).toBe(400);
+  });
 });
 
 describe('foods', () => {
