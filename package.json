@@ -3,18 +3,20 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite build && wrangler dev",
+    "dev": "npm run build:cards && vite build && wrangler dev",
     "dev:web": "vite",
-    "build": "vite build",
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p web/tsconfig.json",
+    "build": "npm run build:cards && vite build",
+    "typecheck": "npm run build:cards && tsc --noEmit -p tsconfig.json && tsc --noEmit -p web/tsconfig.json",
     "test": "vitest run",
     "db:migrate:local": "wrangler d1 migrations apply nutrition --local",
     "db:migrate:remote": "wrangler d1 migrations apply nutrition --remote",
-    "deploy": "vite build && wrangler d1 migrations apply nutrition --remote && wrangler deploy",
-    "pretest": "vite build --logLevel warn"
+    "deploy": "npm run build:cards && vite build && wrangler d1 migrations apply nutrition --remote && wrangler deploy",
+    "pretest": "npm run build:cards && vite build --logLevel warn",
+    "build:cards": "vite build -c vite.cards.config.ts --logLevel warn"
   },
   "dependencies": {
     "@cloudflare/workers-oauth-provider": "^1.2.4",
+    "@modelcontextprotocol/ext-apps": "^2.0.4",
     "@modelcontextprotocol/server": "^2.4.0",
     "agents": "^0.33.0",
     "hono": "^4.13.18",
