@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { FatSecretClient } from '../src/worker/lib/fatsecret';
 import { cacheFood } from '../src/worker/lib/foods';
+import { offByBarcode } from '../src/worker/lib/off';
+import { UsdaClient } from '../src/worker/lib/usda';
 import { failStaleJobs } from '../src/worker/lib/jobs';
 import { finishDraft } from '../src/worker/lib/pipeline';
 import { api, json, mockFetch, testEnv } from './helpers';
@@ -226,6 +229,28 @@ describe('errors', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
     expect((await api(`/intake/${m.data.id}/retry`, { method: 'POST' }, E)).status).toBe(500);
     expect(spy).toHaveBeenCalled();
+  });
+});
+
+describe('outside food databases', () => {
+  it('give every request a deadline', async () => {
+    const signals: (AbortSignal | null | undefined)[] = [];
+    const capture = async (_: RequestInfo | URL, init?: RequestInit) => (signals.push(init?.signal), json({ foods: [], status: 0 }));
+    await new UsdaClient('k', capture as typeof fetch).search('pasta', ['SR Legacy']);
+    await offByBarcode('01234567', capture as typeof fetch);
+    await new FatSecretClient('k', 's', capture as typeof fetch).food('1').catch(() => {});
+    expect(signals).toHaveLength(3);
+    for (const s of signals) expect(s).toBeInstanceOf(AbortSignal);
+  });
+  it('signs a FatSecret call again once after an expired-timestamp error', async () => {
+    let calls = 0;
+    const c = new FatSecretClient('k', 's', (async () => (++calls === 1 ? json({ error: { code: 6, message: 'Invalid timestamp' } }) : json({}))) as unknown as typeof fetch);
+    expect(await c.food('1')).toBeNull();
+    expect(calls).toBe(2);
+    let always = 0;
+    const d = new FatSecretClient('k', 's', (async () => (always++, json({ error: { code: 6, message: 'Invalid timestamp' } }))) as unknown as typeof fetch);
+    await expect(d.food('1')).rejects.toThrow(/6/);
+    expect(always).toBe(2);
   });
 });
 

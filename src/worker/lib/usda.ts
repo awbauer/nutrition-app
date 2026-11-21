@@ -1,4 +1,5 @@
 /** USDA FoodData Central client. Nutrient values for all data types are per 100 g. */
+import { FETCH_TIMEOUT_MS } from './ids';
 import { fromUsda, type NutrientValue } from './nutrients';
 import { normaliseUnit, parsePortionText, type Portion } from './units';
 
@@ -77,7 +78,8 @@ export class UsdaClient {
       let status = 0;
       for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
         if (attempt) await sleep(RETRY_DELAYS_MS[attempt - 1]!);
-        const res = await this.fetcher(url.toString(), init);
+        // Each attempt has its own deadline: requests are serialised, so one hung request held up every other.
+        const res = await this.fetcher(url.toString(), { ...init, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
         if (res.ok) return res.json<T>();
         status = res.status;
         if (!RETRYABLE.has(status)) break;

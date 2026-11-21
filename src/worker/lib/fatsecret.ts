@@ -8,6 +8,7 @@
  */
 import type { Env } from '../env';
 import type { ExternalFood } from './foods';
+import { FETCH_TIMEOUT_MS } from './ids';
 import type { NutrientValue } from './nutrients';
 import { NUTRIENT_BY_CODE } from './nutrients';
 import type { Portion } from './units';
@@ -24,6 +25,8 @@ const BASIC_DETAIL_LIMIT = 8;
 const PREMIER_MISSING = new Set([10, 12, 14]);
 /** Keys found to lack Premier search, so later searches skip straight to Basic (per isolate). */
 const basicOnly = new Set<string>();
+/** FatSecret error code for an invalid or expired oauth_timestamp. */
+const TIMESTAMP_INVALID = 6;
 
 export class FatSecretError extends Error {
   constructor(
@@ -166,7 +169,17 @@ export class FatSecretClient {
     private fetcher: typeof fetch = (i, n) => fetch(i, n),
   ) {}
 
-  private async call<T>(method: string, params: Record<string, string>): Promise<T> {
+  private async call<T>(method: string, params: Record<string, string>, retried = false): Promise<T> {
+    try {
+      return await this.signedCall<T>(method, params);
+    } catch (e) {
+      // Error 6 is an invalid or expired timestamp (the request was signed, then delayed): sign again once.
+      if (!retried && e instanceof FatSecretError && Number(e.code) === TIMESTAMP_INVALID) return this.call<T>(method, params, true);
+      throw e;
+    }
+  }
+
+  private async signedCall<T>(method: string, params: Record<string, string>): Promise<T> {
     const all: Record<string, string> = {
       ...params,
       method,
@@ -181,7 +194,7 @@ export class FatSecretClient {
     const qs = Object.entries(all)
       .map(([k, v]) => `${rfc3986(k)}=${rfc3986(v)}`)
       .join('&');
-    const res = await this.fetcher(`${ENDPOINT}?${qs}`, { headers: { Accept: 'application/json' } });
+    const res = await this.fetcher(`${ENDPOINT}?${qs}`, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
     if (!res.ok) throw new FatSecretError(method, res.status, res.statusText);
     const data = (await res.json()) as T & { error?: { code: number; message: string } };
     // FatSecret reports errors in a 200 body.
@@ -203,7 +216,8 @@ export class FatSecretClient {
       } catch (e) {
         if (!(e instanceof FatSecretError && PREMIER_MISSING.has(Number(e.code)))) throw e;
         basicOnly.add(this.key);
-        console.warn('FatSecret: no Premier search on this key, using the Basic search');
+        // Expected on a Basic key (once per isolate): not a warning.
+        console.info('FatSecret: no Premier search on this key, using the Basic search');
       }
     }
     // Basic: search returns names and a text summary only, so fetch each top hit for its servings.
