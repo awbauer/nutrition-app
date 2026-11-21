@@ -293,7 +293,17 @@ describe('package labels', () => {
 
 describe('food cache', () => {
   it('caches the same new food twice at once without failing', async () => {
-    const f = { source: 'estimate' as const, sourceId: `qa-race-${Date.now()}`, name: 'Race food', brand: null, dataType: null, category: null, defaultServingGrams: null, portions: [], nutrients: [{ code: 'ENERC_KCAL', usdaId: 1008, value: 100, unit: 'kcal' }] };
+    const f = {
+      source: 'estimate' as const,
+      sourceId: `qa-race-${Date.now()}`,
+      name: 'Race food',
+      brand: null,
+      dataType: null,
+      category: null,
+      defaultServingGrams: null,
+      portions: [],
+      nutrients: [{ code: 'ENERC_KCAL', usdaId: 1008, value: 100, unit: 'kcal' }],
+    };
     const [a, b] = await Promise.all([cacheFood(testEnv.DB, f), cacheFood(testEnv.DB, f)]);
     expect(a.id).toBe(b.id);
     expect(a.nutrients).toHaveLength(1);

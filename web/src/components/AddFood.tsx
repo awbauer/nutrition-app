@@ -273,4 +273,3 @@ function interleave<A, B>(a: A[], b: B[]): (A | B)[] {
   }
   return out;
 }
-

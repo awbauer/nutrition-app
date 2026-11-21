@@ -228,9 +228,7 @@ async function hydrate(db: D1Database, userId: string, rows: RecipeRow[]): Promi
   // A recipe's ingredients are all in one chunk, so their position order holds.
   const results = (
     await db.batch<{ id: string; recipe_food_id: string; food_id: string; display_name: string; amount_value: number; amount_unit: string; grams: number }>(
-      chunks(ids).map((part) =>
-        db.prepare(`SELECT * FROM recipe_ingredient WHERE recipe_food_id IN (${part.map(() => '?').join(',')}) ORDER BY position`).bind(...part),
-      ),
+      chunks(ids).map((part) => db.prepare(`SELECT * FROM recipe_ingredient WHERE recipe_food_id IN (${part.map(() => '?').join(',')}) ORDER BY position`).bind(...part)),
     )
   ).flatMap((b) => b.results);
   const foods = new Map<string, FoodRecord>();
