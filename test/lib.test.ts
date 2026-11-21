@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { addDays, logDate, mealTypeForTime, localParts } from '../src/worker/lib/dates';
 import { fromUsda } from '../src/worker/lib/nutrients';
-import { countUnit, EXACT_UNITS, foodKind, sizesFor, toGrams, ucum, withCounts, type Portion } from '../src/worker/lib/units';
+import { countUnit, EXACT_UNITS, foodKind, normaliseUnit, sizesFor, toGrams, ucum, withCounts, type Portion } from '../src/worker/lib/units';
 import { normaliseDetailFood, parsePortionText } from '../src/worker/lib/usda';
 import { normaliseOff } from '../src/worker/lib/off';
 import { chickenDetail, foundationEgg } from './fixtures/usda';
@@ -31,6 +31,12 @@ describe('serving to grams', () => {
   it('uses mass units directly', () => {
     expect(toGrams(2, 'oz').grams).toBeCloseTo(56.7, 1);
     expect(toGrams(150, 'grams').grams).toBe(150);
+  });
+  it('reads plurals of aliased spellings ("litres" is litres, not 2 generic servings)', () => {
+    expect(normaliseUnit('litres')).toBe('l');
+    expect(normaliseUnit('millilitres')).toBe('ml');
+    expect(toGrams(2, 'litres').grams).toBe(2000);
+    expect(toGrams(250, 'millilitres').grams).toBe(250);
   });
   it('prefers the food portion table', () => {
     expect(toGrams(1, 'cup', food)).toEqual({ grams: 140, method: 'portion' });

@@ -137,7 +137,8 @@ export function normaliseUnit(unit: string): string {
   if (alias || KNOWN.has(u)) return alias ?? u;
   // Counted things in the food's own words: "cookies" -> "cookie", "patties" -> "patty".
   if (/(?:patt|pastr|berr|cand|jell|gumm)ies$/.test(u)) return u.slice(0, -3) + 'y';
-  if (/^[a-z]{3,}[^s]s$/.test(u)) return u.slice(0, -1);
+  // A plural of a known spelling ("litres", "millilitres") is that unit.
+  if (/^[a-z]{3,}[^s]s$/.test(u)) return ALIASES[u.slice(0, -1)] ?? u.slice(0, -1);
   return u;
 }
 
