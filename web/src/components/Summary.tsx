@@ -10,7 +10,7 @@ const MEAL_COLOR: Record<MealType, string> = {
 const ORDER: MealType[] = ['breakfast', 'lunch', 'dinner', 'snack'];
 
 /** The day at a glance: energy left (or over), how each meal filled it, and macros. */
-export function Summary(props: { day: Day }) {
+export function Summary(props: { day: Day; isToday?: boolean }) {
   const { totals, targets } = props.day;
   const eaten = totals.ENERC_KCAL ?? 0;
   const target = targets.ENERC_KCAL;
@@ -23,12 +23,14 @@ export function Summary(props: { day: Day }) {
     kcal: props.day.meals.filter((m) => m.meal_type === t && m.status === 'completed').reduce((s, m) => s + (m.totals.ENERC_KCAL ?? 0), 0),
   })).filter((x) => x.kcal > 0);
   const scale = Math.max(target ?? 0, eaten, 1);
+  // Past days (the Today screen's day arrows) aren't "today".
+  const when = props.isToday === false ? '' : ' today';
 
   return (
-    <section class="card overflow-hidden p-5" aria-label="Today's totals">
+    <section class="card overflow-hidden p-5" aria-label={props.isToday === false ? 'Day totals' : "Today's totals"}>
       <div class="flex items-start justify-between gap-3">
         <div>
-          <p class="eyebrow">{target == null ? 'Eaten today' : over ? 'Over your target' : 'Left today'}</p>
+          <p class="eyebrow">{target == null ? `Eaten${when}` : over ? 'Over your target' : `Left${when}`}</p>
           <p class={`num mt-1 text-[3.25rem] leading-none font-semibold ${over ? 'text-berry' : ''}`}>
             {kcal(target == null ? eaten : Math.abs(left!))}
             <span class="ml-1.5 font-sans text-base font-medium text-faint">kcal</span>

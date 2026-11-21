@@ -83,7 +83,11 @@ export function CoachView() {
     }
   }
 
-  const label = (s: { log_date: string; partial: boolean }) => (s.partial ? 'Today so far' : data ? dayLabel(s.log_date, data.today) : s.log_date);
+  // A partial report is "so far" for the day it covers, which isn't always today (yesterday's, written before the cutoff).
+  const label = (s: { log_date: string; partial: boolean }) => {
+    const day = data ? dayLabel(s.log_date, data.today) : s.log_date;
+    return s.partial ? (day === 'Today' ? 'Today so far' : `${day} so far`) : day;
+  };
 
   return (
     <div class="flex flex-col gap-4">
