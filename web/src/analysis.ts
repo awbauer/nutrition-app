@@ -11,6 +11,8 @@ const POLL_MS = 3000;
 const watching = new Map<string, Intake>();
 const listeners = new Set<(i: Intake) => void>();
 let timer: ReturnType<typeof setInterval> | undefined;
+/** Failed meals whose error toast was already shown: Today watches every meal on each load, and the card keeps its own Try again. */
+const errorShown = new Set<string>();
 
 export const onIntakeSettled = (fn: (i: Intake) => void) => (listeners.add(fn), () => listeners.delete(fn));
 
@@ -18,6 +20,8 @@ const label = (i: Intake) => (i.pending?.recipe ? `Recipe "${i.pending.recipe}"`
 const toastId = (id: string) => `ai-${id}`;
 
 function report(i: Intake) {
+  // Being read again (Try again from the card or the toast): a new failure gets its own toast.
+  if (i.status === 'preparation' && !i.pending?.error) errorShown.delete(i.id);
   const id = toastId(i.merged_from ?? i.id);
   if (i.pending?.recipe_saved) {
     toast.success(`Saved recipe "${i.pending.recipe_saved.name}". Log servings from the + button.`, { id });
@@ -27,6 +31,8 @@ function report(i: Intake) {
   } else if (i.status === 'preparation' && !i.pending?.error) {
     toast.progress(i.source === 'voice' ? `Transcribing your ${label(i).toLowerCase()}…` : `Analyzing your ${label(i).toLowerCase()}…`, { id });
   } else if (i.status === 'preparation') {
+    if (errorShown.has(i.id)) return;
+    errorShown.add(i.id);
     toast.error(`${label(i)}: ${i.pending!.error}`, { id, sticky: true, action: { label: 'Try again', onClick: () => retry(i.id) } });
   } else if (i.status === 'in-progress') {
     toast.info(`${label(i)} is ready. One quick question on Today.`, { id });
@@ -38,6 +44,7 @@ function report(i: Intake) {
 }
 
 async function retry(id: string) {
+  errorShown.delete(id);
   try {
     watch(await api.post<Intake>(`/intake/${id}/retry`));
   } catch (e) {
