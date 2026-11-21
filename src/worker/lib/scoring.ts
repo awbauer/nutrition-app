@@ -10,7 +10,11 @@
  * - a prior for database type (generic whole foods over branded products)
  * - plausibility: kcal per 100 g compared with the model's own rough estimate.
  *   A 5x mismatch is almost always the wrong food.
+ * - popularity, ranked by how much it says: the user's own log (history bonus, in matcher.ts) far
+ *   outweighs how often Americans eat a survey food (NHANES WWEIA), which outweighs FatSecret's own
+ *   result order. "Ham" (eaten on 153 survey days) beats "Ham stroganoff" (0).
  */
+import { WWEIA_DAYS } from '../data/wweia-popularity';
 import { normName } from './foods';
 
 export interface Candidate {
@@ -18,6 +22,8 @@ export interface Candidate {
   brand?: string | null;
   dataType?: string | null;
   kcal100?: number | null;
+  /** Position in the source's own result list (0 = first), where the source orders by popularity. */
+  sourceRank?: number | null;
 }
 
 export interface ScoredCandidate<T extends Candidate> {
@@ -65,6 +71,25 @@ const DATA_TYPE_PRIOR: Record<string, number> = {
   'FatSecret Brand': -0.25,
 };
 
+/** Median person-days among survey foods anyone ate: the zero point of the popularity bonus. */
+const WWEIA_MEDIAN_DAYS = 8;
+
+/**
+ * How commonly a candidate is eaten, as a score adjustment: -0.15..+0.2 for survey (FNDDS) foods from
+ * how many NHANES recall days included them, up to +0.06 for FatSecret's top results, 0 otherwise.
+ */
+export function popularity(c: Candidate): { bonus: number; reason: string | null } {
+  if (c.dataType === 'Survey (FNDDS)') {
+    const days = WWEIA_DAYS[normName(c.name)];
+    if (days === undefined) return { bonus: 0, reason: null };
+    const bonus = Math.max(-0.15, Math.min(0.2, 0.08 * (Math.log10(days + 1) - Math.log10(WWEIA_MEDIAN_DAYS + 1))));
+    return { bonus, reason: days ? `eaten on ${days} survey days` : 'rarely eaten' };
+  }
+  if ((c.dataType === 'FatSecret' || c.dataType === 'FatSecret Brand') && c.sourceRank != null && c.sourceRank < 10)
+    return { bonus: 0.06 * (1 - c.sourceRank / 10), reason: c.sourceRank < 3 ? `FatSecret #${c.sourceRank + 1}` : null };
+  return { bonus: 0, reason: null };
+}
+
 export function scoreCandidate<T extends Candidate>(query: string, c: T, estimateKcal100?: number | null): ScoredCandidate<T> {
   const reasons: string[] = [];
   const q = tokens(query);
@@ -102,15 +127,22 @@ export function scoreCandidate<T extends Candidate>(query: string, c: T, estimat
   const brandMentioned = !!c.brand && tokens(c.brand).some((t) => qset.has(t));
   score += brandMentioned ? 0.3 : (DATA_TYPE_PRIOR[c.dataType ?? ''] ?? 0);
 
+  // How commonly it's eaten.
+  const pop = popularity(c);
+  score += pop.bonus;
+  if (pop.reason) reasons.push(pop.reason);
+
   // Plausibility against the model's estimate.
   if (estimateKcal100 != null && estimateKcal100 > 0 && c.kcal100 != null) {
     const ratio = (c.kcal100 + 10) / (estimateKcal100 + 10);
     const off = Math.abs(Math.log(ratio));
-    if (off < Math.log(1.35)) score += 0.3;
+    // Full credit for a close match, tapering to none at 1.6x: a cliff at one ratio let a rare dish that
+    // happened to fit the estimate beat the common food just outside it ("Ham stroganoff" over "Ham").
+    if (off <= Math.log(1.6)) score += 0.3 * (1 - off / Math.log(1.6));
     else if (off > Math.log(2.5)) {
       score -= 1.0;
       reasons.push(`kcal ${Math.round(c.kcal100)} vs ~${Math.round(estimateKcal100)} expected`);
-    } else if (off > Math.log(1.6)) score -= 0.25;
+    } else score -= 0.25;
   }
 
   return { candidate: c, score: Math.round(score * 100) / 100, reasons };
@@ -121,7 +153,7 @@ export function rankCandidates<T extends Candidate>(query: string, cs: T[], esti
 }
 
 /** Bumped when ranking changes, so the change log can compare how often each version's picks were fixed. */
-export const MATCHER_VERSION = 'match-v2';
+export const MATCHER_VERSION = 'match-v3';
 
 /** Minimum score to accept a candidate automatically; below it we fall back to the estimate. */
 export const ACCEPT_SCORE = 0.6;

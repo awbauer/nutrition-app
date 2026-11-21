@@ -76,4 +76,25 @@ describe('candidate ranking (real mismatches from production)', () => {
     expect(top('bacon', cs, 548)).toBe('Bacon');
     expect(top('bacon bits', cs, 476)).toMatch(/^Bacon bits/);
   });
+
+  it('prefers foods people actually eat (NHANES survey days)', () => {
+    const cs = [
+      { name: 'Ham stroganoff', dataType: 'Survey (FNDDS)', kcal100: 131 },
+      { name: 'Ham croquette', dataType: 'Survey (FNDDS)', kcal100: 251 },
+      { name: 'Ham', dataType: 'Survey (FNDDS)', kcal100: 140 },
+    ];
+    expect(top('ham', cs)).toBe('Ham');
+    const r = rankCandidates('ham', cs);
+    expect(r[0]!.reasons).toContain('eaten on 153 survey days');
+    expect(r.find((x) => x.candidate.name === 'Ham stroganoff')!.reasons).toContain('rarely eaten');
+  });
+
+  it("uses FatSecret's own order only as a light tiebreak", async () => {
+    const { popularity } = await import('../src/worker/lib/scoring');
+    expect(popularity({ name: 'Bacon', dataType: 'FatSecret', sourceRank: 0 }).bonus).toBeCloseTo(0.06);
+    expect(popularity({ name: 'Bacon', dataType: 'FatSecret', sourceRank: 12 }).bonus).toBe(0);
+    expect(popularity({ name: 'Bacon', dataType: 'SR Legacy', sourceRank: 0 }).bonus).toBe(0);
+    // Survey popularity is capped well below the history bonus (0.3+) for foods you've logged yourself.
+    expect(popularity({ name: 'Water, tap', dataType: 'Survey (FNDDS)' }).bonus).toBeLessThanOrEqual(0.2);
+  });
 });
