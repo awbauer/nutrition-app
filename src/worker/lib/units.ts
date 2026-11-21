@@ -40,6 +40,32 @@ const GENERIC_GRAMS: Record<string, number> = {
   shot: 44,
 };
 
+/**
+ * A slice weighs very different amounts by food: used when the food has no slice portion of its own
+ * (generic 30 g is a slice of bread; a cooked bacon slice is about 8 g). First match wins.
+ */
+const SLICE_GRAMS: [RegExp, number][] = [
+  [/\bturkey bacon\b|\bbacon,? turkey\b/, 15],
+  [/\bcanadian bacon\b/, 23],
+  [/\bbacon\b/, 8],
+  [/\b(pepperoni)\b/, 2],
+  [/\b(salami|prosciutto|chorizo)\b/, 10],
+  [/\bamerican\b.*\bcheese\b|\bcheese\b.*\bamerican\b|\bprocess(ed)? cheese\b/, 21],
+  [/\bcheese\b/, 25],
+  [/\b(ham|turkey|chicken|roast beef|bologna|deli|cold cut|luncheon)\b/, 28],
+  [/\btomato\b/, 20],
+  [/\bonion\b/, 15],
+  [/\b(pizza)\b/, 110],
+  [/\b(cake|pie|cheesecake|quiche|lasagna)\b/, 110],
+  [/\b(watermelon|cantaloupe|melon|pineapple)\b/, 150],
+];
+
+/** Grams in one slice of a food without a slice portion (null: use the generic weight). */
+export function sliceGrams(name: string | null | undefined): number | null {
+  const n = (name ?? '').toLowerCase();
+  return SLICE_GRAMS.find(([re]) => re.test(n))?.[1] ?? null;
+}
+
 const ALIASES: Record<string, string> = {
   gram: 'g', grams: 'g', gr: 'g',
   kilogram: 'kg', kilograms: 'kg',
@@ -123,7 +149,7 @@ export function countUnit(portions: Portion[]): string | null {
 export function toGrams(
   amount: number,
   rawUnit: string,
-  food?: { portions?: Portion[]; default_serving_grams?: number | null },
+  food?: { name?: string | null; portions?: Portion[]; default_serving_grams?: number | null },
 ): { grams: number; method: 'mass' | 'portion' | 'default-serving' | 'volume' | 'generic' } {
   const unit = normaliseUnit(rawUnit);
   if (unit in MASS) return { grams: amount * MASS[unit]!, method: 'mass' };
@@ -141,6 +167,8 @@ export function toGrams(
     return { grams: amount * food.default_serving_grams, method: 'default-serving' };
 
   if (unit in VOLUME_ML) return { grams: amount * VOLUME_ML[unit]!, method: 'volume' };
+  const perSlice = unit === 'slice' ? sliceGrams(food?.name) : null;
+  if (perSlice) return { grams: amount * perSlice, method: 'generic' };
   if (unit in GENERIC_GRAMS) return { grams: amount * GENERIC_GRAMS[unit]!, method: 'generic' };
   if (food?.default_serving_grams) return { grams: amount * food.default_serving_grams, method: 'default-serving' };
   return { grams: amount * GENERIC_GRAMS.serving!, method: 'generic' };

@@ -11,6 +11,7 @@
  * App and MCP changes are recorded by diffing the meal before and after the request (see app.ts),
  * so new routes are covered without wiring each one.
  */
+import { MATCHER_VERSION } from './scoring';
 import type { Env } from '../env';
 import { newId } from './ids';
 
@@ -159,6 +160,7 @@ export async function recordAiLogged(
         after: it,
         detail: {
           ...info,
+          matcher_version: MATCHER_VERSION,
           query: m?.query ?? null,
           via: m?.via ?? null,
           estimate_kcal_100g: m?.estimate_kcal_100g ?? null,
@@ -269,7 +271,7 @@ export interface LoggingQuality {
   searches: number;
   meals_with_3plus_fixes: number;
   by_via: { via: string; items: number; pct_fixed: number }[];
-  by_prompt: { prompt_version: string; model: string; items: number; pct_fixed: number }[];
+  by_prompt: { prompt_version: string; matcher_version: string; model: string; items: number; pct_fixed: number }[];
   /** What the AI picked and what it was changed to, most frequent first. */
   top_swaps: { name: string; from: string; to: string; times: number }[];
 }
@@ -329,10 +331,10 @@ export async function loggingQuality(db: D1Database, userId: string, days = 30, 
     searches: results.filter((r) => r.kind === 'searched').length,
     meals_with_3plus_fixes: [...fixesPerMeal.values()].filter((n) => n >= 3).length,
     by_via: [...group((d) => String(d.via ?? 'unknown'))].map(([via, g]) => ({ via, items: g.items, pct_fixed: pct(g.fixed, g.items) })).sort((a, b) => b.items - a.items),
-    by_prompt: [...group((d) => `${d.prompt_version ?? '?'}|${d.model_id ?? '?'}`)]
+    by_prompt: [...group((d) => `${d.prompt_version ?? '?'}|${d.matcher_version ?? 'match-v1'}|${d.model_id ?? '?'}`)]
       .map(([k, g]) => {
-        const [prompt_version, model] = k.split('|') as [string, string];
-        return { prompt_version, model, items: g.items, pct_fixed: pct(g.fixed, g.items) };
+        const [prompt_version, matcher_version, model] = k.split('|') as [string, string, string];
+        return { prompt_version, matcher_version, model, items: g.items, pct_fixed: pct(g.fixed, g.items) };
       })
       .sort((a, b) => b.items - a.items),
     top_swaps: [...swaps.values()].sort((a, b) => b.times - a.times).slice(0, 10),
