@@ -1,7 +1,7 @@
 import { env } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
 import type { Env } from '../src/worker/env';
-import { coachDigest, loggingScore, runDueReports, validateReport, type PeriodStats } from '../src/worker/lib/coach';
+import { coachDigest, generateReport, loggingScore, runDueReports, validateReport, type PeriodStats } from '../src/worker/lib/coach';
 import { api } from './helpers';
 
 const REPORT = {
@@ -107,5 +107,80 @@ describe('coach reports', () => {
     const r = await api('/coach/run', { method: 'POST' }, { ...E, AI: bad });
     expect(r.data).toMatchObject({ status: 'failed' });
     expect((await api(`/coach/${r.data.log_date}`, {}, { DEV_USER_EMAIL: 'coach-other@example.test' })).status).toBe(404);
+  });
+});
+
+describe('coach v2: macro split, streaks, changes, plans, no repeats', () => {
+  it('computes the macro split from grams and judges it against targets or healthy ranges', async () => {
+    const { macroSplit, macroReference, streak } = await import('../src/worker/lib/coach');
+    expect(macroSplit({ PROCNT: 60, FAT: 120, CHOCDF: 220 })).toEqual({ protein_pct: 11, fat_pct: 49, carbs_pct: 40 });
+    expect(macroSplit({ PROCNT: 5 })).toBeNull();
+    expect(macroReference({ ENERC_KCAL: 2000, PROCNT: 150 })).toMatchObject({ source: 'healthy ranges', fat_pct: [20, 35], protein_pct: [25, 35], fat_g: [44, 78] });
+    expect(macroReference({ ENERC_KCAL: 2000, FAT: 60 })).toMatchObject({ source: 'your targets', fat_pct: [22, 32], fat_g: [54, 66] });
+    const days = [
+      { date: '2026-11-10', meals: 2, totals: { PROCNT: 50 } },
+      { date: '2026-11-11', meals: 0, totals: {} },
+      { date: '2026-11-12', meals: 3, totals: { PROCNT: 60 } },
+      { date: '2026-11-13', meals: 3, totals: { PROCNT: 70 } },
+      { date: '2026-11-09', meals: 3, totals: { PROCNT: 140 } },
+    ];
+    expect(streak(days, '2026-11-13', (t) => (t.PROCNT ?? 0) < 100)).toEqual({ days_running: 3, days_in_last_7_logged: 3 });
+  });
+
+  it('gives the coach the split, the streak, the change and real high-protein meals to plan with', async () => {
+    const email = 'coach-v2@example.test';
+    const E = { DEV_USER_EMAIL: email };
+    const mk = async (name: string, kcal: number, p: number, f: number, c: number) =>
+      (await api('/foods', { method: 'POST', json: { name, serving_grams: 100, per_serving: { ENERC_KCAL: kcal, PROCNT: p, FAT: f, CHOCDF: c } } }, E)).data.id as string;
+    const eggs = await mk('eggs and smoked salmon', 420, 42, 24, 4);
+    const toast = await mk('toast with butter', 300, 6, 14, 36);
+    const bacon = await mk('bacon cheeseburger', 900, 35, 60, 45);
+    await api('/goals', { method: 'PUT', json: { energy: 2000, protein: 150 } }, E);
+    await (env as unknown as Env).DB.prepare(`UPDATE goal SET start_date = '2026-10-01' WHERE user_id = (SELECT id FROM users WHERE email = ?)`).bind(email).run();
+    const log = (meal_type: string, at: string, food_id: string, display_name: string) =>
+      api('/intake', { method: 'POST', json: { meal_type, occurrence_at: at, merge: false, items: [{ food_id, amount: 1, unit: 'serving', display_name }] } }, E);
+    // The week before: a high-protein breakfast; this week: toast and burgers.
+    await log('breakfast', '2026-11-03T08:00:00Z', eggs, 'eggs and smoked salmon');
+    for (const d of ['10', '11', '12', '13']) {
+      await log('breakfast', `2026-11-${d}T08:00:00Z`, toast, 'toast with butter');
+      await log('dinner', `2026-11-${d}T19:00:00Z`, bacon, 'bacon cheeseburger');
+    }
+    const user = await (env as unknown as Env).DB.prepare('SELECT id, access_sub, email, timezone FROM users WHERE email = ?').bind(email).first<any>();
+    const d = await coachDigest((env as unknown as Env).DB, user, '2026-11-13');
+    expect(d.macro_split.day).toMatchObject({ protein_pct: 14, fat_pct: 58, carbs_pct: 28 });
+    expect(d.macro_reference.source).toBe('healthy ranges');
+    expect(d.streaks.map((s) => s.issue)).toEqual(expect.arrayContaining(['protein short', 'fat-heavy']));
+    expect(d.streaks.find((s) => s.issue === 'protein short')).toMatchObject({ days_running: 5 }); // every logged day, Nov 3 included
+    expect(d.plans.protein_per_meal_30d.breakfast).toMatchObject({ meals: 5 });
+    expect(d.plans.high_protein_meals.breakfast?.[0]).toMatchObject({ items: ['eggs and smoked salmon'], protein_g: 42 });
+    expect(d.plans.top_fat_sources_week[0]).toMatchObject({ name: 'bacon cheeseburger', fat_g: 240 });
+    expect(d.changes.some((c) => c.what === 'days logged')).toBe(true);
+  });
+
+  it("rewrites a headline that repeats a recent one, and tells the coach what it said before", async () => {
+    const { E, log, user } = await setup('coach-repeat@example.test');
+    await log('lunch', '2026-11-12T12:00:00Z');
+    await log('lunch', '2026-11-13T12:00:00Z');
+    const seen: any[] = [];
+    const answers = [
+      { ...REPORT, headline: 'Protein is short again this week' },
+      { ...REPORT, headline: 'Protein is still short this week' },
+      { ...REPORT, headline: 'Breakfasts average 21 g: three from your log hit 40 g' },
+    ];
+    const ai = {
+      run: async (_m: string, input: { messages: { role: string; content: string }[] }) => {
+        seen.push(input.messages);
+        return { response: answers.shift() };
+      },
+    } as unknown as Ai;
+    const runEnv = { ...(env as unknown as Env), HISTORY: undefined, AI: ai } as Env;
+    const first = await generateReport(runEnv, user, '2026-11-12', false);
+    expect(first.report?.headline).toBe('Protein is short again this week');
+    const second = await generateReport(runEnv, user, '2026-11-13', false);
+    expect(second.report?.headline).toBe('Breakfasts average 21 g: three from your log hit 40 g');
+    // The second day's digest carried the first headline, and the retry said why.
+    expect(JSON.parse(seen[1][1].content).previous_reports[0]).toMatchObject({ date: '2026-11-12', headline: 'Protein is short again this week' });
+    expect(seen[2].at(-1).content).toMatch(/repeats a recent one/);
+    expect(E).toBeTruthy();
   });
 });

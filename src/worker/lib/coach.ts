@@ -21,7 +21,7 @@ import { getSettings } from './settings';
 
 export const COACH_MODEL = '@cf/zai-org/glm-5.3';
 export const COACH_FALLBACK_MODEL = '@cf/openai/gpt-oss-120b';
-export const COACH_PROMPT_VERSION = 'coach-v1';
+export const COACH_PROMPT_VERSION = 'coach-v2';
 /** Failed nightly runs are retried on later cron ticks, this many times. */
 const MAX_ATTEMPTS = 3;
 
@@ -65,6 +65,30 @@ export interface Digest {
   new_foods_week: string[];
   weight: { unit: 'kg' | 'lb'; entries_month: number; trend_now: number | null; trend_change_week: number | null; trend_change_month: number | null } | null;
   logging_score: number;
+  /** Share of calories from protein, fat and carbs (from grams: 4/9/4 kcal per g), per logged-day average. */
+  macro_split: { day: MacroSplit | null; week: MacroSplit | null; previous_week: MacroSplit | null; month: MacroSplit | null };
+  /** What the split is judged against: the user's own fat/carb targets when set, else the healthy ranges (AMDR). */
+  macro_reference: { source: 'your targets' | 'healthy ranges'; protein_pct: [number, number]; fat_pct: [number, number]; carbs_pct: [number, number]; fat_g?: [number, number]; carbs_g?: [number, number] };
+  /** Problems and how many logged days in a row (ending on the reviewed day) they've held. */
+  streaks: { issue: string; days_running: number; days_in_last_7_logged: number; detail: string }[];
+  /** What moved: this week vs the week before, and the reviewed day vs this week. Only notable moves. */
+  changes: { what: string; from: number; to: number; unit: string; compared: 'week vs previous week' | 'day vs this week' }[];
+  /** Material for concrete plans, from the user's own log. */
+  plans: {
+    protein_per_meal_30d: Record<string, { avg_g: number; meals: number }>;
+    /** Past meals that hit the protein bar, by meal type, best first (distinct item sets). */
+    high_protein_meals: Record<string, { date: string; items: string[]; protein_g: number; kcal: number }[]>;
+    protein_bar_g: number;
+    top_fat_sources_week: { name: string; fat_g: number; times: number; fat_share_pct_of_week: number }[];
+  };
+  /** The last few reports' headlines and coaching, so the coach doesn't repeat itself. */
+  previous_reports: { date: string; headline: string; coaching: string[] }[];
+}
+
+export interface MacroSplit {
+  protein_pct: number;
+  fat_pct: number;
+  carbs_pct: number;
 }
 
 export interface CoachReport {
@@ -91,6 +115,8 @@ interface ItemRow {
   confidence: number | null;
   kcal: number | null;
   protein: number | null;
+  fat: number | null;
+  carbs: number | null;
 }
 
 const r1 = (n: number) => Math.round(n * 10) / 10;
@@ -164,6 +190,53 @@ export function loggingScore(w: PeriodStats): number {
   return Math.round(40 * days + 25 * Math.min(1, meals) + 15 * matched + 10 * answered + 10 * prompt);
 }
 
+/** Acceptable Macronutrient Distribution Ranges (US National Academies), % of calories. */
+export const AMDR = { protein_pct: [10, 35] as [number, number], fat_pct: [20, 35] as [number, number], carbs_pct: [45, 65] as [number, number] };
+
+export function macroSplit(t: Record<string, number | undefined>): MacroSplit | null {
+  const p = (t.PROCNT ?? 0) * 4;
+  const f = (t.FAT ?? 0) * 9;
+  const c = (t.CHOCDF ?? 0) * 4;
+  const sum = p + f + c;
+  if (sum < 200) return null; // too little logged to mean anything
+  return { protein_pct: Math.round((p / sum) * 100), fat_pct: Math.round((f / sum) * 100), carbs_pct: Math.round((c / sum) * 100) };
+}
+
+/** The ranges the split is judged against: ±5 points around the user's own fat/carb targets, else AMDR. */
+export function macroReference(targets: Record<string, number>): Digest['macro_reference'] {
+  const kcal = targets.ENERC_KCAL;
+  const around = (g: number | undefined, perG: number): [number, number] | null =>
+    kcal && g ? [Math.max(0, Math.round((g * perG * 100) / kcal) - 5), Math.round((g * perG * 100) / kcal) + 5] : null;
+  const fat = around(targets.FAT, 9);
+  const carbs = around(targets.CHOCDF, 4);
+  const protein = around(targets.PROCNT, 4);
+  const own = !!(fat || carbs);
+  const ref: Digest['macro_reference'] = {
+    source: own ? 'your targets' : 'healthy ranges',
+    protein_pct: protein ?? AMDR.protein_pct,
+    fat_pct: fat ?? AMDR.fat_pct,
+    carbs_pct: carbs ?? AMDR.carbs_pct,
+  };
+  if (kcal) {
+    const fp = ref.fat_pct;
+    const cp = ref.carbs_pct;
+    ref.fat_g = targets.FAT ? [Math.round(targets.FAT * 0.9), Math.round(targets.FAT * 1.1)] : [Math.round((kcal * fp[0]) / 900), Math.round((kcal * fp[1]) / 900)];
+    ref.carbs_g = targets.CHOCDF ? [Math.round(targets.CHOCDF * 0.9), Math.round(targets.CHOCDF * 1.1)] : [Math.round((kcal * cp[0]) / 400), Math.round((kcal * cp[1]) / 400)];
+  }
+  return ref;
+}
+
+/** How many logged days in a row, ending on the reviewed day, `bad` held; and on how many of the last 7 logged days. */
+export function streak(days: { date: string; meals: number; totals: Record<string, number> }[], reviewed: string, bad: (t: Record<string, number>) => boolean) {
+  const logged = days.filter((d) => d.meals > 0 && d.date <= reviewed).sort((a, b) => b.date.localeCompare(a.date));
+  let running = 0;
+  for (const d of logged) {
+    if (!bad(d.totals)) break;
+    running++;
+  }
+  return { days_running: running, days_in_last_7_logged: logged.slice(0, 7).filter((d) => bad(d.totals)).length };
+}
+
 /** Everything the coach looks at for one reviewed log date (and the 59 days before it). */
 export async function coachDigest(db: D1Database, user: User, reviewed: string, partial = false): Promise<Digest> {
   const settings = await getSettings(db, user.id);
@@ -176,7 +249,9 @@ export async function coachDigest(db: D1Database, user: User, reviewed: string, 
         `SELECT i.id AS intake_id, i.log_date, i.meal_type, i.source, i.status, i.occurrence_at, i.recorded_at,
            ci.display_name, ci.food_id, ci.estimated, ci.confidence,
            (SELECT value FROM intake_nutrient n WHERE n.consumed_item_id = ci.id AND n.nutrient_code = 'ENERC_KCAL') AS kcal,
-           (SELECT value FROM intake_nutrient n WHERE n.consumed_item_id = ci.id AND n.nutrient_code = 'PROCNT') AS protein
+           (SELECT value FROM intake_nutrient n WHERE n.consumed_item_id = ci.id AND n.nutrient_code = 'PROCNT') AS protein,
+           (SELECT value FROM intake_nutrient n WHERE n.consumed_item_id = ci.id AND n.nutrient_code = 'FAT') AS fat,
+           (SELECT value FROM intake_nutrient n WHERE n.consumed_item_id = ci.id AND n.nutrient_code = 'CHOCDF') AS carbs
          FROM nutrition_intake i LEFT JOIN consumed_item ci ON ci.intake_id = i.id
          WHERE i.user_id = ? AND i.status != 'entered-in-error' AND i.log_date BETWEEN ? AND ?
          ORDER BY i.occurrence_at, ci.position`,
@@ -251,6 +326,117 @@ export async function coachDigest(db: D1Database, user: User, reviewed: string, 
   }
 
   const week = stats(0, 7);
+  const previous_week = stats(7, 7);
+  const ref = macroReference(targets);
+  const split = {
+    day: macroSplit(day.avg),
+    week: macroSplit(week.avg),
+    previous_week: macroSplit(previous_week.avg),
+    month: macroSplit(month.avg),
+  };
+
+  // Problems that keep happening, counted over logged days.
+  const kT = targets.ENERC_KCAL;
+  const pT = targets.PROCNT;
+  const fiberT = targets.FIBTG ?? 25;
+  const streaks: Digest['streaks'] = [];
+  const add = (issue: string, detail: string, bad: (t: Record<string, number>) => boolean) => {
+    const s = streak(days, reviewed, bad);
+    if (s.days_running >= 2 || s.days_in_last_7_logged >= 4) streaks.push({ issue, detail, ...s });
+  };
+  if (pT) add('protein short', `under 90% of the ${pT} g target`, (t) => (t.PROCNT ?? 0) < pT * 0.9);
+  if (kT) add('calories over', `more than 10% over the ${kT} kcal target`, (t) => (t.ENERC_KCAL ?? 0) > kT * 1.1);
+  add('fat-heavy', `fat above ${ref.fat_pct[1]}% of calories`, (t) => (macroSplit(t)?.fat_pct ?? 0) > ref.fat_pct[1]);
+  add('carbs low', `carbs below ${ref.carbs_pct[0]}% of calories`, (t) => {
+    const m = macroSplit(t);
+    return !!m && m.carbs_pct < ref.carbs_pct[0];
+  });
+  add('fiber low', `under ${Math.round(fiberT * 0.7)} g fiber`, (t) => (t.FIBTG ?? 0) < fiberT * 0.7);
+
+  // Notable moves.
+  const changes: Digest['changes'] = [];
+  const moved = (what: string, from: number | undefined, to: number | undefined, unit: string, compared: Digest['changes'][number]['compared'], minAbs: number, minRel = 0.15) => {
+    if (from == null || to == null) return;
+    const d = to - from;
+    if (Math.abs(d) >= minAbs && (from === 0 || Math.abs(d) / Math.abs(from) >= minRel)) changes.push({ what, from: r1(from), to: r1(to), unit, compared });
+  };
+  if (week.days_logged && previous_week.days_logged) {
+    moved('calories per logged day', previous_week.avg.ENERC_KCAL, week.avg.ENERC_KCAL, 'kcal', 'week vs previous week', 150);
+    moved('protein per logged day', previous_week.avg.PROCNT, week.avg.PROCNT, 'g', 'week vs previous week', 12);
+    moved('fiber per logged day', previous_week.avg.FIBTG, week.avg.FIBTG, 'g', 'week vs previous week', 5);
+    moved('fat share of calories', split.previous_week?.fat_pct, split.week?.fat_pct, '%', 'week vs previous week', 5, 0);
+    moved('carb share of calories', split.previous_week?.carbs_pct, split.week?.carbs_pct, '%', 'week vs previous week', 5, 0);
+  }
+  moved('days logged', previous_week.days_logged, week.days_logged, 'days', 'week vs previous week', 2, 0);
+  if (!partial && day.days_logged && week.days_logged > 1) {
+    moved('protein', week.avg.PROCNT, day.avg.PROCNT, 'g', 'day vs this week', 20, 0.25);
+    moved('calories', week.avg.ENERC_KCAL, day.avg.ENERC_KCAL, 'kcal', 'day vs this week', 400, 0.25);
+    moved('fat share of calories', split.week?.fat_pct, split.day?.fat_pct, '%', 'day vs this week', 10, 0);
+  }
+
+  // Plans: protein per meal, past meals that hit the bar, this week's fat sources.
+  const mealsById = new Map<string, { date: string; type: MealType; items: string[]; protein: number; kcal: number }>();
+  for (const r of rows.filter((r) => r.status === 'completed' && r.food_id)) {
+    const m = mealsById.get(r.intake_id) ?? { date: r.log_date, type: r.meal_type, items: [], protein: 0, kcal: 0 };
+    m.items.push((r.display_name ?? '').trim());
+    m.protein += r.protein ?? 0;
+    m.kcal += r.kcal ?? 0;
+    mealsById.set(r.intake_id, m);
+  }
+  const allMeals = [...mealsById.values()];
+  const recent = allMeals.filter((m) => m.date >= month.from);
+  const perMeal: Digest['plans']['protein_per_meal_30d'] = {};
+  for (const t of [...MAIN_MEALS, 'snack' as MealType]) {
+    const ms = recent.filter((m) => m.type === t);
+    if (ms.length) perMeal[t] = { avg_g: r1(ms.reduce((a, m) => a + m.protein, 0) / ms.length), meals: ms.length };
+  }
+  // A meal that clearly moves the day toward target: a quarter of it (meals plus a snack), at least 25 g.
+  const bar = pT ? Math.max(25, Math.round(pT / 4)) : 30;
+  const high: Digest['plans']['high_protein_meals'] = {};
+  for (const t of [...MAIN_MEALS, 'snack' as MealType]) {
+    const seenSet = new Set<string>();
+    const best = allMeals
+      .filter((m) => m.type === t && m.protein >= (t === 'snack' ? bar / 2 : bar))
+      .sort((a, b) => b.protein - a.protein)
+      .filter((m) => {
+        const key = [...m.items].map((x) => x.toLowerCase()).sort().join('|');
+        if (seenSet.has(key)) return false;
+        seenSet.add(key);
+        return true;
+      })
+      .slice(0, 4)
+      .map((m) => ({ date: m.date, items: m.items, protein_g: Math.round(m.protein), kcal: Math.round(m.kcal) }));
+    if (best.length) high[t] = best;
+  }
+  const weekItems = rows.filter((r) => r.log_date >= week.from && r.status === 'completed' && r.food_id);
+  const weekFat = weekItems.reduce((a, r) => a + (r.fat ?? 0), 0);
+  const fatBy = new Map<string, { fat: number; times: number }>();
+  for (const r of weekItems) {
+    const k = (r.display_name ?? '').toLowerCase().trim();
+    const f = fatBy.get(k) ?? { fat: 0, times: 0 };
+    f.fat += r.fat ?? 0;
+    f.times += 1;
+    fatBy.set(k, f);
+  }
+  const fatSources = [...fatBy.entries()]
+    .sort((a, b) => b[1].fat - a[1].fat)
+    .slice(0, 5)
+    .filter(([, f]) => f.fat >= 5)
+    .map(([name, f]) => ({ name, fat_g: Math.round(f.fat), times: f.times, fat_share_pct_of_week: pct(f.fat, weekFat) }));
+
+  // What the coach said recently.
+  const { results: prev } = await db
+    .prepare(
+      `SELECT log_date, report_json FROM coach_report WHERE user_id = ? AND status = 'ready' AND partial = 0 AND log_date < ? AND log_date >= ?
+       ORDER BY log_date DESC LIMIT 4`,
+    )
+    .bind(user.id, reviewed, addDays(reviewed, -14))
+    .all<{ log_date: string; report_json: string }>();
+  const previous_reports = prev.map((p) => {
+    const r = JSON.parse(p.report_json) as CoachReport;
+    return { date: p.log_date, headline: r.headline, coaching: r.coaching.map((c) => c.title) };
+  });
+
   return {
     reviewed_date: reviewed,
     partial,
@@ -258,13 +444,19 @@ export async function coachDigest(db: D1Database, user: User, reviewed: string, 
     targets,
     day: { ...day, meals: [...dayMeals.values()] },
     week,
-    previous_week: stats(7, 7),
+    previous_week,
     month,
     previous_month: stats(30, 30),
     top_foods_month: top,
     new_foods_week: firstSeen.results.map((r) => r.display_name),
     weight,
     logging_score: loggingScore(week),
+    macro_split: split,
+    macro_reference: ref,
+    streaks,
+    changes,
+    plans: { protein_per_meal_30d: perMeal, high_protein_meals: high, protein_bar_g: bar, top_fat_sources_week: fatSources },
+    previous_reports,
   };
 }
 
@@ -278,6 +470,25 @@ PROCNT protein g, CHOCDF carbs g, FAT fat g, FIBTG fiber g, SUGAR sugars g, NA s
 Look at the whole picture: what they eat, how it compares with their targets, trends between periods, patterns in
 foods and meals, weight, and how complete and accurate their logging is. Incomplete logging changes how much the
 intake numbers can be trusted; say so when it matters, and don't praise a "low" calorie day that was just not logged.
+
+What else is in the digest:
+- macro_split: % of calories from protein, fat and carbs (day, week, previous_week, month), and macro_reference: the
+  ranges to judge them by (their own fat/carb targets when set, else healthy ranges). A fat- or carb-heavy split that
+  crowds out protein is often the real cause of "protein short": say so, with top_fat_sources_week by name.
+- streaks: problems with how many logged days in a row they've held (days_running).
+- changes: notable moves, this week vs the week before and the day vs this week.
+- plans: protein per meal (last 30 days), past meals from THEIR log that hit protein_bar_g (by meal type), and this
+  week's biggest fat sources. Use these for concrete plans: real meals they've eaten, by name, with their numbers.
+- previous_reports: the headlines and coaching you gave in the last few days.
+
+Choosing the headline, in this order:
+1. A notable change (from "changes"; a new pattern; a streak that just ended) is the headline. Name what moved and by how much.
+2. Otherwise, the most important ongoing problem, but never as a restatement. If it already appeared in
+   previous_reports, or its days_running is 3 or more, escalate it into a plan: the specific meal where the gap is
+   ("your breakfasts average 21 g") and 2-3 options from plans.high_protein_meals by name with their grams
+   ("these three from your log hit 40 g: …"), or the fat sources to trim.
+3. Never reuse the topic or wording of any previous_reports headline. Coaching items must not repeat earlier ones
+   either; build on them (next step, a different meal, a different lever).
 
 Rules:
 - Use only numbers in the digest; quote them (rounded) to be concrete. Never invent foods, days or values.
@@ -330,22 +541,47 @@ export function validateReport(raw: unknown): CoachReport {
   };
 }
 
+const STOP = new Set('a an and are as at be but by for from has have in is it its of on or so that the this to was were with you your yours today week day still again'.split(' '));
+const words = (s: string) => new Set(s.toLowerCase().replace(/[^a-z0-9% ]+/g, ' ').split(/\s+/).filter((w) => w.length > 2 && !STOP.has(w)));
+
+/** A recent headline this one mostly repeats (by shared words), if any. */
+export function repeatedHeadline(headline: string, previous: { headline: string }[]): string | null {
+  const a = words(headline);
+  for (const p of previous) {
+    const b = words(p.headline);
+    const shared = [...a].filter((w) => b.has(w)).length;
+    if (a.size && b.size && shared / Math.min(a.size, b.size) >= 0.5) return p.headline;
+  }
+  return null;
+}
+
 async function writeReport(env: Env, model: string, digest: Digest): Promise<CoachReport> {
   let last: unknown;
-  for (let attempt = 0; attempt < 2; attempt++) {
+  let good: CoachReport | null = null; // a valid report whose headline repeated: better than nothing
+  let feedback: string | null = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
     const messages = [
       { role: 'system', content: SYSTEM },
       { role: 'user', content: JSON.stringify(digest) },
-      ...(attempt ? [{ role: 'user', content: 'Your previous answer was not valid JSON matching the schema. Reply with the JSON object only.' }] : []),
+      ...(feedback ? [{ role: 'user', content: feedback }] : []),
     ];
     const r = await env.AI.run(model as Parameters<Ai['run']>[0], { messages, temperature: 0.4, response_format: { type: 'json_object' }, ...modelOptions(model) } as never, gatewayOpts(env) as never);
+    let report: CoachReport;
     try {
-      return validateReport(responseText(r));
+      report = validateReport(responseText(r));
     } catch (e) {
       last = e;
       if (!(e instanceof CoachOutputError) && !(e instanceof SyntaxError)) throw e;
+      feedback = 'Your previous answer was not valid JSON matching the schema. Reply with the JSON object only.';
+      continue;
     }
+    // Saying the same thing every morning is noise: ask once more for a change or an escalated plan.
+    const repeat = repeatedHeadline(report.headline, digest.previous_reports);
+    if (!repeat || attempt === 2) return report;
+    good = report;
+    feedback = `Your headline "${report.headline}" repeats a recent one ("${repeat}"). Write the report again with a different headline: lead with a notable change, or turn the ongoing problem into a concrete plan using plans (meals from their own log, by name, with grams). Same JSON format.`;
   }
+  if (good) return good;
   throw last;
 }
 
