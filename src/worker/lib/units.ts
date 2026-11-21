@@ -127,6 +127,13 @@ const ALIASES: Record<string, string> = {
   ea: 'piece',
   x: 'piece',
   '': 'piece',
+  // The UCUM codes items are stored with (see ucum()), when a stored unit is converted again.
+  '[oz_av]': 'oz',
+  '[lb_av]': 'lb',
+  '[cup_us]': 'cup',
+  '[tbs_us]': 'tbsp',
+  '[tsp_us]': 'tsp',
+  '[foz_us]': 'fl oz',
 };
 
 const KNOWN = new Set([...Object.keys(MASS), ...Object.keys(VOLUME_ML), ...Object.keys(GENERIC_GRAMS)]);
@@ -137,7 +144,8 @@ export function normaliseUnit(unit: string): string {
   if (alias || KNOWN.has(u)) return alias ?? u;
   // Counted things in the food's own words: "cookies" -> "cookie", "patties" -> "patty".
   if (/(?:patt|pastr|berr|cand|jell|gumm)ies$/.test(u)) return u.slice(0, -3) + 'y';
-  if (/^[a-z]{3,}[^s]s$/.test(u)) return u.slice(0, -1);
+  // A plural of a known spelling ("litres", "millilitres") is that unit.
+  if (/^[a-z]{3,}[^s]s$/.test(u)) return ALIASES[u.slice(0, -1)] ?? u.slice(0, -1);
   return u;
 }
 

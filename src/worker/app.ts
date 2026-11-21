@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { requireUser } from './auth';
 import type { AppEnv } from './env';
 import { diffMeal, recordEvents, snapshotMeal, type MealEvent } from './lib/events';
@@ -19,9 +19,22 @@ import { settings } from './routes/settings';
 
 export const app = new Hono<AppEnv>();
 
-app.onError((err, c) => {
+/** The request body isn't JSON (a SyntaxError from a server-side JSON.parse is our fault, not the client's). */
+async function badJsonBody(c: Context): Promise<boolean> {
+  // c.req.json() reads the body as text (cached) and parses it; a route that never read its body can't have a bad one.
+  const read = c.req.bodyCache.text;
+  if (!read) return false;
+  try {
+    JSON.parse(await read);
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+app.onError(async (err, c) => {
   if (err instanceof HttpError) return c.json({ error: err.message }, err.status as 400);
-  if (err instanceof SyntaxError) return c.json({ error: 'invalid JSON body' }, 400);
+  if (err instanceof SyntaxError && (await badJsonBody(c))) return c.json({ error: 'invalid JSON body' }, 400);
   console.error(err);
   return c.json({ error: 'internal error' }, 500);
 });

@@ -12,7 +12,7 @@
  */
 import type { Env, User } from '../env';
 import { getFood, normName, type FoodRecord } from './foods';
-import { HttpError, newId } from './ids';
+import { chunks, HttpError, newId } from './ids';
 import { round } from './nutrients';
 import { getIntake, resolveRef, validAmount, type ItemRef } from './intake';
 import { toGrams, ucum, type Portion } from './units';
@@ -225,11 +225,12 @@ const RECIPE_SELECT = `SELECT r.food_id, f.name, r.servings, r.yield_grams, r.up
 async function hydrate(db: D1Database, userId: string, rows: RecipeRow[]): Promise<Recipe[]> {
   if (!rows.length) return [];
   const ids = rows.map((r) => r.food_id);
-  const ph = ids.map(() => '?').join(',');
-  const { results } = await db
-    .prepare(`SELECT * FROM recipe_ingredient WHERE recipe_food_id IN (${ph}) ORDER BY position`)
-    .bind(...ids)
-    .all<{ id: string; recipe_food_id: string; food_id: string; display_name: string; amount_value: number; amount_unit: string; grams: number }>();
+  // A recipe's ingredients are all in one chunk, so their position order holds.
+  const results = (
+    await db.batch<{ id: string; recipe_food_id: string; food_id: string; display_name: string; amount_value: number; amount_unit: string; grams: number }>(
+      chunks(ids).map((part) => db.prepare(`SELECT * FROM recipe_ingredient WHERE recipe_food_id IN (${part.map(() => '?').join(',')}) ORDER BY position`).bind(...part)),
+    )
+  ).flatMap((b) => b.results);
   const foods = new Map<string, FoodRecord>();
   for (const fid of new Set([...ids, ...results.map((r) => r.food_id)])) {
     const f = await getFood(db, userId, fid);

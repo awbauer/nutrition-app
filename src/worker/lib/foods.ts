@@ -1,5 +1,5 @@
 import type { Env } from '../env';
-import { HttpError, newId } from './ids';
+import { chunks, HttpError, newId } from './ids';
 import { NUTRIENT_BY_CODE, type NutrientValue } from './nutrients';
 import type { Portion } from './units';
 import { UsdaClient, type NormalisedFood } from './usda';
@@ -62,14 +62,17 @@ interface FoodRow {
 
 async function hydrate(db: D1Database, rows: FoodRow[]): Promise<FoodRecord[]> {
   if (!rows.length) return [];
-  const ids = rows.map((r) => r.id);
-  const { results } = await db
-    .prepare(
-      `SELECT food_id, nutrient_code, usda_nutrient_id, value_per_100g, unit FROM food_nutrient
+  const batches = await db.batch<{ food_id: string; nutrient_code: string; usda_nutrient_id: number | null; value_per_100g: number; unit: string }>(
+    chunks(rows.map((r) => r.id)).map((ids) =>
+      db
+        .prepare(
+          `SELECT food_id, nutrient_code, usda_nutrient_id, value_per_100g, unit FROM food_nutrient
        WHERE food_id IN (${ids.map(() => '?').join(',')})`,
-    )
-    .bind(...ids)
-    .all<{ food_id: string; nutrient_code: string; usda_nutrient_id: number | null; value_per_100g: number; unit: string }>();
+        )
+        .bind(...ids),
+    ),
+  );
+  const results = batches.flatMap((b) => b.results);
   const byFood = new Map<string, NutrientValue[]>();
   for (const n of results) {
     const list = byFood.get(n.food_id) ?? [];
@@ -147,7 +150,13 @@ export async function cacheFood(db: D1Database, f: NormalisedFood | ExternalFood
         .bind(id, f.raw.kind, JSON.stringify(f.raw.data)),
     );
   }
-  await db.batch(stmts);
+  try {
+    await db.batch(stmts);
+  } catch (e) {
+    // Two items of one meal resolving to the same new food at once: the other insert won, so refresh that row.
+    if (!existing && /UNIQUE constraint failed/i.test((e as Error).message)) return cacheFood(db, f);
+    throw e;
+  }
   return (await getFood(db, '', id))!;
 }
 

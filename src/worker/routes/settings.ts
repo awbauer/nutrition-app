@@ -20,12 +20,13 @@ settings.get('/settings', async (c) => {
 settings.put('/settings', async (c) => {
   const user = c.get('user');
   const { timezone, ...rest } = await c.req.json<Record<string, unknown>>();
-  if (timezone !== undefined) {
-    if (typeof timezone !== 'string' || !isValidTimeZone(timezone)) throw new HttpError(400, 'invalid timezone');
+  if (timezone !== undefined && (typeof timezone !== 'string' || !isValidTimeZone(timezone))) throw new HttpError(400, 'invalid timezone');
+  const rejected = await putSettings(c.env.DB, user.id, rest);
+  if (rejected.length) throw new HttpError(400, `invalid settings: ${rejected.join(', ')}`);
+  // Only once the rest is accepted: a rejected update changes nothing.
+  if (typeof timezone === 'string') {
     await c.env.DB.prepare('UPDATE users SET timezone = ? WHERE id = ?').bind(timezone, user.id).run();
     user.timezone = timezone;
   }
-  const rejected = await putSettings(c.env.DB, user.id, rest);
-  if (rejected.length) throw new HttpError(400, `invalid settings: ${rejected.join(', ')}`);
   return c.json({ timezone: user.timezone, ...(await getSettings(c.env.DB, user.id)) });
 });

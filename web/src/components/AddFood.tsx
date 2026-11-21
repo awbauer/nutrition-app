@@ -1,4 +1,5 @@
 import { toast } from '../toast';
+import { occurrenceFor } from '../today';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api, type Favorite, type FatSecretHit, type Food, type Intake, type MealType, type UsdaHit } from '../api';
 import { FatSecretCredit } from './ItemSheet';
@@ -30,6 +31,8 @@ export interface QuickPick {
  */
 export function AddFood(props: {
   date: string;
+  /** Today's log date (after the day cutoff), when known. */
+  today?: string;
   intakeId?: string;
   defaultMeal?: MealType;
   initial?: QuickPick;
@@ -119,7 +122,7 @@ export function AddFood(props: {
       // Keep the user's own wording for a quick pick ("salmon sashimi" rather than the USDA name).
       const item = { food_id: picked.id, amount, unit, ...(label ? { display_name: label } : {}) };
       // Into a specific meal (its Add item), or from the main button: breakfast/lunch/dinner join the day's meal.
-      const at = occurrenceFor(props.date);
+      const at = occurrenceFor(props.date, props.today);
       const res = await submitMeal(
         '/intake',
         props.intakeId ? { append_to: props.intakeId, items: [item] } : { meal_type: meal, merge: true, ...(at ? { occurrence_at: at } : {}), items: [item] },
@@ -269,11 +272,4 @@ function interleave<A, B>(a: A[], b: B[]): (A | B)[] {
     if (i < b.length) out.push(b[i]!);
   }
   return out;
-}
-
-/** Log "now" for today; noon local time for other days. */
-export function occurrenceFor(date: string): string | undefined {
-  const local = new Date();
-  const todayLocal = new Date(local.getTime() - local.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-  return date === todayLocal ? undefined : new Date(`${date}T12:00:00`).toISOString();
 }

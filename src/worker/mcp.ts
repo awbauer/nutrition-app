@@ -157,10 +157,14 @@ const ok = (data: unknown) => ({
 export const CARD_URI = 'ui://clem/card.html';
 type CardKind = 'day' | 'meal' | 'range' | 'coach';
 const CARD_META = { ui: { resourceUri: CARD_URI } };
-const fail = (e: unknown) => ({
-  content: [{ type: 'text' as const, text: `Error: ${(e as Error).message}` }],
-  isError: true,
-});
+const fail = (e: unknown) => {
+  // Tool errors went only to the client; log them (the message, not the meal text) so they show up in the Worker's logs.
+  console.warn('mcp tool failed', (e as Error).message);
+  return {
+    content: [{ type: 'text' as const, text: `Error: ${(e as Error).message}` }],
+    isError: true,
+  };
+};
 /** Like run(), and hands the card its data as structuredContent. */
 const runCard = (card: CardKind, appUrl: string) => async (f: () => Promise<unknown>) => {
   try {

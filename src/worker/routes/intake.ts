@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../env';
 import { HttpError } from '../lib/ids';
 import {
+  assertItemsEditable,
   createIntake,
   getIntake,
   intakeTiming,
@@ -143,6 +144,11 @@ intake.patch('/:id', async (c) => {
   }
   if (body.status !== undefined) {
     if (!STATUSES.includes(body.status)) throw new HttpError(400, 'invalid status');
+    // Only delete and undelete: `preparation` and `in-progress` belong to the AI job and answers, which
+    // rebuild the meal's items (a completed meal set back to preparation and retried lost its items).
+    if (body.status !== 'completed' && body.status !== 'entered-in-error') throw new HttpError(400, `status can't be set to ${body.status}`);
+    if (body.status === 'completed' && existing.status !== 'completed' && (existing.status !== 'entered-in-error' || existing.pending))
+      throw new HttpError(409, "this meal isn't finished");
     sets.push('status = ?');
     vals.push(body.status);
   }
@@ -169,6 +175,7 @@ intake.post('/:id/items', async (c) => {
   const id = c.req.param('id');
   const existing = await getIntake(c.env.DB, user.id, id);
   if (!existing) throw new HttpError(404, 'intake not found');
+  assertItemsEditable(existing.status);
   const ref = await c.req.json<ItemRef>();
   validAmount(ref);
   const food = await resolveRef(c.env, user, ref);

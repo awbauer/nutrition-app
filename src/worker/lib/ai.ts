@@ -409,6 +409,7 @@ async function withRetry(call: (attempt: number) => Promise<unknown>): Promise<M
     } catch (e) {
       lastErr = e;
       if (!(e instanceof ModelOutputError)) throw e;
+      console.warn(`model output invalid (attempt ${attempt + 1} of 2)`, e.message);
     }
   }
   throw lastErr;

@@ -1,5 +1,5 @@
 import { env } from 'cloudflare:workers';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Env } from '../src/worker/env';
 import { dispatchReminders, dueOn } from '../src/worker/lib/reminders';
 import { b64urlDecode, b64urlEncode, encryptPayload, vapidAuthorization } from '../src/worker/lib/webpush';
@@ -143,5 +143,16 @@ describe('reminders API and dispatch', () => {
     sent.length = 0;
     await dispatchReminders(runEnv, new Date('2026-11-16T21:00:00Z'), fakeSend);
     expect(JSON.parse(sent[0]!.body).body).toBe('You have 1,620 kcal and 107 g protein left.');
+
+    // A push that fails doesn't use up the reminder: the next tick, within the grace period, sends it.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const down = async () => {
+      throw new Error('push service down');
+    };
+    expect((await dispatchReminders(runEnv, new Date('2026-11-17T12:35:00Z'), down)).sent).toBe(0);
+    sent.length = 0;
+    expect((await dispatchReminders(runEnv, new Date('2026-11-17T12:50:00Z'), fakeSend)).sent).toBe(1);
+    expect(JSON.parse(sent[0]!.body)).toMatchObject({ title: 'Lunch' });
+    warn.mockRestore();
   });
 });

@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../env';
 import { HttpError } from '../lib/ids';
 import { round } from '../lib/nutrients';
-import { getIntake, itemStatements, refreshConfidence, resolveRef, validAmount, type ItemRef } from '../lib/intake';
+import { assertItemsEditable, getIntake, itemStatements, refreshConfidence, resolveRef, validAmount, type ItemRef } from '../lib/intake';
 import { recordEvents } from '../lib/events';
 import { getFood, searchLocal } from '../lib/foods';
 import { localCandidate, rankedUsda, rememberChoice, fatsecretCandidate, rankedFatSecret, usdaCandidate, type MatchInfo } from '../lib/matcher';
@@ -24,9 +24,14 @@ interface ItemRow {
   estimation_method: 'photo-estimate' | 'described' | 'weighed' | 'label';
   estimated: number;
   match_json: string | null;
+  intake_status: string;
 }
 
-const loadRow = (db: D1Database, id: string, userId: string) => db.prepare('SELECT * FROM consumed_item WHERE id = ? AND user_id = ?').bind(id, userId).first<ItemRow>();
+const loadRow = (db: D1Database, id: string, userId: string) =>
+  db
+    .prepare('SELECT ci.*, i.status AS intake_status FROM consumed_item ci JOIN nutrition_intake i ON i.id = ci.intake_id WHERE ci.id = ? AND ci.user_id = ?')
+    .bind(id, userId)
+    .first<ItemRow>();
 
 const parseMatch = (j: string | null): MatchInfo | null => {
   try {
@@ -117,6 +122,7 @@ items.patch('/:id', async (c) => {
   const user = c.get('user');
   const row = await loadRow(c.env.DB, c.req.param('id'), user.id);
   if (!row) throw new HttpError(404, 'item not found');
+  assertItemsEditable(row.intake_status);
   const body = await c.req.json<Partial<ItemRef> & { remember?: boolean; confidence?: number }>();
   if (body.confidence !== undefined && !(typeof body.confidence === 'number' && body.confidence >= 0 && body.confidence <= 1))
     throw new HttpError(400, 'confidence must be between 0 and 1');
@@ -133,7 +139,7 @@ items.patch('/:id', async (c) => {
   if (!food) throw new HttpError(400, 'item has no food; supply food_id, fdc_id or fatsecret_id');
   const amount = body.amount ?? row.amount_value;
   const unit = body.unit ?? row.amount_unit;
-  validAmount({ amount, unit });
+  validAmount({ amount, unit, grams: body.grams });
   const amountChanged = body.amount !== undefined || body.unit !== undefined;
   // Same household unit, new count, and the saved weight came from the AI's estimate rather than the
   // generic size table: keep its weight per unit ("2 small" bananas = 2 × its 80 g, not 2 × 100 g).
@@ -182,10 +188,9 @@ items.patch('/:id', async (c) => {
 /** DELETE /api/item/:id -> remove an item from a meal. */
 items.delete('/:id', async (c) => {
   const user = c.get('user');
-  const row = await c.env.DB.prepare('SELECT id, intake_id FROM consumed_item WHERE id = ? AND user_id = ?')
-    .bind(c.req.param('id'), user.id)
-    .first<{ id: string; intake_id: string }>();
+  const row = await loadRow(c.env.DB, c.req.param('id'), user.id);
   if (!row) throw new HttpError(404, 'item not found');
+  assertItemsEditable(row.intake_status);
   await c.env.DB.batch([
     c.env.DB.prepare('DELETE FROM intake_nutrient WHERE consumed_item_id = ?').bind(row.id),
     c.env.DB.prepare('DELETE FROM consumed_item WHERE id = ?').bind(row.id),

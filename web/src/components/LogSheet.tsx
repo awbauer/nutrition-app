@@ -6,7 +6,8 @@ import { amountLabel, kcal, MEALS, MEAL_LABEL } from '../format';
 import { resizeImage } from '../image';
 import { submitMeal } from '../queue';
 import { toast } from '../toast';
-import { AddFood, occurrenceFor, type QuickPick } from './AddFood';
+import { AddFood, type QuickPick } from './AddFood';
+import { occurrenceFor } from '../today';
 import { FavoriteStar } from './FavoriteStar';
 import { findFavorite, setFavorites, useFavorites } from '../favorites';
 import { Questions } from './Questions';
@@ -26,6 +27,8 @@ const MAX_PHOTOS = 6;
  */
 export function LogSheet(props: {
   date: string;
+  /** Today's log date (after the day cutoff), when known. */
+  today?: string;
   defaultMeal: MealType;
   target?: Intake;
   onDone: () => void;
@@ -64,7 +67,7 @@ export function LogSheet(props: {
     else {
       f.append('meal_type', meal);
       f.append('merge', '1');
-      const at = occurrenceFor(props.date);
+      const at = occurrenceFor(props.date, props.today);
       if (at) f.append('occurrence_at', at);
     }
     setBusy(true);
@@ -123,7 +126,7 @@ export function LogSheet(props: {
         <button class="self-start text-sm font-medium text-accent-ink" onClick={() => (setView('compose'), setQuickPick(undefined))}>
           ← Back
         </button>
-        <AddFood date={props.date} defaultMeal={meal} intakeId={props.target?.id} initial={quickPick} onDone={props.onDone} />
+        <AddFood date={props.date} today={props.today} defaultMeal={meal} intakeId={props.target?.id} initial={quickPick} onDone={props.onDone} />
       </div>
     );
 

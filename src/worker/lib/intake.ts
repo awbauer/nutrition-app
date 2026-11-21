@@ -1,10 +1,11 @@
 import type { Env, User } from '../env';
 import { localParts, logDate, mealTypeForTime } from './dates';
 import { sourceSql, getFood, resolveFatSecret, resolveFdc, type FoodRecord } from './foods';
-import { HttpError, newId, nowIso } from './ids';
+import { chunks, HttpError, newId, nowIso } from './ids';
 import { round, sumNutrients } from './nutrients';
 import { getSettings } from './settings';
 import type { MatchInfo } from './matcher';
+import type { MergeSpec } from './merge';
 import { toGrams, ucum } from './units';
 
 export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
@@ -53,10 +54,28 @@ export async function resolveRef(env: Env, user: User, ref: ItemRef): Promise<Fo
   throw new HttpError(400, 'item needs food_id, fdc_id or fatsecret_id');
 }
 
-export function validAmount(ref: { amount: unknown; unit: unknown }): void {
+export function validAmount(ref: { amount: unknown; unit: unknown; grams?: unknown }): void {
   if (typeof ref.amount !== 'number' || !(ref.amount > 0) || ref.amount > 100000) throw new HttpError(400, 'amount must be a positive number');
   if (typeof ref.unit !== 'string' || !ref.unit.trim()) throw new HttpError(400, 'unit is required');
+  // Explicit grams override the conversion, so they need the same checks (negative grams made negative kcal).
+  if (ref.grams != null && (typeof ref.grams !== 'number' || !(ref.grams > 0) || ref.grams > 100000)) throw new HttpError(400, 'grams must be a positive number');
 }
+
+/**
+ * A meal the AI is still reading, or one waiting on answers, gets its items rebuilt when the job or the
+ * answers finish (pipeline.ts): an item added, changed or removed before then would be silently undone.
+ */
+export function assertItemsEditable(status: string): void {
+  if (status === 'preparation' || status === 'in-progress') throw new HttpError(409, 'finish this meal (answer its questions) before changing its items');
+}
+
+/**
+ * First statement of a batch that rebuilds a meal's items: aborts the whole batch (status would be
+ * NULL) unless the meal is still in `status`, so a second job run or a second set of answers that
+ * checked the status before the first finished can't replace items that were already settled.
+ */
+export const requireStatus = (db: D1Database, intakeId: string, status: Status) =>
+  db.prepare('UPDATE nutrition_intake SET status = CASE WHEN status = ? THEN status END WHERE id = ?').bind(status, intakeId);
 
 /** Statements inserting one consumed_item and its nutrient totals. */
 export function itemStatements(db: D1Database, userId: string, intakeId: string, item: ResolvedItem, position: number, id = newId()) {
@@ -220,32 +239,39 @@ interface IntakeRow extends Omit<IntakeView, 'items' | 'totals' | 'has_media' | 
 
 export async function loadIntakes(db: D1Database, rows: IntakeRow[]): Promise<IntakeView[]> {
   if (!rows.length) return [];
-  const ids = rows.map((r) => r.id);
-  const ph = ids.map(() => '?').join(',');
-  const [items, nutrients] = await db.batch([
-    db
-      .prepare(
-        `SELECT ci.*, f.source_id AS fdc_source_id, ${sourceSql('f')} AS food_source, f.name AS food_name, f.data_type AS food_data_type,
+  const groups = chunks(rows.map((r) => r.id));
+  const results = await db.batch(
+    groups.flatMap((ids) => {
+      const ph = ids.map(() => '?').join(',');
+      return [
+        db
+          .prepare(
+            `SELECT ci.*, f.source_id AS fdc_source_id, ${sourceSql('f')} AS food_source, f.name AS food_name, f.data_type AS food_data_type,
            (SELECT value_per_100g FROM food_nutrient fn WHERE fn.food_id = ci.food_id AND fn.nutrient_code = 'ENERC_KCAL') AS food_kcal100
          FROM consumed_item ci
          LEFT JOIN food f ON f.id = ci.food_id WHERE ci.intake_id IN (${ph}) ORDER BY ci.position`,
-      )
-      .bind(...ids),
-    db
-      .prepare(
-        `SELECT n.consumed_item_id, n.nutrient_code, n.value FROM intake_nutrient n
+          )
+          .bind(...ids),
+        db
+          .prepare(
+            `SELECT n.consumed_item_id, n.nutrient_code, n.value FROM intake_nutrient n
          JOIN consumed_item ci ON ci.id = n.consumed_item_id WHERE ci.intake_id IN (${ph})`,
-      )
-      .bind(...ids),
-  ]);
+          )
+          .bind(...ids),
+      ];
+    }),
+  );
+  // Each chunk is a meal's whole set of items, so per-meal position order survives concatenation.
+  const items = { results: results.filter((_, i) => i % 2 === 0).flatMap((r) => r.results) };
+  const nutrients = { results: results.filter((_, i) => i % 2 === 1).flatMap((r) => r.results) };
   const nByItem = new Map<string, { nutrient_code: string; value: number }[]>();
-  for (const n of nutrients!.results as { consumed_item_id: string; nutrient_code: string; value: number }[]) {
+  for (const n of nutrients.results as { consumed_item_id: string; nutrient_code: string; value: number }[]) {
     const l = nByItem.get(n.consumed_item_id) ?? [];
     l.push(n);
     nByItem.set(n.consumed_item_id, l);
   }
   const iByIntake = new Map<string, ItemView[]>();
-  for (const r of items!.results as Record<string, unknown>[]) {
+  for (const r of items.results as Record<string, unknown>[]) {
     const view: ItemView = {
       id: r.id as string,
       food_id: r.food_id as string | null,
@@ -278,25 +304,28 @@ export async function loadIntakes(db: D1Database, rows: IntakeRow[]): Promise<In
       photo_count,
       items: its,
       totals,
-      ...(pending_json ? { pending: publicPending(pending_json) } : {}),
+      ...(pending_json ? { pending: publicPending(pending_json, r.meal_type) } : {}),
     };
   });
 }
 
+const joins = (m: MergeSpec | null | undefined, mealType: MealType) => !!m && (m.mode === 'into' || mealType !== 'snack');
+
 /** Clarifying questions as the client sees them (option effects stay server-side). */
-function publicPending(json: string) {
+function publicPending(json: string, mealType: MealType) {
   const p = JSON.parse(json) as {
     questions?: { id: string; item_index: number; text: string; options: string[]; default: string }[];
     error?: string;
-    merge?: unknown;
-    job?: { merge?: unknown; recipe?: { name: string } };
+    merge?: MergeSpec | null;
+    job?: { merge?: MergeSpec | null; recipe?: { name: string } };
     recipe_saved?: { id: string; name: string };
   };
   return {
     questions: (p.questions ?? []).map(({ id, item_index, text, options, default: d }) => ({ id, item_index, text, options, default: d })),
     ...(p.error ? { error: p.error } : {}),
     // This entry will join an existing meal once it's finished (see merge.ts).
-    ...(p.merge || p.job?.merge ? { adding_to_meal: true } : {}),
+    // A snack from the main button never joins another meal (findMergeTarget), so it isn't "adding" to one.
+    ...(joins(p.merge ?? p.job?.merge, mealType) ? { adding_to_meal: true } : {}),
     // A batch being saved as a recipe: its name while it's read, then the saved recipe.
     ...(p.job?.recipe ? { recipe: p.job.recipe.name } : {}),
     ...(p.recipe_saved ? { recipe_saved: p.recipe_saved } : {}),

@@ -58,10 +58,13 @@ export function parseHHMM(s: string): number {
   return Number(m[1]) * 60 + Number(m[2]);
 }
 
-/** Local log date for an instant, given the user's zone and a HH:MM day cutoff. */
+/**
+ * Local log date for an instant, given the user's zone and a HH:MM day cutoff. Compared on the local
+ * clock: subtracting the cutoff as elapsed time is an hour off on the days clocks change.
+ */
 export function logDate(occurrenceIso: string, tz: string, cutoff = '04:00'): string {
-  const shifted = new Date(new Date(occurrenceIso).getTime() - parseHHMM(cutoff) * 60_000);
-  return localParts(shifted, tz).date;
+  const lp = localParts(new Date(occurrenceIso), tz);
+  return lp.minutes < parseHHMM(cutoff) ? addDays(lp.date, -1) : lp.date;
 }
 
 export function addDays(date: string, n: number): string {

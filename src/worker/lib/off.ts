@@ -1,5 +1,6 @@
 /** Open Food Facts lookup by GTIN barcode. Nutriments are per 100 g. */
 import type { ExternalFood } from './foods';
+import { FETCH_TIMEOUT_MS } from './ids';
 import type { NutrientValue } from './nutrients';
 
 const FIELDS = 'code,product_name,brands,serving_quantity,serving_size,nutriments,categories_hierarchy';
@@ -8,6 +9,7 @@ export async function offByBarcode(gtin: string, fetcher: typeof fetch = (i, n) 
   if (!/^\d{8,14}$/.test(gtin)) return null;
   const res = await fetcher(`https://world.openfoodfacts.org/api/v2/product/${gtin}.json?fields=${FIELDS}`, {
     headers: { 'User-Agent': 'MealTrackerPWA/1.0 (personal nutrition log)' },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
   if (!res.ok) return null;
   const data = await res.json<{ status?: number; product?: Record<string, any> }>();

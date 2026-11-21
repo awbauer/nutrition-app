@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight, RotateCcw } from 'lucide-preact';
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import { onIntakeSettled, watch } from '../analysis';
 import { api, type Day, type HomeBlock, type Intake } from '../api';
 import { addDays, dayLabel, guessMeal, MEAL_LABEL, time } from '../format';
@@ -34,9 +34,15 @@ export function Today(props: { today: string; weightUnit: 'kg' | 'lb'; blocks: H
   const [adding, setAdding] = useState<{ intake?: Intake } | null>(null);
   const [yesterday, setYesterday] = useState<Intake[]>([]);
 
-  const load = async (d = date) => {
+  // The listeners below are registered once; they read the day being shown from here, not from the
+  // first render (a meal settling while viewing another day reloaded today into that day's header).
+  const shown = useRef(date);
+  shown.current = date;
+  const load = async (d = shown.current) => {
     try {
-      setDay(await api.get<Day>(`/day/${d}`));
+      const got = await api.get<Day>(`/day/${d}`);
+      // A slow answer for a day no longer shown mustn't replace the one that is.
+      if (d === shown.current) setDay(got);
     } catch (e) {
       toast.error(e, { id: 'day' });
     }
@@ -131,7 +137,7 @@ export function Today(props: { today: string; weightUnit: 'kg' | 'lb'; blocks: H
         (() => {
           const block = (b: HomeBlock) =>
             b === 'summary' ? (
-              <Summary day={day} />
+              <Summary day={day} isToday={isToday} />
             ) : b === 'weight' ? (
               <WeighIn unit={props.weightUnit} date={date} today={props.today} />
             ) : b === 'repeat' ? (
@@ -166,6 +172,7 @@ export function Today(props: { today: string; weightUnit: 'kg' | 'lb'; blocks: H
         {adding && (
           <LogSheet
             date={date}
+            today={props.today}
             target={adding.intake}
             defaultMeal={isToday ? guessMeal() : 'snack'}
             onDone={() => {

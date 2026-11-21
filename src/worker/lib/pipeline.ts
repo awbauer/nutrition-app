@@ -6,7 +6,7 @@ import type { Env, User } from '../env';
 import { PIPELINE_VERSION, PROMPT_VERSION, type ModelOutput, type QuestionEffect } from './ai';
 import { getFood, type FoodRecord } from './foods';
 import { HttpError, nowIso } from './ids';
-import { itemStatements, refreshConfidence, type EstimationMethod, type MealType, type ResolvedItem } from './intake';
+import { itemStatements, refreshConfidence, requireStatus, type EstimationMethod, type MealType, type ResolvedItem } from './intake';
 import { recordAiLogged, recordEvents, snapshotMeal } from './events';
 import { applyFavorites, favoriteMatch } from './favorites';
 import { ESTIMATE_CONFIDENCE_CAP, matchFood, type MatchInfo } from './matcher';
@@ -215,11 +215,12 @@ export async function finishDraft(
   intakeId: string,
   input: { model_id: string; raw_input_text: string | null; meal_type?: MealType },
   pending: Pending,
-): Promise<void> {
+): Promise<boolean> {
   const asking = pending.questions.length > 0;
   const items = await materialise(env.DB, user.id, pending, asking ? Object.fromEntries(pending.questions.map((q) => [q.id, q.default])) : {});
   if (asking) for (const it of items) it.confidence = Math.min(it.confidence, 0.79);
   const stmts: D1PreparedStatement[] = [
+    requireStatus(env.DB, intakeId, 'preparation'),
     env.DB.prepare('DELETE FROM intake_nutrient WHERE consumed_item_id IN (SELECT id FROM consumed_item WHERE intake_id = ?)').bind(intakeId),
     env.DB.prepare('DELETE FROM consumed_item WHERE intake_id = ?').bind(intakeId),
   ];
@@ -242,7 +243,7 @@ export async function finishDraft(
     ),
     refreshConfidence(env.DB, intakeId),
   );
-  await env.DB.batch(stmts);
+  if (!(await batchUnlessMoved(env.DB, stmts, intakeId, 'preparation'))) return false;
   // The change log: what the AI logged, with how each item was matched.
   await recordAiLogged(env, user.id, intakeId, {
     model_id: input.model_id,
@@ -250,6 +251,19 @@ export async function finishDraft(
     raw_input_text: input.raw_input_text,
     questions: pending.questions.length,
   }).catch((e) => console.warn('meal log: ai_logged failed', (e as Error).message));
+  return true;
+}
+
+/** Run a guarded batch (see requireStatus); false when the meal had already left `status`. */
+async function batchUnlessMoved(db: D1Database, stmts: D1PreparedStatement[], intakeId: string, status: string): Promise<boolean> {
+  try {
+    await db.batch(stmts);
+    return true;
+  } catch (e) {
+    const now = await db.prepare('SELECT status FROM nutrition_intake WHERE id = ?').bind(intakeId).first<{ status: string }>();
+    if (now && now.status !== status) return false;
+    throw e;
+  }
 }
 
 /** Apply answers to an in-progress draft and complete it. Returns the id of the meal now holding the items. */
@@ -268,6 +282,7 @@ export async function applyAnswers(env: Env, user: User, intakeId: string, answe
   }
   const items = await materialise(env.DB, user.id, pending, answers);
   const stmts: D1PreparedStatement[] = [
+    requireStatus(env.DB, intakeId, 'in-progress'),
     env.DB.prepare('DELETE FROM intake_nutrient WHERE consumed_item_id IN (SELECT id FROM consumed_item WHERE intake_id = ?)').bind(intakeId),
     env.DB.prepare('DELETE FROM consumed_item WHERE intake_id = ?').bind(intakeId),
   ];
@@ -276,7 +291,8 @@ export async function applyAnswers(env: Env, user: User, intakeId: string, answe
     env.DB.prepare(`UPDATE nutrition_intake SET status = 'completed', pending_json = NULL, recorded_at = ? WHERE id = ? AND user_id = ?`).bind(nowIso(), intakeId, user.id),
     refreshConfidence(env.DB, intakeId),
   );
-  await env.DB.batch(stmts);
+  // Answered twice at once: the first set wins.
+  if (!(await batchUnlessMoved(env.DB, stmts, intakeId, 'in-progress'))) throw new HttpError(409, 'intake has no open questions');
   // The change log: the answers, then the AI's items they produced (new rows replace the draft's).
   try {
     const after = await snapshotMeal(env.DB, user.id, intakeId);

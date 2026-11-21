@@ -59,26 +59,46 @@ export async function dispatchReminders(env: Env, now = new Date(), send = sendP
     const claimed = await env.DB.prepare(`UPDATE reminder SET last_sent_on = ? WHERE id = ? AND (last_sent_on IS NULL OR last_sent_on != ?)`).bind(due, r.id, due).run();
     if (!claimed.meta.changes) continue;
 
-    const msg = await buildMessage(env, r, now);
-    if (!msg) {
-      result.skipped++;
-      continue;
-    }
-    const subs = await env.DB.prepare('SELECT id, endpoint, p256dh, auth FROM push_subscription WHERE user_id = ?')
-      .bind(r.user_id)
-      .all<{ id: string; endpoint: string; p256dh: string; auth: string }>();
-    for (const s of subs.results) {
-      try {
-        const status = await send(s, msg, keys);
-        if (status === 404 || status === 410) {
-          await env.DB.prepare('DELETE FROM push_subscription WHERE id = ?').bind(s.id).run();
-          result.removed++;
-        } else if (status >= 200 && status < 300) result.sent++;
-        else console.warn('push rejected', status, new URL(s.endpoint).host);
-      } catch (e) {
-        console.warn('push failed', e);
+    // One reminder failing (a D1 error, every push failing) mustn't stop the others; release its claim
+    // so the next tick (within the grace period) tries it again.
+    let delivered = false;
+    let failed = false;
+    try {
+      const msg = await buildMessage(env, r, now);
+      if (!msg) {
+        result.skipped++;
+        continue;
       }
+      const subs = await env.DB.prepare('SELECT id, endpoint, p256dh, auth FROM push_subscription WHERE user_id = ?')
+        .bind(r.user_id)
+        .all<{ id: string; endpoint: string; p256dh: string; auth: string }>();
+      for (const s of subs.results) {
+        try {
+          const status = await send(s, msg, keys);
+          if (status === 404 || status === 410) {
+            await env.DB.prepare('DELETE FROM push_subscription WHERE id = ?').bind(s.id).run();
+            result.removed++;
+          } else if (status >= 200 && status < 300) {
+            result.sent++;
+            delivered = true;
+          } else {
+            console.warn('push rejected', status, new URL(s.endpoint).host);
+            failed = true;
+          }
+        } catch (e) {
+          console.warn('push failed', e);
+          failed = true;
+        }
+      }
+    } catch (e) {
+      console.warn('reminder failed', r.id, (e as Error).message);
+      failed = true;
     }
+    if (failed && !delivered)
+      await env.DB.prepare('UPDATE reminder SET last_sent_on = ? WHERE id = ? AND last_sent_on = ?')
+        .bind(r.last_sent_on, r.id, due)
+        .run()
+        .catch((e) => console.warn('reminder release failed', r.id, (e as Error).message));
   }
   return result;
 }

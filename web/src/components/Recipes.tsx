@@ -248,6 +248,7 @@ export function RecipesView(props: { today: string }) {
         {fav && (
           <AddFood
             date={props.today}
+            today={props.today}
             initialQuery={'query' in fav ? fav.query : undefined}
             initial={'edit' in fav ? fav.edit : undefined}
             onFavorite={(f) => (toast.success('edit' in fav ? `Saved ${f.name}` : `Starred ${f.name}`), setFav(null))}
@@ -314,6 +315,7 @@ export function RecipesView(props: { today: string }) {
         {log && (
           <LogSheet
             date={props.today}
+            today={props.today}
             defaultMeal={guessMeal()}
             startBatch={'batch' in log}
             initialPick={

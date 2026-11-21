@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { addDays, logDate, mealTypeForTime, localParts } from '../src/worker/lib/dates';
 import { fromUsda } from '../src/worker/lib/nutrients';
-import { countUnit, EXACT_UNITS, foodKind, sizesFor, toGrams, ucum, withCounts, type Portion } from '../src/worker/lib/units';
+import { countUnit, EXACT_UNITS, foodKind, normaliseUnit, sizesFor, toGrams, ucum, withCounts, type Portion } from '../src/worker/lib/units';
 import { normaliseDetailFood, parsePortionText } from '../src/worker/lib/usda';
 import { normaliseOff } from '../src/worker/lib/off';
 import { chickenDetail, foundationEgg } from './fixtures/usda';
+import { logToday, occurrenceFor } from '../web/src/today';
 
 describe('day boundary', () => {
   it('counts meals before the cutoff toward the previous day', () => {
@@ -15,6 +16,22 @@ describe('day boundary', () => {
   it('honours a midnight cutoff and other zones', () => {
     expect(logDate('2026-11-15T07:30:00Z', 'America/New_York', '00:00')).toBe('2026-11-15');
     expect(logDate('2026-11-15T23:30:00Z', 'Asia/Tokyo', '04:00')).toBe('2026-11-16');
+  });
+  it('compares with the cutoff on the local clock on the days clocks change', () => {
+    const tz = 'America/New_York';
+    // 04:30 EDT on the spring-forward day is after the cutoff; 03:30 EST on the fall-back day is before it.
+    expect(logDate('2026-03-08T08:30:00Z', tz, '04:00')).toBe('2026-03-08');
+    expect(logDate('2026-11-01T08:30:00Z', tz, '04:00')).toBe('2026-10-31');
+    expect(logDate('2026-06-10T07:59:00Z', tz, '04:00')).toBe('2026-06-09');
+    expect(logDate('2026-06-10T08:00:00Z', tz, '04:00')).toBe('2026-06-10');
+    // The web app's "today" agrees with the server.
+    for (const iso of ['2026-03-08T08:30:00Z', '2026-11-01T08:30:00Z', '2026-06-10T07:59:00Z', '2026-06-10T08:00:00Z', '2026-06-10T04:30:00Z'])
+      expect(logToday(tz, '04:00', new Date(iso))).toBe(logDate(iso, tz, '04:00'));
+  });
+  it('logs entries for today (the log date, even before the cutoff) at the real time', () => {
+    // 00:30 before a 04:00 cutoff: the log date is yesterday's calendar date, and it's still "now".
+    expect(occurrenceFor('2026-06-09', '2026-06-09')).toBeUndefined();
+    expect(occurrenceFor('2026-06-08', '2026-06-09')).toBe(new Date('2026-06-08T12:00:00').toISOString());
   });
   it('local parts and helpers', () => {
     expect(localParts(new Date('2026-11-15T17:05:00Z'), 'America/Chicago')).toMatchObject({ date: '2026-11-15', time: '11:05', weekday: 0 });
@@ -31,6 +48,19 @@ describe('serving to grams', () => {
   it('uses mass units directly', () => {
     expect(toGrams(2, 'oz').grams).toBeCloseTo(56.7, 1);
     expect(toGrams(150, 'grams').grams).toBe(150);
+  });
+  it('reads plurals of aliased spellings ("litres" is litres, not 2 generic servings)', () => {
+    expect(normaliseUnit('litres')).toBe('l');
+    expect(normaliseUnit('millilitres')).toBe('ml');
+    expect(toGrams(2, 'litres').grams).toBe(2000);
+    expect(toGrams(250, 'millilitres').grams).toBe(250);
+  });
+  it('converts the UCUM codes items are stored with', () => {
+    expect(toGrams(2, '[oz_av]').grams).toBeCloseTo(56.7, 1);
+    expect(toGrams(1, '[cup_us]', food)).toEqual({ grams: 140, method: 'portion' });
+    expect(toGrams(1, '[tbs_us]').grams).toBe(15);
+    expect(toGrams(1, '[foz_us]').grams).toBeCloseTo(29.6, 1);
+    for (const u of ['g', 'oz', 'lb', 'cup', 'tbsp', 'tsp', 'fl oz', 'ml', 'l', 'slice']) expect(normaliseUnit(ucum(u))).toBe(normaliseUnit(u));
   });
   it('prefers the food portion table', () => {
     expect(toGrams(1, 'cup', food)).toEqual({ grams: 140, method: 'portion' });
