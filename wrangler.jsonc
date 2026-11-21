@@ -3,7 +3,7 @@
   "name": "nutrition-app",
   "main": "src/worker/index.ts",
   "compatibility_date": "2026-11-01",
-  "compatibility_flags": ["nodejs_compat"],
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "upload_source_maps": true,
   // Logs, traces (every request: personal-scale traffic) and Issues (grouped errors).
   // Keep these here: a deploy without them turns them off again.
@@ -27,6 +27,8 @@
   "d1_databases": [
     { "binding": "DB", "database_name": "nutrition", "migrations_dir": "migrations" }
   ],
+  // OAuth grants and tokens for the MCP server (/mcp). Hashed and encrypted by workers-oauth-provider.
+  "kv_namespaces": [{ "binding": "OAUTH_KV" }],
   "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "nutrition-media" }],
   "ai": { "binding": "AI", "remote": true },
   // Foods you've eaten, for "those chicken meatballs I like". Created once by hand (not auto-provisioned):

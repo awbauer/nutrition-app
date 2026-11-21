@@ -1,4 +1,6 @@
+import { OAuthProvider } from '@cloudflare/workers-oauth-provider';
 import { app } from './app';
+import { mcpApiHandler } from './mcp';
 import type { Env } from './env';
 import { consume, type JobMessage } from './lib/jobs';
 import { runDueReports } from './lib/coach';
@@ -8,8 +10,36 @@ import { dispatchReminders } from './lib/reminders';
 /** Must match max_retries on the queue consumer in wrangler.jsonc. */
 const JOB_MAX_RETRIES = 2;
 
+/**
+ * OAuth 2.1 for the MCP server at /mcp. Tokens are checked here; everything else (the app, /api,
+ * /authorize) goes to the Hono app. The resource URL is this Worker's own origin, taken from the
+ * request so the hostname isn't committed. Built once per origin.
+ */
+const providers = new Map<string, OAuthProvider<Env>>();
+function providerFor(origin: string): OAuthProvider<Env> {
+  let p = providers.get(origin);
+  if (!p) {
+    p = new OAuthProvider<Env>({
+      apiRoute: '/mcp',
+      apiHandler: mcpApiHandler,
+      defaultHandler: { fetch: (req, env, ctx) => app.fetch(req, env, ctx) },
+      authorizeEndpoint: '/authorize',
+      tokenEndpoint: '/oauth/token',
+      clientRegistrationEndpoint: '/oauth/register',
+      scopesSupported: ['clem', 'offline_access'],
+      requiredScopes: ['clem'],
+      resourceMetadata: { resource: `${origin}/mcp`, authorization_servers: [origin], resource_name: 'Clem' },
+      clientIdMetadataDocumentEnabled: true,
+    });
+    providers.set(origin, p);
+  }
+  return p;
+}
+
 export default {
-  fetch: app.fetch,
+  fetch(request: Request, env: Env, ctx: ExecutionContext) {
+    return providerFor(new URL(request.url).origin).fetch(request, env, ctx);
+  },
   async queue(batch: MessageBatch<JobMessage>, env: Env) {
     await consume(batch, env, JOB_MAX_RETRIES);
   },

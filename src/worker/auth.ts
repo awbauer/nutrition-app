@@ -65,6 +65,11 @@ export async function upsertUser(db: D1Database, sub: string, email: string | nu
 }
 
 export const requireUser = createMiddleware<AppEnv>(async (c, next) => {
+  // MCP tool calls: the OAuth layer has already identified the user (see mcp.ts).
+  if (c.env.MCP_USER) {
+    c.set('user', c.env.MCP_USER);
+    return next();
+  }
   let identity;
   try {
     identity = await verifyAccess(c.req.raw, c.env);
