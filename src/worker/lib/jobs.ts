@@ -124,7 +124,8 @@ export async function processIntake(env: Env, msg: JobMessage, final: boolean): 
           ? e.message
           : isCapacityError(e)
             ? 'the AI service is busy right now, try again in a minute'
-            : `couldn't read that ${state.job.recipe ? 'recipe' : 'meal'} (${(e as Error).message})`;
+            : // An internal exception's text means nothing to the user; it's rethrown below and logged by the caller.
+              `couldn't read that ${state.job.recipe ? 'recipe' : 'meal'}, try again`;
       await env.DB.prepare(`UPDATE nutrition_intake SET pending_json = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ? AND status = 'preparation'`)
         .bind(JSON.stringify({ ...state, error: message, attempts: (state.attempts ?? 0) + 1 } satisfies JobState), msg.intakeId)
         .run();

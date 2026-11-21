@@ -311,7 +311,7 @@ describe('photo logging', () => {
     const ai = fakeAI([new Error('gateway down')]);
     const r = await api('/intake', { method: 'POST', body: form({ photo: new File([new Uint8Array([1])], 'a.jpg', { type: 'image/jpeg' }) }) }, { AI: ai.AI });
     expect(r.status).toBe(202);
-    expect(r.data.pending.error).toMatch(/gateway down/);
+    expect(r.data.pending.error).toBe("couldn't read that meal, try again");
     expect((await api(`/intake/${r.data.id}/media`)).status).toBe(200);
   });
 });
@@ -461,6 +461,6 @@ describe('background processing', () => {
     expect((await api(`/intake/${r.data.id}`)).data.pending.error).toBeUndefined();
     await consume({ messages: [mk(3)] } as never, env2, 2);
     expect(acks).toEqual(['retry1', 'ack3']);
-    expect((await api(`/intake/${r.data.id}`)).data.pending.error).toMatch(/timeout/);
+    expect((await api(`/intake/${r.data.id}`)).data.pending.error).toBe("couldn't read that meal, try again");
   });
 });
