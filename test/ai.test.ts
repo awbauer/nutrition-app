@@ -40,6 +40,17 @@ beforeEach(() => {
   usdaCalls = 0;
   mockFetch((url) => {
     if (url.hostname === 'world.openfoodfacts.org') {
+      // A crowd-sourced entry with per-serving numbers in its per-100 g fields.
+      if (url.pathname.includes('022224200714'))
+        return json({
+          status: 1,
+          product: {
+            product_name: 'Black Licorice',
+            brands: 'Candy Co',
+            serving_quantity: 38,
+            nutriments: { 'energy-kcal_100g': 866, carbohydrates_100g: 194, proteins_100g: 7, fat_100g: 7 },
+          },
+        });
       return json({
         status: 1,
         product: {
@@ -280,6 +291,20 @@ describe('text logging', () => {
     const out = { items: [{ name: 'lime sparkling water', amount: 1, unit: 'can', confidence: 0.9, barcode: '012345678905' }], questions: [] };
     const r = await api('/intake', { method: 'POST', body: form({ text: 'a can of lime fizz 012345678905' }) }, { AI: fakeAI([{ response: out }]).AI });
     expect(r.data.items[0]).toMatchObject({ food_source: 'off', grams: 355 });
+  });
+
+  it('skips a barcode product whose nutrition data is impossible', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const out = {
+      items: [{ name: 'black licorice', amount: 40, unit: 'g', confidence: 0.8, barcode: '022224200714', estimate_per_100g: { kcal: 350, carbs: 80 } }],
+      questions: [],
+    };
+    const r = await api('/intake', { method: 'POST', body: form({ text: 'black licorice 022224200714' }) }, { AI: fakeAI([{ response: out }]).AI });
+    const item = r.data.items[0];
+    expect(item.food_source).not.toBe('off');
+    // 40 g at about 350 kcal/100 g, not 40 g at 866.
+    expect(item.nutrients.ENERC_KCAL).toBeLessThan(200);
+    expect(warn).toHaveBeenCalledWith('barcode product skipped, impossible nutrition data', expect.objectContaining({ why: 'CHOCDF 194 g per 100 g' }));
   });
 });
 

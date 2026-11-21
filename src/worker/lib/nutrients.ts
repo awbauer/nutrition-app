@@ -56,6 +56,24 @@ export function fromUsda(list: { id: number; value: number; unit: string }[]): N
   return out;
 }
 
+/**
+ * Why per-100 g values can't be right, or null when they're plausible. Crowd-sourced product data
+ * (Open Food Facts) sometimes has per-serving or per-package numbers in the per-100 g fields, e.g.
+ * 194 g of carbs in 100 g of licorice; logging those multiplies calories several times over.
+ */
+export function implausiblePer100g(nutrients: NutrientValue[]): string | null {
+  const v = (code: string) => nutrients.find((n) => n.code === code)?.value;
+  for (const code of ['PROCNT', 'FAT', 'CHOCDF', 'SUGAR', 'FIBTG']) {
+    const x = v(code);
+    if (x != null && x > 100) return `${code} ${Math.round(x)} g per 100 g`;
+  }
+  const [p, f, c, kcal] = [v('PROCNT'), v('FAT'), v('CHOCDF'), v('ENERC_KCAL')];
+  if ((p ?? 0) + (f ?? 0) + (c ?? 0) > 105) return 'protein, fat and carbs add up to more than 100 g per 100 g';
+  // Pure fat is about 900 kcal per 100 g; nothing edible is denser.
+  if (kcal != null && kcal > 902) return `${Math.round(kcal)} kcal per 100 g`;
+  return null;
+}
+
 export const round = (v: number, dp = 1): number => {
   const f = 10 ** dp;
   return Math.round(v * f) / f;

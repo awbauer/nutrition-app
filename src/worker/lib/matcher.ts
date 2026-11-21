@@ -18,7 +18,7 @@ import type { LabelFacts } from './ai';
 import { cacheFood, createCustomFood, exactCustom, findCachedBySource, getFood, normName, searchLocal, usdaClient, type ExternalFood, type FoodRecord } from './foods';
 import { fatsecretClient } from './fatsecret';
 import { newId } from './ids';
-import { NUTRIENT_BY_CODE } from './nutrients';
+import { implausiblePer100g, NUTRIENT_BY_CODE, type NutrientValue } from './nutrients';
 import { offByBarcode } from './off';
 import { searchHistory } from './history';
 import { CONFIDENT_SCORE, type ScoredCandidate } from './scoring';
@@ -266,11 +266,20 @@ export async function matchFood(env: Env, userId: string, req: MatchRequest): Pr
 
   // 2. Barcode: Open Food Facts, then USDA Branded by GTIN.
   if (req.barcode) {
+    // A product whose numbers can't be right (crowd-sourced data with per-serving values in the per-100 g
+    // fields) is skipped: matching by name below beats logging several times the real calories.
+    const sane = (name: string, nutrients: NutrientValue[]) => {
+      const why = implausiblePer100g(nutrients);
+      if (why) console.warn('barcode product skipped, impossible nutrition data', { barcode: req.barcode, name, why });
+      return !why;
+    };
     const cached = await findCachedBySource(db, 'off', req.barcode);
-    if (cached) return { food: cached, via: 'barcode', match: info('barcode', [localCandidate(cached, 9, ['barcode'])], cached.id), matchConfidence: 0.95, fromPackage: true };
+    if (cached && sane(cached.name, cached.nutrients))
+      return { food: cached, via: 'barcode', match: info('barcode', [localCandidate(cached, 9, ['barcode'])], cached.id), matchConfidence: 0.95, fromPackage: true };
+    // A bad cached copy is fetched again: the product's page may have been corrected since.
     try {
       const off = await offByBarcode(req.barcode);
-      if (off && off.nutrients.some((n) => n.code === 'ENERC_KCAL')) {
+      if (off && off.nutrients.some((n) => n.code === 'ENERC_KCAL') && sane(off.name, off.nutrients)) {
         const food = await cacheFood(db, off);
         return { food, via: 'barcode', match: info('barcode', [localCandidate(food, 9, ['barcode, Open Food Facts'])], food.id), matchConfidence: 0.95, fromPackage: true };
       }
@@ -281,7 +290,7 @@ export async function matchFood(env: Env, userId: string, req: MatchRequest): Pr
       try {
         const want = req.barcode.replace(/^0+/, '');
         const hit = (await usdaClient(env).searchAll(req.barcode, 10)).find((h) => (h.gtin ?? '').replace(/^0+/, '') === want);
-        if (hit) {
+        if (hit && sane(hit.name, hit.nutrients)) {
           const food = await cacheFood(db, hit);
           return { food, via: 'barcode', match: info('barcode', [usdaCandidate(hit, 9, ['barcode, USDA Branded'])], hit.sourceId), matchConfidence: 0.95, fromPackage: true };
         }
