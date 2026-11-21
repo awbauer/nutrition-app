@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import { api, type Intake, type ItemDetail, type MatchCandidate } from '../api';
-import { amountLabel, CONFIDENCE_LEVELS, confidenceLevel, kcal } from '../format';
+import { amountLabel, CONFIDENCE_LEVELS, confidenceLevel, getMassUnit, kcal, showsWeight, toMass, weight } from '../format';
 import { toast } from '../toast';
 import { fromUcum } from '../../../src/worker/lib/units';
 import { AmountEditor } from './AmountEditor';
@@ -41,8 +41,8 @@ const CONVERSION_LABEL: Record<string, string> = {
 
 /** How the amount became grams, naming the typical cup it came from when there is one. */
 function conversionLabel(c: NonNullable<ItemDetail['conversion']>) {
-  if (c.per_cup && c.method === 'density') return `Estimated from a typical cup of ${c.per_cup.what} (about ${c.per_cup.grams} g); weigh it for an exact amount`;
-  if (c.per_cup && c.method === 'volume') return `Volume converted at the density of ${c.per_cup.what} (${c.per_cup.grams} g a cup)`;
+  if (c.per_cup && c.method === 'density') return `Estimated from a typical cup of ${c.per_cup.what} (about ${weight(c.per_cup.grams)}); weigh it for an exact amount`;
+  if (c.per_cup && c.method === 'volume') return `Volume converted at the density of ${c.per_cup.what} (${weight(c.per_cup.grams)} a cup)`;
   return CONVERSION_LABEL[c.method];
 }
 
@@ -63,6 +63,8 @@ export function ItemSheet(props: { itemId: string; locked?: boolean; onChange: (
   const locked = !!props.locked;
   const [d, setD] = useState<ItemDetail | null>(null);
   const [amt, setAmt] = useState<{ amount: number; unit: string }>({ amount: 0, unit: 'g' });
+  // What the editor opened with, to tell whether anything changed.
+  const [shown, setShown] = useState<{ amount: number; unit: string } | null>(null);
   const [q, setQ] = useState('');
   const [results, setResults] = useState<MatchCandidate[] | null>(null);
   const [searching, setSearching] = useState(false);
@@ -72,7 +74,11 @@ export function ItemSheet(props: { itemId: string; locked?: boolean; onChange: (
     try {
       const r = await api.get<ItemDetail>(`/item/${props.itemId}`);
       setD(r);
-      setAmt({ amount: r.item.amount_value, unit: fromUcum(r.item.amount_unit) });
+      // Grams open in the user's weight unit (Food amounts); saving without a change keeps the grams.
+      const unit = fromUcum(r.item.amount_unit);
+      const a = unit === 'g' && getMassUnit() === 'oz' ? { amount: toMass(r.item.amount_value), unit: 'oz' } : { amount: r.item.amount_value, unit };
+      setAmt(a);
+      setShown(a);
       setQ((x) => x || r.match?.query || r.item.display_name);
     } catch (e) {
       toast.error(e);
@@ -239,7 +245,7 @@ export function ItemSheet(props: { itemId: string; locked?: boolean; onChange: (
         {locked ? (
           <p class="text-sm text-ink-2">
             <span class="text-ink">{amountLabel(item.amount_value, item.amount_unit)}</span>
-            {item.amount_unit !== 'g' && ` ≈ ${Math.round(item.grams)} g`} · {kcal(item.nutrients.ENERC_KCAL)} kcal
+            {!showsWeight(item.amount_unit) && ` ≈ ${weight(item.grams)}`} · {kcal(item.nutrients.ENERC_KCAL)} kcal
           </p>
         ) : (
           <AmountEditor
@@ -258,13 +264,13 @@ export function ItemSheet(props: { itemId: string; locked?: boolean; onChange: (
         {/* How a household amount became grams; nothing to explain when it's already grams. */}
         {conversion && item.amount_unit !== 'g' && (
           <p class="text-xs text-faint">
-            Saved as {amountLabel(item.amount_value, item.amount_unit)} = {Math.round(item.grams)} g. {conversionLabel(conversion)}.
+            Saved as {amountLabel(item.amount_value, item.amount_unit)} = {weight(item.grams)}. {conversionLabel(conversion)}.
           </p>
         )}
         {!locked && (
           <button
             class="btn-primary self-start"
-            disabled={busy || !(amt.amount > 0) || (amt.amount === item.amount_value && amt.unit === fromUcum(item.amount_unit))}
+            disabled={busy || !(amt.amount > 0) || (amt.amount === shown?.amount && amt.unit === shown.unit)}
             onClick={() => patch({ amount: amt.amount, unit: amt.unit }, 'Amount updated')}
           >
             Save amount

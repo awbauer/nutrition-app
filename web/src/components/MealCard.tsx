@@ -2,7 +2,7 @@ import { ChefHat, Copy, History, MoreHorizontal, Pencil, Plus, Trash2 } from 'lu
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { watch } from '../analysis';
 import { api, type Intake, type Item } from '../api';
-import { amountLabel, confidenceTone, kcal, MEAL_LABEL, time } from '../format';
+import { amountLabel, confidenceTone, kcal, MEAL_LABEL, showsWeight, time, weight } from '../format';
 import { toast } from '../toast';
 import { ItemSheet } from './ItemSheet';
 import { MealEdit } from './MealEdit';
@@ -255,7 +255,7 @@ function ItemRow(props: { item: Item; onOpen: () => void }) {
           </p>
           <p class="truncate text-xs text-faint">
             {amountLabel(it.amount_value, it.amount_unit)}
-            {it.amount_unit !== 'g' && ` · ${Math.round(it.grams)} g`}
+            {!showsWeight(it.amount_unit) && ` · ${weight(it.grams)}`}
             {it.estimated ? ' · AI estimate' : showMatch ? ` · ${it.food_name}` : ''}
           </p>
         </div>

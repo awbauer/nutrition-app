@@ -3,7 +3,7 @@ import { occurrenceFor } from '../today';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api, type Favorite, type FatSecretHit, type Food, type Intake, type MealType, type UsdaHit } from '../api';
 import { FatSecretCredit } from './ItemSheet';
-import { MEALS, MEAL_LABEL } from '../format';
+import { MEALS, MEAL_LABEL, preferMass } from '../format';
 import { submitMeal } from '../queue';
 import { AmountEditor } from './AmountEditor';
 import { FavoriteStar } from './FavoriteStar';
@@ -101,9 +101,10 @@ export function AddFood(props: {
         setAmount(first.amount);
         setUnit(first.unit);
       } else {
-        // No portions: start in the food's exact unit (ml for a drink, grams otherwise).
-        setAmount(100);
-        setUnit(sizesFor({ name: food.name, category: food.category }).exact[0]!);
+        // No portions: start in the food's exact unit (ml for a drink, the user's weight unit otherwise), about 100 g.
+        const exact = preferMass(sizesFor({ name: food.name, category: food.category }).exact)[0]!;
+        setAmount(exact === 'oz' ? 3.5 : 100);
+        setUnit(exact);
       }
     } catch (e) {
       toast.error(e);

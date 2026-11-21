@@ -13,7 +13,9 @@ export function guessMeal(): MealType {
 }
 
 export const kcal = (v: number | undefined) => Math.round(v ?? 0).toLocaleString();
-export const grams = (v: number | undefined) => `${Math.round(v ?? 0)} g`;
+
+// Amounts and food weights live in amounts.ts; re-exported so components import from one place.
+export * from './amounts';
 
 export function time(iso: string): string {
   return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
@@ -32,45 +34,6 @@ export function addDays(date: string, n: number): string {
   const d = new Date(`${date}T12:00:00Z`);
   d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().slice(0, 10);
-}
-
-const UNIT_LABEL: Record<string, string> = {
-  '[cup_us]': 'cup',
-  '[tbs_us]': 'tbsp',
-  '[tsp_us]': 'tsp',
-  '[oz_av]': 'oz',
-  '[lb_av]': 'lb',
-  '[foz_us]': 'fl oz',
-};
-export const unitLabel = (u: string) => UNIT_LABEL[u] ?? u;
-
-const NO_PLURAL = new Set(['g', 'mL', 'kg', 'oz', 'lb', 'tbsp', 'tsp', 'fl oz', 'small', 'medium', 'large', 'L', 'ml']);
-const PLURAL: Record<string, string> = {
-  glass: 'glasses',
-  piece: 'pieces',
-  slice: 'slices',
-  serving: 'servings',
-  handful: 'handfuls',
-  bowl: 'bowls',
-  cup: 'cups',
-  mug: 'mugs',
-  plate: 'plates',
-  scoop: 'scoops',
-  can: 'cans',
-  bottle: 'bottles',
-  batch: 'batches',
-};
-
-/** "1½ bowls", "2 handfuls", "170 g", "1 medium". */
-export function amountLabel(amount: number, unit: string): string {
-  const u = unitLabel(unit);
-  const whole = Math.floor(amount);
-  const frac = amount - whole;
-  const count = Math.abs(frac - 0.5) < 0.01 ? `${whole || ''}½` : Number.isInteger(amount) ? String(amount) : String(Math.round(amount * 100) / 100);
-  // The food's own words ("cookie", "nugget") take a plain plural.
-  const plural = PLURAL[u] ?? (/^[a-z]+$/.test(u) ? (/[^aeiou]y$/.test(u) ? u.slice(0, -1) + 'ies' : /(s|x|ch|sh)$/.test(u) ? u + 'es' : u + 's') : u);
-  const word = amount > 1 && !NO_PLURAL.has(u) ? plural : u;
-  return `${count} ${word}`;
 }
 
 /** Confidence levels shown to the user; values are what gets stored (0 to 1). */

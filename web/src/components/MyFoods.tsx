@@ -1,7 +1,7 @@
 import { Camera, Plus, ScanText, Trash2 } from 'lucide-preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api, ApiError, type Food } from '../api';
-import { kcal } from '../format';
+import { kcal, weight } from '../format';
 import { resizeImage } from '../image';
 import { toast } from '../toast';
 
@@ -255,7 +255,7 @@ const perServing = (f: Food) => {
   const p = f.portions.find((x) => x.unit === 'serving');
   const g = p?.grams ?? 100;
   const v = (code: string) => ((f.nutrients.find((n) => n.code === code)?.value ?? 0) * g) / 100;
-  return { label: p ? (p.label === 'serving' ? '1 serving' : p.label) : '100 g', kcal: v('ENERC_KCAL'), protein: v('PROCNT') };
+  return { label: p ? (p.label === 'serving' ? '1 serving' : p.label) : weight(100), kcal: v('ENERC_KCAL'), protein: v('PROCNT') };
 };
 
 /** The user's custom foods as cards: tap to edit, or log one. */

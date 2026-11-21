@@ -4,6 +4,7 @@ import { api, ApiError, homeOrder, type HomeBlock } from './api';
 import { isIOS, isStandalone } from './push';
 import { applyUpdate, onUpdateAvailable } from './update';
 import { toast } from './toast';
+import { setMassUnit, type MassUnit } from './format';
 import { useRefreshOnReturn } from './refresh';
 import { logToday } from './today';
 import { Toaster } from './components/Toaster';
@@ -29,12 +30,14 @@ const tabFromHash = (): Tab => {
 
 interface Me {
   timezone: string;
-  settings: { day_cutoff: string; weight_unit: 'kg' | 'lb'; home_blocks?: HomeBlock[] };
+  settings: { day_cutoff: string; weight_unit: 'kg' | 'lb'; mass_unit?: MassUnit; home_blocks?: HomeBlock[] };
 }
 
 export function App() {
   const [tab, setTab] = useState<Tab>(tabFromHash);
   const [me, setMe] = useState<Me | null>(null);
+  // Before any child renders, so every food weight on screen uses the setting (and follows a change to it).
+  setMassUnit(me?.settings.mass_unit);
   useEffect(
     () =>
       onUpdateAvailable((v) => {

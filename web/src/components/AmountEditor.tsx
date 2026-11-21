@@ -1,6 +1,7 @@
 import { Minus, Plus } from 'lucide-preact';
 import { useEffect, useRef } from 'preact/hooks';
 import { EXACT_UNITS, SIZE_LABEL, sizesFor, toGrams, withCounts, type Conversion, type Portion } from '../../../src/worker/lib/units';
+import { getMassUnit, preferMass, toMass, weight } from '../format';
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -46,10 +47,12 @@ export function AmountEditor(props: {
   // Name and category pick the cup weight for volumes (a cup of lettuce isn't a cup of water), as on the server.
   const food = { name: props.name, category: props.category, portions: props.portions ?? [], default_serving_grams: props.defaultServingGrams ?? null };
   const exactUnit = EXACT_UNITS[props.unit];
-  const grams = props.unit === 'g';
+  // Typed in the unit weights are shown in: the box already says the weight.
+  const inWeight = props.unit === getMassUnit();
   const known = props.knownUnit && props.knownUnit.unit === props.unit ? props.knownUnit : null;
   const estimate: Conversion = known ? { grams: (props.amount || 0) * known.grams, method: 'portion' } : toGrams(props.amount || 0, props.unit, food);
-  const fit = sizesFor({ name: props.name, category: props.category, portions: props.portions });
+  const sizes = sizesFor({ name: props.name, category: props.category, portions: props.portions });
+  const fit = { ...sizes, exact: preferMass(sizes.exact) };
   // The food's own portions (exact units already have their own chip), then the sizes that suit it.
   // Includes the count inside a labelled serving ("2 cookies (36g)" offers a Cookie chip).
   const own = withCounts(props.portions ?? [])
@@ -79,14 +82,12 @@ export function AmountEditor(props: {
         ))}
         {current && <SizeChip on onClick={() => {}} label={EXACT_UNITS[current]?.label ?? SIZE_LABEL[current] ?? cap(current)} />}
         {own.map((p) => (
-          <SizeChip on={props.unit === p.unit} onClick={() => pick(p.unit)} label={cap(p.label.replace(/^1\s+/, ''))} sub={`${Math.round(p.grams / p.amount)} g`} />
+          <SizeChip on={props.unit === p.unit} onClick={() => pick(p.unit)} label={cap(p.label.replace(/^1\s+/, ''))} sub={weight(p.grams / p.amount)} />
         ))}
         {generic.map((u) => {
           // A cup or spoon of a food weighed from the cup table shows that weight, like the food's own portions.
           const one = toGrams(1, u, food);
-          return (
-            <SizeChip on={props.unit === u} onClick={() => pick(u)} label={SIZE_LABEL[u] ?? cap(u)} sub={one.method === 'density' ? `${Math.round(one.grams)} g` : undefined} />
-          );
+          return <SizeChip on={props.unit === u} onClick={() => pick(u)} label={SIZE_LABEL[u] ?? cap(u)} sub={one.method === 'density' ? weight(one.grams) : undefined} />;
         })}
       </div>
 
@@ -119,17 +120,17 @@ export function AmountEditor(props: {
           </div>
         )}
         <p class="text-sm text-ink-2">
-          {/* With grams the weight is already in the box; just show the energy. */}
-          {grams ? (
+          {/* With the weight already in the box, just show the energy. */}
+          {inWeight ? (
             '='
           ) : (
             <>
-              ≈ <span class="num text-ink">{Math.round(estimate.grams)}</span> g
+              ≈ <span class="num text-ink">{toMass(estimate.grams)}</span> {getMassUnit()}
             </>
           )}
           {props.kcalPer100 != null && (
             <>
-              {grams ? ' ' : ' · '}
+              {inWeight ? ' ' : ' · '}
               <span class="num text-ink">{Math.round((props.kcalPer100 * estimate.grams) / 100)}</span> kcal
             </>
           )}
@@ -138,7 +139,7 @@ export function AmountEditor(props: {
           )}
           {props.hint !== false && estimate.method === 'density' && estimate.per_cup && (
             <span class="block text-xs text-faint">
-              estimate: a cup of {estimate.per_cup.what} is about {estimate.per_cup.grams} g
+              estimate: a cup of {estimate.per_cup.what} is about {weight(estimate.per_cup.grams)}
             </span>
           )}
         </p>
