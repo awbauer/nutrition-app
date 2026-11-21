@@ -94,6 +94,29 @@ describe('MCP server', () => {
     expect(r.data.items[0]).toMatchObject({ food_id: food.data.id });
   });
 
+  it('serves the Clem card as an MCP App and gives it each result as structured content', async () => {
+    const uid = await userId('mcp-card@example.test');
+    const tools = (await rpc(uid, 'tools/list')).result.tools;
+    const byName = Object.fromEntries(tools.map((t: any) => [t.name, t]));
+    for (const n of ['get_day', 'get_range', 'get_meal', 'log_meal', 'log_food', 'answer_meal_questions', 'get_coach_report', 'run_coach'])
+      expect(byName[n]._meta.ui.resourceUri).toBe('ui://clem/card.html');
+    expect(byName.search_foods._meta?.ui).toBeUndefined();
+
+    const res = await rpc(uid, 'resources/read', { uri: 'ui://clem/card.html' });
+    expect(res.result.contents[0]).toMatchObject({ uri: 'ui://clem/card.html', mimeType: 'text/html;profile=mcp-app' });
+    expect(res.result.contents[0].text).toMatch(/^<!doctype html>/);
+    expect(res.result.contents[0].text).not.toMatch(/<script[^>]+src=/); // self-contained
+
+    const day = await rpc(uid, 'tools/call', { name: 'get_day', arguments: { date: 'today' } });
+    expect(day.result.structuredContent).toMatchObject({ card: 'day', app_url: ORIGIN, meals: [] });
+    const range = await rpc(uid, 'tools/call', { name: 'get_range', arguments: {} });
+    expect(range.result.structuredContent).toMatchObject({ card: 'range' });
+    // Errors carry no card data.
+    const bad = await rpc(uid, 'tools/call', { name: 'get_meal', arguments: { meal_id: 'nope' } });
+    expect(bad.result).toMatchObject({ isError: true });
+    expect(bad.result.structuredContent).toBeUndefined();
+  });
+
   it("keeps each user's data separate", async () => {
     const a = await userId('mcp-a@example.test');
     const b = await userId('mcp-b@example.test');
