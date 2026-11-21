@@ -172,7 +172,7 @@ async function searchFoods(api: Api, query: string, limit: number) {
   return {
     query,
     results: rows,
-    note: "Nutrients are per 100 g. Log a row with log_food (its food_id, fdc_id or fatsecret_id), or log_favorite for a favorite.",
+    note: "Nutrients are per 100 g. Log a database or own-food row with log_food (its food_id, fdc_id or fatsecret_id plus an amount). Log a favorite row with log_favorite (its name), or with log_food using the row's food_id, amount and unit.",
     ...(r.usda_error ? { usda_error: r.usda_error } : {}),
   };
 }

@@ -115,7 +115,18 @@ describe('coach v2: macro split, streaks, changes, plans, no repeats', () => {
     const { macroSplit, macroReference, streak } = await import('../src/worker/lib/coach');
     expect(macroSplit({ PROCNT: 60, FAT: 120, CHOCDF: 220 })).toEqual({ protein_pct: 11, fat_pct: 49, carbs_pct: 40 });
     expect(macroSplit({ PROCNT: 5 })).toBeNull();
-    expect(macroReference({ ENERC_KCAL: 2000, PROCNT: 150 })).toMatchObject({ source: 'healthy ranges', fat_pct: [20, 35], protein_pct: [25, 35], fat_g: [44, 78] });
+    expect(macroReference({})).toMatchObject({ source: 'healthy ranges', carbs_pct: [45, 65] });
+    expect(macroReference({ ENERC_KCAL: 2000, PROCNT: 150 })).toMatchObject({
+      source: 'derived from your calorie and protein targets',
+      protein_pct: [25, 35],
+      fat_pct: [20, 35],
+      carbs_pct: [35, 50],
+      fat_g: [44, 78],
+    });
+    // 150 g protein in 1,800 kcal is 33%: carbs are what's left after 20-35% fat, so 196 g is inside, not "under the floor".
+    const mine = macroReference({ ENERC_KCAL: 1800, PROCNT: 150 });
+    expect(mine).toMatchObject({ carbs_pct: [32, 47], carbs_g: [144, 212] });
+    expect(196).toBeGreaterThanOrEqual(mine.carbs_g![0]);
     expect(macroReference({ ENERC_KCAL: 2000, FAT: 60 })).toMatchObject({ source: 'your targets', fat_pct: [22, 32], fat_g: [54, 66] });
     const days: { date: string; meals: number; totals: Record<string, number> }[] = [
       { date: '2026-11-10', meals: 2, totals: { PROCNT: 50 } },
@@ -148,13 +159,35 @@ describe('coach v2: macro split, streaks, changes, plans, no repeats', () => {
     const user = await (env as unknown as Env).DB.prepare('SELECT id, access_sub, email, timezone FROM users WHERE email = ?').bind(email).first<any>();
     const d = await coachDigest((env as unknown as Env).DB, user, '2026-11-13');
     expect(d.macro_split.day).toMatchObject({ protein_pct: 14, fat_pct: 58, carbs_pct: 28 });
-    expect(d.macro_reference.source).toBe('healthy ranges');
+    expect(d.macro_reference.source).toBe('derived from your calorie and protein targets');
+    expect(d.streaks.map((s) => s.issue)).not.toContain('carbs low'); // no carbs target: carbs are the remainder
     expect(d.streaks.map((s) => s.issue)).toEqual(expect.arrayContaining(['protein short', 'fat-heavy']));
     expect(d.streaks.find((s) => s.issue === 'protein short')).toMatchObject({ days_running: 5 }); // every logged day, Nov 3 included
-    expect(d.plans.protein_per_meal_30d.breakfast).toMatchObject({ meals: 5 });
+    expect(d.plans.protein_per_meal_30d.breakfast).toMatchObject({ meals: 5, median_g: 6, big_meals_left_out: 0 });
     expect(d.plans.high_protein_meals.breakfast?.[0]).toMatchObject({ items: ['eggs and smoked salmon'], protein_g: 42 });
     expect(d.plans.top_fat_sources_week[0]).toMatchObject({ name: 'bacon cheeseburger', fat_g: 240 });
     expect(d.changes.some((c) => c.what === 'days logged')).toBe(true);
+  });
+
+  it('uses the median breakfast and leaves out a 1,000+ kcal brunch', async () => {
+    const email = 'coach-brunch@example.test';
+    const E = { DEV_USER_EMAIL: email };
+    const mk = async (name: string, kcal: number, p: number) =>
+      (await api('/foods', { method: 'POST', json: { name, serving_grams: 100, per_serving: { ENERC_KCAL: kcal, PROCNT: p, FAT: 10, CHOCDF: 40 } } }, E)).data.id as string;
+    const oats = await mk('oats', 350, 18);
+    const eggs = await mk('eggs on toast', 400, 22);
+    const brunch = await mk('brunch: quiche, sashimi, shake', 1600, 63);
+    const log = (at: string, food_id: string, display_name: string) =>
+      api('/intake', { method: 'POST', json: { meal_type: 'breakfast', occurrence_at: at, merge: false, items: [{ food_id, amount: 1, unit: 'serving', display_name }] } }, E);
+    await log('2026-11-10T08:00:00Z', oats, 'oats');
+    await log('2026-11-11T08:00:00Z', eggs, 'eggs on toast');
+    await log('2026-11-12T08:00:00Z', oats, 'oats');
+    await log('2026-11-13T08:00:00Z', brunch, 'brunch');
+    const user = await (env as unknown as Env).DB.prepare('SELECT id, access_sub, email, timezone FROM users WHERE email = ?').bind(email).first<any>();
+    const d = await coachDigest((env as unknown as Env).DB, user, '2026-11-13');
+    expect(d.plans.protein_per_meal_30d.breakfast).toEqual({ median_g: 18, meals: 3, big_meals_left_out: 1 });
+    // Not offered as a breakfast to repeat either.
+    expect((d.plans.high_protein_meals.breakfast ?? []).some((m) => m.items.includes('brunch'))).toBe(false);
   });
 
   it("rewrites a headline that repeats a recent one, and tells the coach what it said before", async () => {

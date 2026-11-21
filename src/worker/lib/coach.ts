@@ -27,6 +27,8 @@ const MAX_ATTEMPTS = 3;
 
 const MACROS = ['ENERC_KCAL', 'PROCNT', 'CHOCDF', 'FAT', 'FIBTG', 'SUGAR', 'NA'] as const;
 const MAIN_MEALS: MealType[] = ['breakfast', 'lunch', 'dinner'];
+/** Meals bigger than this are outliers for "a typical breakfast" and for plans to repeat. */
+const BIG_MEAL_KCAL = 1000;
 
 export interface PeriodStats {
   from: string;
@@ -68,14 +70,15 @@ export interface Digest {
   /** Share of calories from protein, fat and carbs (from grams: 4/9/4 kcal per g), per logged-day average. */
   macro_split: { day: MacroSplit | null; week: MacroSplit | null; previous_week: MacroSplit | null; month: MacroSplit | null };
   /** What the split is judged against: the user's own fat/carb targets when set, else the healthy ranges (AMDR). */
-  macro_reference: { source: 'your targets' | 'healthy ranges'; protein_pct: [number, number]; fat_pct: [number, number]; carbs_pct: [number, number]; fat_g?: [number, number]; carbs_g?: [number, number] };
+  macro_reference: { source: 'your targets' | 'derived from your calorie and protein targets' | 'healthy ranges'; protein_pct: [number, number]; fat_pct: [number, number]; carbs_pct: [number, number]; fat_g?: [number, number]; carbs_g?: [number, number] };
   /** Problems and how many logged days in a row (ending on the reviewed day) they've held. */
   streaks: { issue: string; days_running: number; days_in_last_7_logged: number; detail: string }[];
   /** What moved: this week vs the week before, and the reviewed day vs this week. Only notable moves. */
   changes: { what: string; from: number; to: number; unit: string; compared: 'week vs previous week' | 'day vs this week' }[];
   /** Material for concrete plans, from the user's own log. */
   plans: {
-    protein_per_meal_30d: Record<string, { avg_g: number; meals: number }>;
+    /** Typical protein per meal: the median, leaving out meals over BIG_MEAL_KCAL (brunches, feasts). */
+    protein_per_meal_30d: Record<string, { median_g: number; meals: number; big_meals_left_out: number }>;
     /** Past meals that hit the protein bar, by meal type, best first (distinct item sets). */
     high_protein_meals: Record<string, { date: string; items: string[]; protein_g: number; kcal: number }[]>;
     protein_bar_g: number;
@@ -203,25 +206,40 @@ export function macroSplit(t: Record<string, number | undefined>): MacroSplit | 
 }
 
 /** The ranges the split is judged against: ±5 points around the user's own fat/carb targets, else AMDR. */
+/**
+ * The ranges the split is judged against. Own fat/carb targets set the range (±5 points). Otherwise,
+ * with calorie and protein targets, protein's share is fixed by them, fat keeps the healthy 20–35%,
+ * and carbs are whatever is left: a high-protein plan doesn't get pushed toward carbs it doesn't need.
+ * With no targets at all, the general healthy ranges (AMDR).
+ */
 export function macroReference(targets: Record<string, number>): Digest['macro_reference'] {
   const kcal = targets.ENERC_KCAL;
-  const around = (g: number | undefined, perG: number): [number, number] | null =>
-    kcal && g ? [Math.max(0, Math.round((g * perG * 100) / kcal) - 5), Math.round((g * perG * 100) / kcal) + 5] : null;
-  const fat = around(targets.FAT, 9);
-  const carbs = around(targets.CHOCDF, 4);
-  const protein = around(targets.PROCNT, 4);
-  const own = !!(fat || carbs);
-  const ref: Digest['macro_reference'] = {
-    source: own ? 'your targets' : 'healthy ranges',
-    protein_pct: protein ?? AMDR.protein_pct,
-    fat_pct: fat ?? AMDR.fat_pct,
-    carbs_pct: carbs ?? AMDR.carbs_pct,
-  };
+  const pctOf = (g: number | undefined, perG: number) => (kcal && g ? Math.round((g * perG * 100) / kcal) : null);
+  const around = (v: number | null): [number, number] | null => (v == null ? null : [Math.max(0, v - 5), v + 5]);
+  const p = pctOf(targets.PROCNT, 4);
+  const f = pctOf(targets.FAT, 9);
+  const c = pctOf(targets.CHOCDF, 4);
+  const clamp = (r: [number, number]): [number, number] => [Math.max(0, Math.min(100, r[0])), Math.max(0, Math.min(100, r[1]))];
+  let ref: Digest['macro_reference'];
+  if (f != null || c != null) {
+    const fat = around(f) ?? (p != null && c != null ? clamp([100 - p - c - 5, 100 - p - c + 5]) : AMDR.fat_pct);
+    const carbs = around(c) ?? (p != null && f != null ? clamp([100 - p - f - 5, 100 - p - f + 5]) : AMDR.carbs_pct);
+    ref = { source: 'your targets', protein_pct: around(p) ?? AMDR.protein_pct, fat_pct: fat, carbs_pct: carbs };
+  } else if (p != null) {
+    ref = {
+      source: 'derived from your calorie and protein targets',
+      protein_pct: around(p)!,
+      fat_pct: AMDR.fat_pct,
+      carbs_pct: clamp([100 - p - AMDR.fat_pct[1], 100 - p - AMDR.fat_pct[0]]),
+    };
+  } else {
+    ref = { source: 'healthy ranges', protein_pct: AMDR.protein_pct, fat_pct: AMDR.fat_pct, carbs_pct: AMDR.carbs_pct };
+  }
   if (kcal) {
-    const fp = ref.fat_pct;
-    const cp = ref.carbs_pct;
-    ref.fat_g = targets.FAT ? [Math.round(targets.FAT * 0.9), Math.round(targets.FAT * 1.1)] : [Math.round((kcal * fp[0]) / 900), Math.round((kcal * fp[1]) / 900)];
-    ref.carbs_g = targets.CHOCDF ? [Math.round(targets.CHOCDF * 0.9), Math.round(targets.CHOCDF * 1.1)] : [Math.round((kcal * cp[0]) / 400), Math.round((kcal * cp[1]) / 400)];
+    ref.fat_g = targets.FAT ? [Math.round(targets.FAT * 0.9), Math.round(targets.FAT * 1.1)] : [Math.round((kcal * ref.fat_pct[0]) / 900), Math.round((kcal * ref.fat_pct[1]) / 900)];
+    ref.carbs_g = targets.CHOCDF
+      ? [Math.round(targets.CHOCDF * 0.9), Math.round(targets.CHOCDF * 1.1)]
+      : [Math.round((kcal * ref.carbs_pct[0]) / 400), Math.round((kcal * ref.carbs_pct[1]) / 400)];
   }
   return ref;
 }
@@ -347,10 +365,9 @@ export async function coachDigest(db: D1Database, user: User, reviewed: string, 
   if (pT) add('protein short', `under 90% of the ${pT} g target`, (t) => (t.PROCNT ?? 0) < pT * 0.9);
   if (kT) add('calories over', `more than 10% over the ${kT} kcal target`, (t) => (t.ENERC_KCAL ?? 0) > kT * 1.1);
   add('fat-heavy', `fat above ${ref.fat_pct[1]}% of calories`, (t) => (macroSplit(t)?.fat_pct ?? 0) > ref.fat_pct[1]);
-  add('carbs low', `carbs below ${ref.carbs_pct[0]}% of calories`, (t) => {
-    const m = macroSplit(t);
-    return !!m && m.carbs_pct < ref.carbs_pct[0];
-  });
+  // Carbs are the flexible remainder unless the user set a carbs target: only then is "low" a problem.
+  const carbsT = targets.CHOCDF;
+  if (carbsT) add('carbs low', `under 80% of the ${carbsT} g carbs target`, (t) => (t.CHOCDF ?? 0) < carbsT * 0.8);
   add('fiber low', `under ${Math.round(fiberT * 0.7)} g fiber`, (t) => (t.FIBTG ?? 0) < fiberT * 0.7);
 
   // Notable moves.
@@ -387,8 +404,10 @@ export async function coachDigest(db: D1Database, user: User, reviewed: string, 
   const recent = allMeals.filter((m) => m.date >= month.from);
   const perMeal: Digest['plans']['protein_per_meal_30d'] = {};
   for (const t of [...MAIN_MEALS, 'snack' as MealType]) {
-    const ms = recent.filter((m) => m.type === t);
-    if (ms.length) perMeal[t] = { avg_g: r1(ms.reduce((a, m) => a + m.protein, 0) / ms.length), meals: ms.length };
+    const all = recent.filter((m) => m.type === t);
+    const ms = all.filter((m) => m.kcal <= BIG_MEAL_KCAL);
+    const med = median(ms.map((m) => m.protein * 10));
+    if (ms.length && med != null) perMeal[t] = { median_g: med / 10, meals: ms.length, big_meals_left_out: all.length - ms.length };
   }
   // A meal that clearly moves the day toward target: a quarter of it (meals plus a snack), at least 25 g.
   const bar = pT ? Math.max(25, Math.round(pT / 4)) : 30;
@@ -396,7 +415,8 @@ export async function coachDigest(db: D1Database, user: User, reviewed: string, 
   for (const t of [...MAIN_MEALS, 'snack' as MealType]) {
     const seenSet = new Set<string>();
     const best = allMeals
-      .filter((m) => m.type === t && m.protein >= (t === 'snack' ? bar / 2 : bar))
+      // Everyday meals to repeat: a 1,500 kcal brunch isn't a breakfast plan.
+      .filter((m) => m.type === t && m.kcal <= BIG_MEAL_KCAL && m.protein >= (t === 'snack' ? bar / 2 : bar))
       .sort((a, b) => b.protein - a.protein)
       .filter((m) => {
         const key = [...m.items].map((x) => x.toLowerCase()).sort().join('|');
@@ -473,11 +493,13 @@ intake numbers can be trusted; say so when it matters, and don't praise a "low" 
 
 What else is in the digest:
 - macro_split: % of calories from protein, fat and carbs (day, week, previous_week, month), and macro_reference: the
-  ranges to judge them by (their own fat/carb targets when set, else healthy ranges). A fat- or carb-heavy split that
-  crowds out protein is often the real cause of "protein short": say so, with top_fat_sources_week by name.
+  ranges to judge them by. They come from the user's own targets (with calorie and protein targets, carbs are simply
+  what's left after protein and fat), so judge against them, never against general carb guidelines: don't push carbs
+  up unless they're under the user's own carbs target. A fat-heavy split that crowds out protein is often the real
+  cause of "protein short": say so, with top_fat_sources_week by name.
 - streaks: problems with how many logged days in a row they've held (days_running).
 - changes: notable moves, this week vs the week before and the day vs this week.
-- plans: protein per meal (last 30 days), past meals from THEIR log that hit protein_bar_g (by meal type), and this
+- plans: typical protein per meal (the median over 30 days, leaving out meals over 1,000 kcal), past meals from THEIR log that hit protein_bar_g (by meal type), and this
   week's biggest fat sources. Use these for concrete plans: real meals they've eaten, by name, with their numbers.
 - previous_reports: the headlines and coaching you gave in the last few days.
 
