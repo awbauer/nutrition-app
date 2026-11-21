@@ -150,7 +150,7 @@ export async function rankedFatSecret(env: Env, query: string, estimateKcal: num
   const hits = await client.search(query, max);
   return rankCandidates(
     query,
-    hits.map((h) => ({ ...h, kcal100: per100(h.nutrients, 'ENERC_KCAL') })),
+    hits.map((h, i) => ({ ...h, kcal100: per100(h.nutrients, 'ENERC_KCAL'), sourceRank: i })),
     estimateKcal,
   );
 }
