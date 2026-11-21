@@ -270,6 +270,27 @@ describe('drafts from the main button', () => {
   });
 });
 
+describe('package labels', () => {
+  it('reuse the custom food read from the same label', async () => {
+    const E = U('qa-label@example.test');
+    const out = {
+      items: [{ name: 'QA protein shake', amount: 1, unit: 'bottle', confidence: 0.9, brand: 'QA Co', label: { serving_amount: 340, serving_unit: 'ml', kcal: 150, protein: 30 } }],
+      questions: [],
+    };
+    const ids: string[] = [];
+    for (let i = 0; i < 2; i++) {
+      const f = new FormData();
+      f.append('photo', new File([new Uint8Array([0xff, 0xd8, 0xff])], 'a.jpg', { type: 'image/jpeg' }));
+      const r = await api('/intake', { method: 'POST', body: f }, { ...E, AI: fakeAi(out) });
+      expect(r.data.status).toBe('completed');
+      ids.push(r.data.items[0].food_id);
+    }
+    expect(ids[0]).toBe(ids[1]);
+    const mine = await api('/foods/mine', {}, E);
+    expect(mine.data.filter((f: any) => f.name === 'QA protein shake')).toHaveLength(1);
+  });
+});
+
 describe('food cache', () => {
   it('caches the same new food twice at once without failing', async () => {
     const f = { source: 'estimate' as const, sourceId: `qa-race-${Date.now()}`, name: 'Race food', brand: null, dataType: null, category: null, defaultServingGrams: null, portions: [], nutrients: [{ code: 'ENERC_KCAL', usdaId: 1008, value: 100, unit: 'kcal' }] };
