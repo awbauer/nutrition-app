@@ -130,19 +130,48 @@ export function popularity(c: Candidate): { bonus: number; reason: string | null
   return { bonus: 0, reason: null };
 }
 
-export function scoreCandidate<T extends Candidate>(query: string, c: T, estimateKcal100?: number | null): ScoredCandidate<T> {
+/** How much a brand word of the query counts toward word coverage, relative to a word naming the item. */
+const BRAND_WORD_WEIGHT = 0.5;
+
+/**
+ * The query's words that name a brand rather than the item: those found in a candidate's brand
+ * ("chick", "fil" in "Chick-fil-A Polynesian Sauce" when any candidate's brand is Chick-fil-A).
+ */
+export function brandWords(query: string, cs: Pick<Candidate, 'brand'>[], extraBrand?: string | null): Set<string> {
+  const q = new Set(tokens(query));
+  const out = new Set<string>();
+  for (const b of [extraBrand, ...cs.map((c) => c.brand)]) if (b) for (const t of tokens(b)) if (q.has(t)) out.add(t);
+  return out;
+}
+
+/**
+ * Score one candidate. `brand` is the query's brand words (see brandWords); without it, only this
+ * candidate's own brand is recognised.
+ */
+export function scoreCandidate<T extends Candidate>(query: string, c: T, estimateKcal100?: number | null, brand?: Set<string>): ScoredCandidate<T> {
   const reasons: string[] = [];
   const q = tokens(query);
   const qset = new Set(q);
   const nameTokens = tokens(c.name);
   const nset = new Set(nameTokens);
-  const head = new Set(tokens(c.name.split(',')[0] ?? c.name));
+  const bset = new Set(c.brand ? tokens(c.brand) : []);
+  const bw = brand ?? new Set([...bset].filter((t) => qset.has(t)));
+  // The main segment is the first that isn't only the brand: "McDONALD'S, BIG MAC" is about a Big Mac.
+  const segments = c.name.split(',').map((s) => tokens(s));
+  const head = new Set(segments.find((seg) => seg.some((t) => !bw.has(t))) ?? segments[0] ?? []);
 
-  // Coverage of the query's words.
-  const covered = q.filter((t) => has(nset, t)).length;
-  const coverage = q.length ? covered / q.length : 0;
+  // Coverage of the query's words, by the name or the brand field. A brand word counts half: the brand
+  // says whose product it is, the other words say which one ("polynesian" in "Chick-fil-A Polynesian Sauce").
+  // Counting the brand in full let a name that spells the brand ("CHICK-FIL-A SAUCE") outscore the
+  // product asked for, whose brand is only in the brand field.
+  const weight = (t: string) => (bw.has(t) ? BRAND_WORD_WEIGHT : 1);
+  const covered = q.filter((t) => has(nset, t) || (bw.has(t) && bset.has(t)));
+  const total = q.reduce((s, t) => s + weight(t), 0);
+  const coverage = total ? covered.reduce((s, t) => s + weight(t), 0) / total : 0;
   let score = coverage * 1.0;
-  reasons.push(`${covered}/${q.length} words`);
+  reasons.push(`${covered.length}/${q.length} words`);
+  const missing = q.filter((t) => !bw.has(t) && !NEUTRAL.has(t) && !covered.includes(t));
+  if (missing.length && covered.length) reasons.push(`missing: ${missing.join(', ')}`);
 
   // The main segment must be about the query ("Fish oil, salmon" is oil, not salmon).
   const headHits = [...head].filter((t) => has(qset, t)).length;
@@ -188,12 +217,14 @@ export function scoreCandidate<T extends Candidate>(query: string, c: T, estimat
   return { candidate: c, score: Math.round(score * 100) / 100, reasons };
 }
 
-export function rankCandidates<T extends Candidate>(query: string, cs: T[], estimateKcal100?: number | null): ScoredCandidate<T>[] {
-  return cs.map((c) => scoreCandidate(query, c, estimateKcal100)).sort((a, b) => b.score - a.score);
+/** Rank candidates for a query; brand words are recognised across the whole set (and `brand`, when given). */
+export function rankCandidates<T extends Candidate>(query: string, cs: T[], estimateKcal100?: number | null, brand?: string | null): ScoredCandidate<T>[] {
+  const bw = brandWords(query, cs, brand);
+  return cs.map((c) => scoreCandidate(query, c, estimateKcal100, bw)).sort((a, b) => b.score - a.score);
 }
 
 /** Bumped when ranking changes, so the change log can compare how often each version's picks were fixed. */
-export const MATCHER_VERSION = 'match-v3';
+export const MATCHER_VERSION = 'match-v4';
 
 /** Minimum score to accept a candidate automatically; below it we fall back to the estimate. */
 export const ACCEPT_SCORE = 0.6;

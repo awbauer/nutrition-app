@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loggingQuality } from '../src/worker/lib/events';
+import { MATCHER_VERSION } from '../src/worker/lib/scoring';
 import { api, testEnv } from './helpers';
 
 afterEach(() => vi.restoreAllMocks());
@@ -104,7 +105,7 @@ describe('meal change log', () => {
     expect(q.status).toBe(200);
     expect(q.data).toMatchObject({ ai_items: 2, pct_swapped: 50, pct_any_fix: 50, searches: 1 });
     expect(q.data.top_swaps[0]).toMatchObject({ name: 'bacon bits meatless', from: 'Bacon bits meatless', to: 'Bacon cooked slices', times: 1 });
-    expect(q.data.by_prompt[0]).toMatchObject({ prompt_version: 'parse-v8', matcher_version: 'match-v3', items: 2, pct_fixed: 50 });
+    expect(q.data.by_prompt[0]).toMatchObject({ prompt_version: 'parse-v8', matcher_version: MATCHER_VERSION, items: 2, pct_fixed: 50 });
   });
 
   it('records answers to the AI’s questions', async () => {
