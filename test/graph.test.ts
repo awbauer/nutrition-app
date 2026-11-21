@@ -10,7 +10,10 @@ async function food(name: string, kcal: number, brand?: string) {
 async function meal(meal_type: string, at: string, items: [string, string][]) {
   const r = await api(
     '/intake',
-    { method: 'POST', json: { meal_type, occurrence_at: at, merge: false, items: items.map(([food_id, display_name]) => ({ food_id, display_name, amount: 1, unit: 'serving' })) } },
+    {
+      method: 'POST',
+      json: { meal_type, occurrence_at: at, merge: false, items: items.map(([food_id, display_name]) => ({ food_id, display_name, amount: 1, unit: 'serving' })) },
+    },
     E,
   );
   expect(r.status).toBe(201);
@@ -23,8 +26,14 @@ describe('food graph', () => {
     const meatballs = await food('Chicken meatballs', 180, 'Kirkland');
     const rice = await food('Rice, white, cooked', 130);
     const oats = await food('Oats', 150);
-    await meal('dinner', ago(1), [[meatballs, 'chicken meatballs'], [rice, 'rice']]);
-    await meal('dinner', ago(3), [[meatballs, 'chicken meatballs'], [rice, 'rice']]);
+    await meal('dinner', ago(1), [
+      [meatballs, 'chicken meatballs'],
+      [rice, 'rice'],
+    ]);
+    await meal('dinner', ago(3), [
+      [meatballs, 'chicken meatballs'],
+      [rice, 'rice'],
+    ]);
     await meal('lunch', ago(5), [[meatballs, 'chicken meatballs']]);
     await meal('breakfast', ago(2), [[oats, 'oatmeal']]);
     await meal('breakfast', ago(200), [[oats, 'oatmeal']]); // outside 90 days

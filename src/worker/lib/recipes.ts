@@ -283,12 +283,13 @@ export async function getRecipe(db: D1Database, userId: string, id: string): Pro
 
 /** The user's recipes, most recently made or eaten first. */
 export async function listRecipes(db: D1Database, userId: string): Promise<Recipe[]> {
-  const { results } = await db
-    .prepare(`${RECIPE_SELECT} WHERE r.user_id = ? AND r.archived = 0`)
-    .bind(userId)
-    .all<RecipeRow>();
+  const { results } = await db.prepare(`${RECIPE_SELECT} WHERE r.user_id = ? AND r.archived = 0`).bind(userId).all<RecipeRow>();
   const recency = (r: RecipeRow) => (r.last_logged_at && r.last_logged_at > r.updated_at ? r.last_logged_at : r.updated_at);
-  return hydrate(db, userId, results.sort((a, b) => recency(b).localeCompare(recency(a))));
+  return hydrate(
+    db,
+    userId,
+    results.sort((a, b) => recency(b).localeCompare(recency(a))),
+  );
 }
 
 /** Names of the user's recipes, for the AI prompt (so "a bowl of my chili" uses the recipe). */

@@ -33,26 +33,23 @@ export function Summary(props: { day: Day }) {
             {kcal(target == null ? eaten : Math.abs(left!))}
             <span class="ml-1.5 font-sans text-base font-medium text-faint">kcal</span>
           </p>
-          <p class="mt-1.5 text-sm text-ink-2">
-            {target == null ? 'Set a target in Settings to see what’s left' : `${kcal(eaten)} eaten of ${kcal(target)}`}
-          </p>
+          <p class="mt-1.5 text-sm text-ink-2">{target == null ? 'Set a target in Settings to see what’s left' : `${kcal(eaten)} eaten of ${kcal(target)}`}</p>
         </div>
         <ProteinBadge eaten={totals.PROCNT ?? 0} target={targets.PROCNT} />
       </div>
 
       {/* Plate bar: each meal's share, with the target marked */}
       <div class="relative mt-5">
-        <div class="flex h-3 overflow-hidden rounded-full bg-sunken" role="img" aria-label={byMeal.map((m) => `${MEAL_LABEL[m.type]} ${kcal(m.kcal)} kcal`).join(', ') || 'Nothing eaten yet'}>
+        <div
+          class="flex h-3 overflow-hidden rounded-full bg-sunken"
+          role="img"
+          aria-label={byMeal.map((m) => `${MEAL_LABEL[m.type]} ${kcal(m.kcal)} kcal`).join(', ') || 'Nothing eaten yet'}
+        >
           {byMeal.map((m, i) => (
-            <span
-              style={{ width: `${(m.kcal / scale) * 100}%`, background: MEAL_COLOR[m.type] }}
-              class={i > 0 ? 'border-l-2 border-card' : ''}
-            />
+            <span style={{ width: `${(m.kcal / scale) * 100}%`, background: MEAL_COLOR[m.type] }} class={i > 0 ? 'border-l-2 border-card' : ''} />
           ))}
         </div>
-        {target != null && eaten > target && (
-          <span class="absolute -top-1 h-5 w-0.5 rounded bg-ink" style={{ left: `${(target / scale) * 100}%` }} aria-hidden="true" />
-        )}
+        {target != null && eaten > target && <span class="absolute -top-1 h-5 w-0.5 rounded bg-ink" style={{ left: `${(target / scale) * 100}%` }} aria-hidden="true" />}
         {byMeal.length > 0 && (
           <div class="mt-2.5 flex flex-wrap gap-x-4 gap-y-1">
             {byMeal.map((m) => (
@@ -92,9 +89,7 @@ function ProteinBadge(props: { eaten: number; target?: number }) {
           <span class="text-[10px] text-faint">g</span>
         </div>
       </div>
-      <p class="mt-1 text-center text-[11px] leading-tight font-medium text-sage">
-        {target == null ? 'protein' : met ? 'Protein met' : `${Math.round(target - eaten)} g to go`}
-      </p>
+      <p class="mt-1 text-center text-[11px] leading-tight font-medium text-sage">{target == null ? 'protein' : met ? 'Protein met' : `${Math.round(target - eaten)} g to go`}</p>
     </div>
   );
 }

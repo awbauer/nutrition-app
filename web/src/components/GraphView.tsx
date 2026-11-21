@@ -73,8 +73,14 @@ function layout(g: Graph, shown: Set<NodeType>): { nodes: SimNode[]; links: SimL
         .distance((l) => (l.type === 'eaten_with' ? 60 : l.type === 'eaten_at' ? 110 : 70))
         .strength((l) => (l.type === 'eaten_at' ? 0.04 + Math.min(l.weight, 10) * 0.02 : l.type === 'eaten_with' ? 0.08 + Math.min(l.weight, 8) * 0.03 : 0.25)),
     )
-    .force('charge', forceManyBody<SimNode>().strength((n) => (n.type === 'meal' ? -500 : -70)))
-    .force('collide', forceCollide<SimNode>((n) => n.r + 3))
+    .force(
+      'charge',
+      forceManyBody<SimNode>().strength((n) => (n.type === 'meal' ? -500 : -70)),
+    )
+    .force(
+      'collide',
+      forceCollide<SimNode>((n) => n.r + 3),
+    )
     .force('x', forceX<SimNode>(0).strength(0.03))
     .force('y', forceY<SimNode>(0).strength(0.03))
     .stop();
@@ -117,7 +123,14 @@ export function GraphView() {
   }, [links, byId]);
   // The most-eaten foods are always labelled; the rest when zoomed in or next to the selection.
   const labelled = useMemo(
-    () => new Set(nodes.filter((n) => n.type !== 'meal').sort((a, b) => b.weight - a.weight).slice(0, 14).map((n) => n.id)),
+    () =>
+      new Set(
+        nodes
+          .filter((n) => n.type !== 'meal')
+          .sort((a, b) => b.weight - a.weight)
+          .slice(0, 14)
+          .map((n) => n.id),
+      ),
     [nodes],
   );
   const near = useMemo(() => new Set(sel ? [sel, ...(neighbours.get(sel) ?? []).map((x) => x.node.id)] : []), [sel, neighbours]);
@@ -245,7 +258,13 @@ export function GraphView() {
                       setSel(sel === n.id ? null : n.id);
                     }}
                   >
-                    <circle r={n.r} fill={COLOR[n.type]} fill-opacity={n.type === 'meal' ? 0.22 : 0.9} stroke={COLOR[n.type]} stroke-width={n.id === sel ? 3 : n.type === 'meal' ? 1.5 : 0} />
+                    <circle
+                      r={n.r}
+                      fill={COLOR[n.type]}
+                      fill-opacity={n.type === 'meal' ? 0.22 : 0.9}
+                      stroke={COLOR[n.type]}
+                      stroke-width={n.id === sel ? 3 : n.type === 'meal' ? 1.5 : 0}
+                    />
                     {showLabel && (
                       <text
                         y={n.type === 'meal' ? fs * 0.35 : n.r + fs * 1.05}
@@ -266,31 +285,23 @@ export function GraphView() {
               })}
             </g>
           </svg>
-          {g && g.nodes.length > 0 && !sel && (
-            <p class="pointer-events-none absolute bottom-3 left-4 text-xs text-faint">Tap a circle · pinch or scroll to zoom</p>
-          )}
+          {g && g.nodes.length > 0 && !sel && <p class="pointer-events-none absolute bottom-3 left-4 text-xs text-faint">Tap a circle · pinch or scroll to zoom</p>}
         </div>
 
-        {selected && (
-          <Details
-            node={selected}
-            links={neighbours.get(selected.id) ?? []}
-            onSelect={setSel}
-            onClose={() => setSel(null)}
-          />
-        )}
+        {selected && <Details node={selected} links={neighbours.get(selected.id) ?? []} onSelect={setSel} onClose={() => setSel(null)} />}
       </div>
-      {g && g.omitted_foods > 0 && <p class="text-xs text-faint">Showing your {g.nodes.filter((n) => n.type === 'food' && n.weight > 0).length} most-eaten foods; {g.omitted_foods} more eaten once or twice are left out.</p>}
+      {g && g.omitted_foods > 0 && (
+        <p class="text-xs text-faint">
+          Showing your {g.nodes.filter((n) => n.type === 'food' && n.weight > 0).length} most-eaten foods; {g.omitted_foods} more eaten once or twice are left out.
+        </p>
+      )}
     </div>
   );
 }
 
 function Details(props: { node: SimNode; links: { node: SimNode; edge: SimLink }[]; onSelect: (id: string) => void; onClose: () => void }) {
   const n = props.node;
-  const by = (type: GEdge['type']) =>
-    props.links
-      .filter((x) => x.edge.type === type)
-      .sort((a, b) => b.edge.weight - a.edge.weight || b.node.weight - a.node.weight);
+  const by = (type: GEdge['type']) => props.links.filter((x) => x.edge.type === type).sort((a, b) => b.edge.weight - a.edge.weight || b.node.weight - a.node.weight);
   const with_ = by('eaten_with');
   const at = by('eaten_at');
   const brand = by('made_by');
@@ -303,7 +314,10 @@ function Details(props: { node: SimNode; links: { node: SimNode; edge: SimLink }
     </button>
   );
   return (
-    <aside class="card flex flex-col gap-3 p-4 lg:absolute lg:top-3 lg:right-3 lg:max-h-[calc(100%-1.5rem)] lg:w-80 lg:overflow-y-auto lg:shadow-lg" aria-label={`About ${n.label}`}>
+    <aside
+      class="card flex flex-col gap-3 p-4 lg:absolute lg:top-3 lg:right-3 lg:max-h-[calc(100%-1.5rem)] lg:w-80 lg:overflow-y-auto lg:shadow-lg"
+      aria-label={`About ${n.label}`}
+    >
       <div class="flex items-start gap-3">
         <span class="mt-1.5 inline-block h-3 w-3 shrink-0 rounded-full" style={{ background: COLOR[n.type] }} aria-hidden="true" />
         <div class="min-w-0 flex-1">
@@ -339,25 +353,41 @@ function Details(props: { node: SimNode; links: { node: SimNode; edge: SimLink }
       {with_.length > 0 && (
         <section class="flex flex-col gap-1.5">
           <p class="eyebrow">Often with</p>
-          <div class="flex flex-wrap gap-1.5">{with_.slice(0, 8).map((x) => <Chip x={x} count />)}</div>
+          <div class="flex flex-wrap gap-1.5">
+            {with_.slice(0, 8).map((x) => (
+              <Chip x={x} count />
+            ))}
+          </div>
         </section>
       )}
       {at.length > 0 && (
         <section class="flex flex-col gap-1.5">
           <p class="eyebrow">{n.type === 'meal' ? 'Most eaten' : 'Eaten at'}</p>
-          <div class="flex flex-wrap gap-1.5">{at.slice(0, 10).map((x) => <Chip x={x} count />)}</div>
+          <div class="flex flex-wrap gap-1.5">
+            {at.slice(0, 10).map((x) => (
+              <Chip x={x} count />
+            ))}
+          </div>
         </section>
       )}
       {brand.length > 0 && (
         <section class="flex flex-col gap-1.5">
           <p class="eyebrow">{n.type === 'brand' ? 'Foods' : 'Brand'}</p>
-          <div class="flex flex-wrap gap-1.5">{brand.slice(0, 10).map((x) => <Chip x={x} count={n.type === 'brand'} />)}</div>
+          <div class="flex flex-wrap gap-1.5">
+            {brand.slice(0, 10).map((x) => (
+              <Chip x={x} count={n.type === 'brand'} />
+            ))}
+          </div>
         </section>
       )}
       {ingredients.length > 0 && (
         <section class="flex flex-col gap-1.5">
           <p class="eyebrow">{n.type === 'recipe' ? 'Ingredients' : 'In recipes'}</p>
-          <div class="flex flex-wrap gap-1.5">{ingredients.map((x) => <Chip x={x} />)}</div>
+          <div class="flex flex-wrap gap-1.5">
+            {ingredients.map((x) => (
+              <Chip x={x} />
+            ))}
+          </div>
         </section>
       )}
     </aside>

@@ -103,8 +103,8 @@ export function CoachView() {
           <Sparkles size={40} strokeWidth={1.5} class="text-faint" aria-hidden="true" />
           <p class="display text-xl font-semibold">Your first report is on its way</p>
           <p class="max-w-[20rem] text-sm text-ink-2">
-            Every morning after 4 am the coach looks back at your last day, week and month: what you ate, your targets, your weight and how well you're
-            logging. Or get one for today so far.
+            Every morning after 4 am the coach looks back at your last day, week and month: what you ate, your targets, your weight and how well you're logging. Or get one for
+            today so far.
           </p>
           <button class="btn-primary mt-1" onClick={run} disabled={running}>
             {running ? 'Thinking…' : 'Get insights now'}
@@ -121,10 +121,7 @@ export function CoachView() {
               .filter((r) => r.log_date !== shown?.log_date && r.status === 'ready')
               .map((r) => (
                 <li>
-                  <button
-                    class="flex w-full items-center gap-3 px-4 py-3 text-left"
-                    onClick={() => api.get<Stored>(`/coach/${r.log_date}`).then(setPast, toast.error)}
-                  >
+                  <button class="flex w-full items-center gap-3 px-4 py-3 text-left" onClick={() => api.get<Stored>(`/coach/${r.log_date}`).then(setPast, toast.error)}>
                     <span class="min-w-0 flex-1">
                       <span class="block text-xs font-medium text-ink-2">{label(r)}</span>
                       <span class="block truncate text-sm">{r.headline}</span>
@@ -221,7 +218,10 @@ interface Quality {
 function Accuracy() {
   const [q, setQ] = useState<Quality | null>(null);
   useEffect(() => {
-    api.get<Quality>('/coach/quality?days=30').then(setQ).catch(() => setQ(null));
+    api
+      .get<Quality>('/coach/quality?days=30')
+      .then(setQ)
+      .catch(() => setQ(null));
   }, []);
   if (!q || q.ai_items === 0) return null;
   const tiles = [

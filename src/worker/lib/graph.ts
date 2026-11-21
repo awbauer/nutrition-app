@@ -100,7 +100,19 @@ export async function buildGraph(db: D1Database, userId: string, days: number, n
     const key = keyOf(r);
     let f = foods.get(key);
     if (!f) {
-      f = { key, food_id: r.food_id, food_name: r.food_name, brand: r.brand, source: r.source, names: new Map(), times: 0, kcal: 0, protein: 0, last_at: r.occurrence_at, meals: new Map() };
+      f = {
+        key,
+        food_id: r.food_id,
+        food_name: r.food_name,
+        brand: r.brand,
+        source: r.source,
+        names: new Map(),
+        times: 0,
+        kcal: 0,
+        protein: 0,
+        last_at: r.occurrence_at,
+        meals: new Map(),
+      };
       foods.set(key, f);
     }
     f.times += 1;

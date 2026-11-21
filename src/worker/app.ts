@@ -89,8 +89,7 @@ api.use('*', async (c, next) => {
       const freshIds = new Set(fresh.map((f) => f.id));
       // A photo, voice or text meal goes to the AI (multipart); its items are logged as ai_logged there.
       const toAi = (c.req.header('Content-Type') ?? '').includes('multipart/form-data');
-      if (toAi)
-        events = [{ intake_id: afterId, actor, kind: 'meal_submitted', at: started, detail: { ...detail, source: row?.source, text: row?.raw_input_text } }];
+      if (toAi) events = [{ intake_id: afterId, actor, kind: 'meal_submitted', at: started, detail: { ...detail, source: row?.source, text: row?.raw_input_text } }];
       else
         events = [
           ...((row?.rid ?? 0) > marks.ni ? [{ intake_id: afterId, actor, kind: 'meal_created', after: { ...after, items: undefined }, detail } as MealEvent] : []),

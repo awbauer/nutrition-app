@@ -15,7 +15,11 @@ export async function api(path: string, init: RequestInit & { json?: unknown } =
   // By default no queue is bound, so AI jobs run inline and the response reflects the finished meal;
   // no history index either (Vectorize has no local mode), and never the real FatSecret keys from
   // .dev.vars: tests that need them pass fakes.
-  const res = await app.request(`http://app.test/api${path}`, { ...init, headers, body }, { ...testEnv, JOBS: undefined, HISTORY: undefined, FATSECRET_CONSUMER_KEY: undefined, FATSECRET_CONSUMER_SECRET: undefined, ...e });
+  const res = await app.request(
+    `http://app.test/api${path}`,
+    { ...init, headers, body },
+    { ...testEnv, JOBS: undefined, HISTORY: undefined, FATSECRET_CONSUMER_KEY: undefined, FATSECRET_CONSUMER_SECRET: undefined, ...e },
+  );
   const text = await res.text();
   let data: any = null;
   try {
@@ -44,5 +48,4 @@ export function mockFetch(handler: (url: URL, init?: RequestInit) => Response | 
   });
 }
 
-export const json = (data: unknown, status = 200) =>
-  new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
+export const json = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });

@@ -29,7 +29,12 @@ async function rpc(uid: string, method: string, params: unknown = {}, envOver: P
   );
   const text = await res.text();
   // Either plain JSON or one SSE "data:" event.
-  const json = text.trim().startsWith('{') ? text : text.split('\n').find((l) => l.startsWith('data:'))!.slice(5);
+  const json = text.trim().startsWith('{')
+    ? text
+    : text
+        .split('\n')
+        .find((l) => l.startsWith('data:'))!
+        .slice(5);
   return JSON.parse(json);
 }
 const call = async (uid: string, name: string, args: unknown = {}, envOver: Partial<Env> = {}) => {
@@ -61,7 +66,9 @@ describe('MCP server', () => {
     const uid = await userId('mcp-user@example.test');
     const tools = await rpc(uid, 'tools/list');
     const names = tools.result.tools.map((t: any) => t.name);
-    expect(names).toEqual(expect.arrayContaining(['get_day', 'log_meal', 'log_food', 'search_foods', 'edit_item', 'get_targets', 'set_targets', 'log_weight', 'get_coach_report', 'create_food']));
+    expect(names).toEqual(
+      expect.arrayContaining(['get_day', 'log_meal', 'log_food', 'search_foods', 'edit_item', 'get_targets', 'set_targets', 'log_weight', 'get_coach_report', 'create_food']),
+    );
 
     const targets = await call(uid, 'set_targets', { energy: 2100, protein: 140 });
     expect(targets.data.targets).toMatchObject({ ENERC_KCAL: 2100, PROCNT: 140 });
@@ -164,11 +171,21 @@ describe('MCP server', () => {
 
     // Named in a description, a favorite logs at its saved portion: the model's guess is ignored.
     const say = (items: unknown[]) => ({ run: async () => ({ response: { items, questions: [] } }) }) as unknown as Ai;
-    const r = await call(uid, 'log_meal', { description: '2 usual nuts' }, { JOBS: undefined, AI: say([{ name: 'usual nuts', amount: 2, unit: 'favorite', grams: 90, confidence: 0.6, search_terms: ['nuts'] }]) });
+    const r = await call(
+      uid,
+      'log_meal',
+      { description: '2 usual nuts' },
+      { JOBS: undefined, AI: say([{ name: 'usual nuts', amount: 2, unit: 'favorite', grams: 90, confidence: 0.6, search_terms: ['nuts'] }]) },
+    );
     expect(r.data.items[0]).toMatchObject({ food_id: almonds.data.id, grams: 56.7 });
     expect(r.data.items[0].nutrients.ENERC_KCAL).toBe(328);
     // An explicit weight keeps its weight, with the favorite's food.
-    const g = await call(uid, 'log_meal', { description: '40 g of usual nuts' }, { JOBS: undefined, AI: say([{ name: 'Usual nuts', amount: 40, unit: 'g', confidence: 0.9, search_terms: ['nuts'] }]) });
+    const g = await call(
+      uid,
+      'log_meal',
+      { description: '40 g of usual nuts' },
+      { JOBS: undefined, AI: say([{ name: 'Usual nuts', amount: 40, unit: 'g', confidence: 0.9, search_terms: ['nuts'] }]) },
+    );
     expect(g.data.items[0]).toMatchObject({ food_id: almonds.data.id, grams: 40 });
 
     expect((await call(uid, 'remove_favorite', { favorite_id: fav.data.id })).isError).toBe(false);
@@ -186,7 +203,10 @@ describe('MCP server', () => {
   });
 
   it('rejects an unknown user', async () => {
-    const res = await mcpApiHandler.fetch(new Request(`${ORIGIN}/mcp`, { method: 'POST', body: '{}' }), E, { ...ctx(), props: { userId: 'nobody' } } as unknown as ExecutionContext);
+    const res = await mcpApiHandler.fetch(new Request(`${ORIGIN}/mcp`, { method: 'POST', body: '{}' }), E, {
+      ...ctx(),
+      props: { userId: 'nobody' },
+    } as unknown as ExecutionContext);
     expect(res.status).toBe(401);
   });
 });

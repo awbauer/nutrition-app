@@ -37,15 +37,11 @@ const VALIDATORS: { [K in keyof Settings]: (v: unknown) => boolean } = {
   model_parser: (v) => typeof v === 'string' && v.length > 0,
   model_speech: (v) => typeof v === 'string' && v.length > 0,
   // Each known block at most once; blocks left out (e.g. added later) go at the end.
-  home_blocks: (v) =>
-    Array.isArray(v) && v.length <= HOME_BLOCKS.length && v.every((b) => (HOME_BLOCKS as readonly unknown[]).includes(b)) && new Set(v).size === v.length,
+  home_blocks: (v) => Array.isArray(v) && v.length <= HOME_BLOCKS.length && v.every((b) => (HOME_BLOCKS as readonly unknown[]).includes(b)) && new Set(v).size === v.length,
 };
 
 export async function getSettings(db: D1Database, userId: string): Promise<Settings> {
-  const { results } = await db
-    .prepare('SELECT key, value FROM settings WHERE user_id = ?')
-    .bind(userId)
-    .all<{ key: string; value: string }>();
+  const { results } = await db.prepare('SELECT key, value FROM settings WHERE user_id = ?').bind(userId).all<{ key: string; value: string }>();
   const s: Settings = { ...DEFAULT_SETTINGS };
   for (const r of results) {
     if (r.key in VALIDATORS) {

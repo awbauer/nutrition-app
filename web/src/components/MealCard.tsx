@@ -75,7 +75,11 @@ export function MealCard(props: { meal: Intake; onChange: (m: Intake | null) => 
         <div class="min-w-0 flex-1">
           <h3 class="display text-lg leading-tight font-semibold">
             {meal.pending?.recipe ? `Recipe: ${meal.pending.recipe}` : MEAL_LABEL[meal.meal_type]}
-            {analyzing && <StatusPill tone="neutral" pulse>{meal.source === 'voice' ? 'Listening' : 'Reading'}</StatusPill>}
+            {analyzing && (
+              <StatusPill tone="neutral" pulse>
+                {meal.source === 'voice' ? 'Listening' : 'Reading'}
+              </StatusPill>
+            )}
             {asking && <StatusPill tone="accent">One question</StatusPill>}
             {failed && <StatusPill tone="berry">Couldn't read</StatusPill>}
           </h3>
@@ -93,7 +97,14 @@ export function MealCard(props: { meal: Intake; onChange: (m: Intake | null) => 
           </div>
         )}
         <div class="relative -mt-1 -mr-2" ref={menuRef}>
-          <button class="icon-btn" onClick={() => setMenu(!menu)} aria-label={`More for ${MEAL_LABEL[meal.meal_type].toLowerCase()}`} aria-expanded={menu} aria-haspopup="menu" disabled={busy}>
+          <button
+            class="icon-btn"
+            onClick={() => setMenu(!menu)}
+            aria-label={`More for ${MEAL_LABEL[meal.meal_type].toLowerCase()}`}
+            aria-expanded={menu}
+            aria-haspopup="menu"
+            disabled={busy}
+          >
             <MoreHorizontal size={20} />
           </button>
           {menu && (
@@ -162,7 +173,11 @@ export function MealCard(props: { meal: Intake; onChange: (m: Intake | null) => 
       )}
 
       {done ? (
-        <button class="flex w-full items-center gap-2 border-t border-dashed border-line px-4 py-3 text-sm font-medium text-accent-ink" onClick={() => props.onAdd(meal)} disabled={busy}>
+        <button
+          class="flex w-full items-center gap-2 border-t border-dashed border-line px-4 py-3 text-sm font-medium text-accent-ink"
+          onClick={() => props.onAdd(meal)}
+          disabled={busy}
+        >
           <Plus size={16} /> Add to {MEAL_LABEL[meal.meal_type].toLowerCase()}
         </button>
       ) : (
@@ -213,7 +228,11 @@ function StatusPill(props: { tone: 'neutral' | 'accent' | 'berry'; pulse?: boole
 
 function MenuItem(props: { icon: preact.ComponentChildren; label: string; onClick: () => void; danger?: boolean }) {
   return (
-    <button role="menuitem" class={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm hover:bg-sunken ${props.danger ? 'text-berry' : 'text-ink'}`} onClick={props.onClick}>
+    <button
+      role="menuitem"
+      class={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm hover:bg-sunken ${props.danger ? 'text-berry' : 'text-ink'}`}
+      onClick={props.onClick}
+    >
       {props.icon}
       {props.label}
     </button>

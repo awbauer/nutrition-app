@@ -70,7 +70,14 @@ export interface Digest {
   /** Share of calories from protein, fat and carbs (from grams: 4/9/4 kcal per g), per logged-day average. */
   macro_split: { day: MacroSplit | null; week: MacroSplit | null; previous_week: MacroSplit | null; month: MacroSplit | null };
   /** What the split is judged against: the user's own fat/carb targets when set, else the healthy ranges (AMDR). */
-  macro_reference: { source: 'your targets' | 'derived from your calorie and protein targets' | 'healthy ranges'; protein_pct: [number, number]; fat_pct: [number, number]; carbs_pct: [number, number]; fat_g?: [number, number]; carbs_g?: [number, number] };
+  macro_reference: {
+    source: 'your targets' | 'derived from your calorie and protein targets' | 'healthy ranges';
+    protein_pct: [number, number];
+    fat_pct: [number, number];
+    carbs_pct: [number, number];
+    fat_g?: [number, number];
+    carbs_g?: [number, number];
+  };
   /** Problems and how many logged days in a row (ending on the reviewed day) they've held. */
   streaks: { issue: string; days_running: number; days_in_last_7_logged: number; detail: string }[];
   /** What moved: this week vs the week before, and the reviewed day vs this week. Only notable moves. */
@@ -186,7 +193,7 @@ function periodStats(
 export function loggingScore(w: PeriodStats): number {
   if (!w.days_logged) return 0;
   const days = w.days_logged / w.days;
-  const meals = (MAIN_MEALS.reduce((a, m) => a + (w.meal_days[m] ?? 0), 0) / (w.days_logged * 3)) || 0;
+  const meals = MAIN_MEALS.reduce((a, m) => a + (w.meal_days[m] ?? 0), 0) / (w.days_logged * 3) || 0;
   const matched = 1 - w.pct_items_ai_estimate / 100;
   const answered = w.meals_waiting_on_answers ? Math.max(0, 1 - w.meals_waiting_on_answers / 3) : 1;
   const prompt = w.median_log_delay_min == null ? 1 : w.median_log_delay_min <= 60 ? 1 : w.median_log_delay_min <= 240 ? 0.5 : 0.2;
@@ -236,7 +243,9 @@ export function macroReference(targets: Record<string, number>): Digest['macro_r
     ref = { source: 'healthy ranges', protein_pct: AMDR.protein_pct, fat_pct: AMDR.fat_pct, carbs_pct: AMDR.carbs_pct };
   }
   if (kcal) {
-    ref.fat_g = targets.FAT ? [Math.round(targets.FAT * 0.9), Math.round(targets.FAT * 1.1)] : [Math.round((kcal * ref.fat_pct[0]) / 900), Math.round((kcal * ref.fat_pct[1]) / 900)];
+    ref.fat_g = targets.FAT
+      ? [Math.round(targets.FAT * 0.9), Math.round(targets.FAT * 1.1)]
+      : [Math.round((kcal * ref.fat_pct[0]) / 900), Math.round((kcal * ref.fat_pct[1]) / 900)];
     ref.carbs_g = targets.CHOCDF
       ? [Math.round(targets.CHOCDF * 0.9), Math.round(targets.CHOCDF * 1.1)]
       : [Math.round((kcal * ref.carbs_pct[0]) / 400), Math.round((kcal * ref.carbs_pct[1]) / 400)];
@@ -419,7 +428,10 @@ export async function coachDigest(db: D1Database, user: User, reviewed: string, 
       .filter((m) => m.type === t && m.kcal <= BIG_MEAL_KCAL && m.protein >= (t === 'snack' ? bar / 2 : bar))
       .sort((a, b) => b.protein - a.protein)
       .filter((m) => {
-        const key = [...m.items].map((x) => x.toLowerCase()).sort().join('|');
+        const key = [...m.items]
+          .map((x) => x.toLowerCase())
+          .sort()
+          .join('|');
         if (seenSet.has(key)) return false;
         seenSet.add(key);
         return true;
@@ -564,7 +576,14 @@ export function validateReport(raw: unknown): CoachReport {
 }
 
 const STOP = new Set('a an and are as at be but by for from has have in is it its of on or so that the this to was were with you your yours today week day still again'.split(' '));
-const words = (s: string) => new Set(s.toLowerCase().replace(/[^a-z0-9% ]+/g, ' ').split(/\s+/).filter((w) => w.length > 2 && !STOP.has(w)));
+const words = (s: string) =>
+  new Set(
+    s
+      .toLowerCase()
+      .replace(/[^a-z0-9% ]+/g, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length > 2 && !STOP.has(w)),
+  );
 
 /** A recent headline this one mostly repeats (by shared words), if any. */
 export function repeatedHeadline(headline: string, previous: { headline: string }[]): string | null {
@@ -582,12 +601,12 @@ async function writeReport(env: Env, model: string, digest: Digest): Promise<Coa
   let good: CoachReport | null = null; // a valid report whose headline repeated: better than nothing
   let feedback: string | null = null;
   for (let attempt = 0; attempt < 3; attempt++) {
-    const messages = [
-      { role: 'system', content: SYSTEM },
-      { role: 'user', content: JSON.stringify(digest) },
-      ...(feedback ? [{ role: 'user', content: feedback }] : []),
-    ];
-    const r = await env.AI.run(model as Parameters<Ai['run']>[0], { messages, temperature: 0.4, response_format: { type: 'json_object' }, ...modelOptions(model) } as never, gatewayOpts(env) as never);
+    const messages = [{ role: 'system', content: SYSTEM }, { role: 'user', content: JSON.stringify(digest) }, ...(feedback ? [{ role: 'user', content: feedback }] : [])];
+    const r = await env.AI.run(
+      model as Parameters<Ai['run']>[0],
+      { messages, temperature: 0.4, response_format: { type: 'json_object' }, ...modelOptions(model) } as never,
+      gatewayOpts(env) as never,
+    );
     let report: CoachReport;
     try {
       report = validateReport(responseText(r));

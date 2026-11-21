@@ -120,8 +120,7 @@ export function ItemSheet(props: { itemId: string; onChange: (m: Intake) => void
   const others = (match?.candidates ?? []).filter((c) => !isChosen(c));
   // "1 small" saved from the AI's weight estimate: the preview and a new count use that weight, not the generic table.
   const aiUnit = conversion?.method === 'ai-estimate' ? { unit: fromUcum(item.amount_unit), grams: conversion.grams_per_unit } : null;
-  const use = (c: MatchCandidate) =>
-    patch(c.food_id ? { food_id: c.food_id } : c.fdc_id ? { fdc_id: c.fdc_id } : { fatsecret_id: c.fatsecret_id }, `Switched to ${c.name}`);
+  const use = (c: MatchCandidate) => patch(c.food_id ? { food_id: c.food_id } : c.fdc_id ? { fdc_id: c.fdc_id } : { fatsecret_id: c.fatsecret_id }, `Switched to ${c.name}`);
 
   return (
     <div class="flex flex-col gap-4 pb-2">
@@ -132,9 +131,7 @@ export function ItemSheet(props: { itemId: string; onChange: (m: Intake) => void
             <p class="eyebrow">Matched to</p>
             <p class="font-semibold">{food?.name ?? 'Unknown food'}</p>
           </div>
-          {item.food_id && (
-            <FavoriteStar name={item.display_name} food_id={item.food_id} amount={item.amount_value} unit={item.amount_unit} size={22} class="-mr-2 -mt-1" />
-          )}
+          {item.food_id && <FavoriteStar name={item.display_name} food_id={item.food_id} amount={item.amount_value} unit={item.amount_unit} size={22} class="-mr-2 -mt-1" />}
         </div>
         <div class="flex flex-wrap items-center gap-2 text-xs text-ink-2">
           <span class="rounded bg-sunken px-1.5 py-0.5 ">{sourceLabel(food?.source, food?.data_type)}</span>
@@ -295,35 +292,35 @@ export function FatSecretCredit() {
 function CandidateList(props: { items: MatchCandidate[]; onUse: (c: MatchCandidate) => void; busy: boolean; isChosen?: (c: MatchCandidate) => boolean | '' | undefined }) {
   return (
     <div class="flex flex-col gap-1.5">
-    <ul class="divide-y divide-line rounded-xl ring-1 ring-line">
-      {props.items.map((c) => {
-        const chosen = !!props.isChosen?.(c);
-        return (
-          <li class="flex items-center gap-3 px-3 py-2">
-            <div class="min-w-0 flex-1">
-              <p class="truncate text-sm">{c.name}</p>
-              <p class="truncate text-xs text-ink-2">
-                {sourceLabel(c.source, c.data_type)}
-                {c.brand ? ` · ${c.brand}` : ''}
-                {c.notes.filter((x) => !/words$/.test(x)).length ? ` · ${c.notes.filter((x) => !/words$/.test(x)).join('; ')}` : ''}
-              </p>
-            </div>
-            <div class="shrink-0 text-right text-xs tabular-nums text-ink-2">
-              <div class="text-sm text-ink">{c.kcal_100g == null ? '–' : Math.round(c.kcal_100g)}</div>
-              kcal/100g
-            </div>
-            {chosen ? (
-              <span class="shrink-0 text-xs font-medium text-accent-ink">Current</span>
-            ) : (
-              <button class="btn-ghost shrink-0 px-2.5 py-1 text-xs" disabled={props.busy} onClick={() => props.onUse(c)}>
-                Use
-              </button>
-            )}
-          </li>
-        );
-      })}
-    </ul>
-    {props.items.some((c) => c.source === 'fatsecret') && <FatSecretCredit />}
+      <ul class="divide-y divide-line rounded-xl ring-1 ring-line">
+        {props.items.map((c) => {
+          const chosen = !!props.isChosen?.(c);
+          return (
+            <li class="flex items-center gap-3 px-3 py-2">
+              <div class="min-w-0 flex-1">
+                <p class="truncate text-sm">{c.name}</p>
+                <p class="truncate text-xs text-ink-2">
+                  {sourceLabel(c.source, c.data_type)}
+                  {c.brand ? ` · ${c.brand}` : ''}
+                  {c.notes.filter((x) => !/words$/.test(x)).length ? ` · ${c.notes.filter((x) => !/words$/.test(x)).join('; ')}` : ''}
+                </p>
+              </div>
+              <div class="shrink-0 text-right text-xs tabular-nums text-ink-2">
+                <div class="text-sm text-ink">{c.kcal_100g == null ? '–' : Math.round(c.kcal_100g)}</div>
+                kcal/100g
+              </div>
+              {chosen ? (
+                <span class="shrink-0 text-xs font-medium text-accent-ink">Current</span>
+              ) : (
+                <button class="btn-ghost shrink-0 px-2.5 py-1 text-xs" disabled={props.busy} onClick={() => props.onUse(c)}>
+                  Use
+                </button>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      {props.items.some((c) => c.source === 'fatsecret') && <FatSecretCredit />}
     </div>
   );
 }

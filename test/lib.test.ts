@@ -75,7 +75,10 @@ describe('serving to grams', () => {
 
 describe('USDA nutrient mapping', () => {
   it('maps ids to INFOODS codes', () => {
-    const n = fromUsda([{ id: 1008, value: 165, unit: 'kcal' }, { id: 1003, value: 31, unit: 'g' }]);
+    const n = fromUsda([
+      { id: 1008, value: 165, unit: 'kcal' },
+      { id: 1003, value: 31, unit: 'g' },
+    ]);
     expect(n.find((x) => x.code === 'ENERC_KCAL')).toMatchObject({ value: 165, usdaId: 1008 });
     expect(n.find((x) => x.code === 'PROCNT')?.value).toBe(31);
   });
@@ -140,7 +143,9 @@ describe('amount chips by food', () => {
     expect(sizesFor({ name: 'Mystery dish' }).sizes.length).toBeLessThanOrEqual(5);
   });
   it('reads the category from each USDA shape and from Open Food Facts', () => {
-    expect(normaliseDetailFood({ fdcId: 1, description: 'Coffee, Latte', dataType: 'Survey (FNDDS)', wweiaFoodCategory: { wweiaFoodCategoryDescription: 'Coffee' } }).category).toBe('Coffee');
+    expect(
+      normaliseDetailFood({ fdcId: 1, description: 'Coffee, Latte', dataType: 'Survey (FNDDS)', wweiaFoodCategory: { wweiaFoodCategoryDescription: 'Coffee' } }).category,
+    ).toBe('Coffee');
     expect(normaliseDetailFood({ fdcId: 2, description: 'COLA', dataType: 'Branded', brandedFoodCategory: 'Soda' }).category).toBe('Soda');
     expect(normaliseDetailFood({ fdcId: 3, description: 'Food', dataType: 'Foundation' }).category).toBeNull();
     const off = normaliseOff('5000112637922', { product_name: 'Cola', categories_hierarchy: ['en:beverages', 'en:carbonated-drinks', 'en:sodas', 'fr:boissons'] });

@@ -54,8 +54,7 @@ export async function resolveRef(env: Env, user: User, ref: ItemRef): Promise<Fo
 }
 
 export function validAmount(ref: { amount: unknown; unit: unknown }): void {
-  if (typeof ref.amount !== 'number' || !(ref.amount > 0) || ref.amount > 100000)
-    throw new HttpError(400, 'amount must be a positive number');
+  if (typeof ref.amount !== 'number' || !(ref.amount > 0) || ref.amount > 100000) throw new HttpError(400, 'amount must be a positive number');
   if (typeof ref.unit !== 'string' || !ref.unit.trim()) throw new HttpError(400, 'unit is required');
 }
 
@@ -160,9 +159,7 @@ export async function createIntake(env: Env, user: User, data: NewIntake, items:
       data.pending_json ?? null,
     ),
   ];
-  (data.photo_keys ?? []).forEach((k, i) =>
-    stmts.push(env.DB.prepare('INSERT INTO intake_photo (intake_id, position, r2_key) VALUES (?, ?, ?)').bind(id, i, k)),
-  );
+  (data.photo_keys ?? []).forEach((k, i) => stmts.push(env.DB.prepare('INSERT INTO intake_photo (intake_id, position, r2_key) VALUES (?, ?, ?)').bind(id, i, k)));
   items.forEach((it, i) => stmts.push(...itemStatements(env.DB, user.id, id, it, i)));
   stmts.push(refreshConfidence(env.DB, id));
   await env.DB.batch(stmts);
@@ -324,10 +321,7 @@ const INTAKE_COLS = `id, status, meal_type, occurrence_at, occurrence_tz, log_da
   (SELECT COUNT(*) FROM intake_photo p WHERE p.intake_id = nutrition_intake.id) AS photo_count`;
 
 export async function getIntake(db: D1Database, userId: string, id: string): Promise<IntakeView | null> {
-  const row = await db
-    .prepare(`SELECT ${INTAKE_COLS} FROM nutrition_intake WHERE id = ? AND user_id = ?`)
-    .bind(id, userId)
-    .first<IntakeRow>();
+  const row = await db.prepare(`SELECT ${INTAKE_COLS} FROM nutrition_intake WHERE id = ? AND user_id = ?`).bind(id, userId).first<IntakeRow>();
   return row ? (await loadIntakes(db, [row]))[0]! : null;
 }
 

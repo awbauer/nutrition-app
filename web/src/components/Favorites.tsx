@@ -72,8 +72,8 @@ export function FavoritesList(props: { onAdd: (query: string) => void; onOpen: (
           <Star size={40} strokeWidth={1.5} class="text-faint" aria-hidden="true" />
           <p class="display text-xl font-semibold">No favorites yet</p>
           <p class="max-w-[19rem] text-sm text-ink-2">
-            Star the foods you log all the time, with the amount you usually have, and they're one tap from Quick add. Search above to add one, or tap the star
-            on any food as you log it.
+            Star the foods you log all the time, with the amount you usually have, and they're one tap from Quick add. Search above to add one, or tap the star on any food as you
+            log it.
           </p>
           <button class="btn-primary mt-1" onClick={() => props.onAdd('')}>
             Add a favorite

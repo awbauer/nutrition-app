@@ -186,10 +186,7 @@ export async function matchFood(env: Env, userId: string, req: MatchRequest): Pr
 
   // 1. The user's corrections, then exact custom foods / recipes.
   for (const term of new Set([req.name, query].map(normName))) {
-    const alias = await db
-      .prepare('SELECT food_id FROM food_alias WHERE user_id = ? AND term_norm = ?')
-      .bind(userId, term)
-      .first<{ food_id: string }>();
+    const alias = await db.prepare('SELECT food_id FROM food_alias WHERE user_id = ? AND term_norm = ?').bind(userId, term).first<{ food_id: string }>();
     const food = alias && (await getFood(db, userId, alias.food_id));
     if (food) return { food, via: 'alias', match: info('alias', [localCandidate(food, 9, ['your earlier choice'])], food.id), matchConfidence: 1 };
   }
@@ -244,9 +241,7 @@ export async function matchFood(env: Env, userId: string, req: MatchRequest): Pr
   const rankedHistory = history
     .map((h) => {
       const c = { ...h.food, dataType: h.food.data_type, kcal100: per100(h.food.nutrients, 'ENERC_KCAL') };
-      const best = [h.food.name, ...h.names]
-        .map((name) => scoreCandidate(req.name, { ...c, name }, est))
-        .sort((a, b) => b.score - a.score)[0]!;
+      const best = [h.food.name, ...h.names].map((name) => scoreCandidate(req.name, { ...c, name }, est)).sort((a, b) => b.score - a.score)[0]!;
       const bonus = historyBonus(h, req.name, !!req.from_history);
       return { candidate: h.food, score: Math.round((best.score + bonus) * 100) / 100, reasons: [...best.reasons, `you've had it ${h.times}×`] };
     })
@@ -255,7 +250,11 @@ export async function matchFood(env: Env, userId: string, req: MatchRequest): Pr
   const local = (await searchLocal(db, userId, query, 8)).filter((f) => f.source !== 'estimate' && !historyIds.has(f.id));
   const rankedLocal = [
     ...rankedHistory,
-    ...rankCandidates(query, local.map((f) => ({ ...f, dataType: f.data_type, kcal100: per100(f.nutrients, 'ENERC_KCAL') })), est),
+    ...rankCandidates(
+      query,
+      local.map((f) => ({ ...f, dataType: f.data_type, kcal100: per100(f.nutrients, 'ENERC_KCAL') })),
+      est,
+    ),
   ].sort((a, b) => b.score - a.score);
   let rankedRemote: Awaited<ReturnType<typeof rankedUsda>> = [];
   let rankedFs: Awaited<ReturnType<typeof rankedFatSecret>> = [];
@@ -282,15 +281,7 @@ export async function matchFood(env: Env, userId: string, req: MatchRequest): Pr
   const best = candidates[0];
   if (best && best.score >= ACCEPT_SCORE) {
     const food = best._local ?? (await cacheFood(db, best._remote!));
-    const via: Via = best._local
-      ? historyIds.has(food.id)
-        ? 'history'
-        : food.owner_user_id
-          ? 'custom'
-          : 'cache'
-      : best._remote!.source === 'fatsecret'
-        ? 'fatsecret'
-        : 'usda';
+    const via: Via = best._local ? (historyIds.has(food.id) ? 'history' : food.owner_user_id ? 'custom' : 'cache') : best._remote!.source === 'fatsecret' ? 'fatsecret' : 'usda';
     // Map score to confidence: ACCEPT_SCORE → 0.5, CONFIDENT_SCORE and up → 0.9.
     const t = Math.min(1, Math.max(0, (best.score - ACCEPT_SCORE) / (CONFIDENT_SCORE - ACCEPT_SCORE)));
     return { food, via, match: info(via, strip(candidates), best.fdc_id ?? best.fatsecret_id ?? best.food_id ?? null), matchConfidence: 0.5 + 0.4 * t };
@@ -311,19 +302,11 @@ async function estimateFood(db: D1Database, userId: string, req: MatchRequest): 
     ['FAT', est.fat],
     ['CHOCDF', est.carbs],
   ];
-  const stmts = [
-    db
-      .prepare(`INSERT INTO food (id, source, name, name_norm, owner_user_id) VALUES (?, 'estimate', ?, ?, ?)`)
-      .bind(id, req.name, normName(req.name), userId),
-  ];
+  const stmts = [db.prepare(`INSERT INTO food (id, source, name, name_norm, owner_user_id) VALUES (?, 'estimate', ?, ?, ?)`).bind(id, req.name, normName(req.name), userId)];
   for (const [code, v] of map) {
     if (typeof v !== 'number') continue;
     const def = NUTRIENT_BY_CODE.get(code)!;
-    stmts.push(
-      db
-        .prepare('INSERT INTO food_nutrient (food_id, nutrient_code, usda_nutrient_id, value_per_100g, unit) VALUES (?, ?, NULL, ?, ?)')
-        .bind(id, code, v, def.unit),
-    );
+    stmts.push(db.prepare('INSERT INTO food_nutrient (food_id, nutrient_code, usda_nutrient_id, value_per_100g, unit) VALUES (?, ?, NULL, ?, ?)').bind(id, code, v, def.unit));
   }
   await db.batch(stmts);
   return {

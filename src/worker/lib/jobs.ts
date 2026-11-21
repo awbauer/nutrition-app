@@ -84,9 +84,7 @@ export async function processIntake(env: Env, msg: JobMessage, final: boolean): 
     if (row.source === 'photo') {
       const photos = await loadPhotos(env, msg.intakeId);
       if (!photos.length) throw new HttpError(410, 'the uploaded photos are missing');
-      ({ out, model } = await withCapacityFallback(settings.model_vision, FALLBACK_MODELS.vision, (m) =>
-        parsePhotos(env, m, photos, localTime, state.job.hint ?? undefined, ctx),
-      ));
+      ({ out, model } = await withCapacityFallback(settings.model_vision, FALLBACK_MODELS.vision, (m) => parsePhotos(env, m, photos, localTime, state.job.hint ?? undefined, ctx)));
     } else if (row.source === 'voice') {
       const obj = row.media_r2_key ? await env.MEDIA.get(row.media_r2_key) : null;
       if (!obj) throw new HttpError(410, 'the uploaded media is missing');

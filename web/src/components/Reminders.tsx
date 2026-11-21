@@ -30,7 +30,10 @@ export function Reminders() {
   const needsInstall = isIOS() && !isStandalone();
 
   useEffect(() => {
-    api.get<Reminder[]>('/reminders').then((r) => setList(r.length ? r : DEFAULTS), (e) => toast.error(e));
+    api.get<Reminder[]>('/reminders').then(
+      (r) => setList(r.length ? r : DEFAULTS),
+      (e) => toast.error(e),
+    );
     currentSubscription().then((s) => setSubscribed(!!s));
   }, []);
 
@@ -89,8 +92,20 @@ export function Reminders() {
         <div class="flex flex-col gap-2 border-t border-line pt-3">
           <div class="flex items-center gap-2">
             <input class="input min-w-0 flex-1 py-1.5" value={r.label} onChange={(e) => update(i, { label: (e.target as HTMLInputElement).value })} aria-label="Reminder label" />
-            <input class="input w-36 shrink-0 py-1.5" type="time" value={r.local_time} onChange={(e) => update(i, { local_time: (e.target as HTMLInputElement).value })} aria-label="Time" />
-            <input type="checkbox" class="h-5 w-5 accent-[var(--accent)]" checked={r.enabled} onChange={(e) => update(i, { enabled: (e.target as HTMLInputElement).checked })} aria-label="Enabled" />
+            <input
+              class="input w-36 shrink-0 py-1.5"
+              type="time"
+              value={r.local_time}
+              onChange={(e) => update(i, { local_time: (e.target as HTMLInputElement).value })}
+              aria-label="Time"
+            />
+            <input
+              type="checkbox"
+              class="h-5 w-5 accent-[var(--accent)]"
+              checked={r.enabled}
+              onChange={(e) => update(i, { enabled: (e.target as HTMLInputElement).checked })}
+              aria-label="Enabled"
+            />
           </div>
           <div class="flex items-center justify-between gap-1" role="group" aria-label="Days">
             {DAYS.map((d, n) => {

@@ -29,7 +29,11 @@ export function MealEdit(props: { meal: Intake; onSaved: (m: Intake) => void }) 
     setBusy(true);
     try {
       const m = await api.patch<Intake>(`/intake/${props.meal.id}`, body);
-      toast.success(m.log_date !== props.meal.log_date ? `Moved to ${new Date(`${m.log_date}T12:00:00`).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}` : 'Meal updated');
+      toast.success(
+        m.log_date !== props.meal.log_date
+          ? `Moved to ${new Date(`${m.log_date}T12:00:00`).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}`
+          : 'Meal updated',
+      );
       props.onSaved(m);
     } catch (e) {
       toast.error(e);

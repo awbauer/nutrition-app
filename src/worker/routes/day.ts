@@ -22,8 +22,7 @@ day.get('/day/:date', async (c) => {
   if (!isDate(date)) throw new HttpError(400, 'date must be YYYY-MM-DD');
   const [meals, goals] = await Promise.all([intakesForDates(c.env.DB, user.id, date, date), goalsOn(c.env.DB, user.id, date)]);
   const totals: Record<string, number> = {};
-  for (const m of meals)
-    if (m.status === 'completed') for (const [k, v] of Object.entries(m.totals)) totals[k] = round((totals[k] ?? 0) + v);
+  for (const m of meals) if (m.status === 'completed') for (const [k, v] of Object.entries(m.totals)) totals[k] = round((totals[k] ?? 0) + v);
   const targets = targetsFromGoals(goals);
   const remaining: Record<string, number> = {};
   for (const [k, t] of Object.entries(targets)) remaining[k] = round(t - (totals[k] ?? 0));

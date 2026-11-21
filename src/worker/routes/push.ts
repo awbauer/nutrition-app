@@ -57,9 +57,7 @@ const MEALS = ['breakfast', 'lunch', 'dinner', 'snack'];
 
 /** GET /api/reminders */
 push.get('/reminders', async (c) => {
-  const { results } = await c.env.DB.prepare(
-    'SELECT id, label, meal_type, kind, local_time, days_of_week, enabled FROM reminder WHERE user_id = ? ORDER BY local_time',
-  )
+  const { results } = await c.env.DB.prepare('SELECT id, label, meal_type, kind, local_time, days_of_week, enabled FROM reminder WHERE user_id = ? ORDER BY local_time')
     .bind(c.get('user').id)
     .all<ReminderRow>();
   return c.json(results.map((r) => ({ ...r, enabled: !!r.enabled })));
@@ -70,7 +68,9 @@ push.put('/reminders', async (c) => {
   const user = c.get('user');
   const list = await c.req.json<{ id?: string; label: string; meal_type?: string | null; kind?: string; local_time: string; days_of_week?: string; enabled?: boolean }[]>();
   if (!Array.isArray(list) || list.length > 20) throw new HttpError(400, 'expected an array of up to 20 reminders');
-  const existing = await c.env.DB.prepare('SELECT id, local_time, last_sent_on FROM reminder WHERE user_id = ?').bind(user.id).all<{ id: string; local_time: string; last_sent_on: string | null }>();
+  const existing = await c.env.DB.prepare('SELECT id, local_time, last_sent_on FROM reminder WHERE user_id = ?')
+    .bind(user.id)
+    .all<{ id: string; local_time: string; last_sent_on: string | null }>();
   const prev = new Map(existing.results.map((r) => [r.id, r]));
   const stmts: D1PreparedStatement[] = [c.env.DB.prepare('DELETE FROM reminder WHERE user_id = ?').bind(user.id)];
   for (const r of list) {
@@ -86,15 +86,21 @@ push.put('/reminders', async (c) => {
     // Keep the sent marker unless the time moved, so editing a label doesn't re-send today.
     const lastSent = old && old.local_time === r.local_time ? old.last_sent_on : null;
     stmts.push(
-      c.env.DB.prepare(
-        'INSERT INTO reminder (id, user_id, label, meal_type, kind, local_time, days_of_week, enabled, last_sent_on) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-      ).bind(old ? r.id : newId(), user.id, r.label.trim(), kind === 'meal' ? meal : null, kind, r.local_time, [...new Set(days)].sort().join(''), r.enabled === false ? 0 : 1, lastSent),
+      c.env.DB.prepare('INSERT INTO reminder (id, user_id, label, meal_type, kind, local_time, days_of_week, enabled, last_sent_on) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(
+        old ? r.id : newId(),
+        user.id,
+        r.label.trim(),
+        kind === 'meal' ? meal : null,
+        kind,
+        r.local_time,
+        [...new Set(days)].sort().join(''),
+        r.enabled === false ? 0 : 1,
+        lastSent,
+      ),
     );
   }
   await c.env.DB.batch(stmts);
-  const { results } = await c.env.DB.prepare(
-    'SELECT id, label, meal_type, kind, local_time, days_of_week, enabled FROM reminder WHERE user_id = ? ORDER BY local_time',
-  )
+  const { results } = await c.env.DB.prepare('SELECT id, label, meal_type, kind, local_time, days_of_week, enabled FROM reminder WHERE user_id = ? ORDER BY local_time')
     .bind(user.id)
     .all<ReminderRow>();
   return c.json(results.map((r) => ({ ...r, enabled: !!r.enabled })));

@@ -38,7 +38,11 @@ export interface LocalParts {
 }
 
 export function localParts(instant: Date, tz: string): LocalParts {
-  const parts = Object.fromEntries(fmt(tz).formatToParts(instant).map((p) => [p.type, p.value]));
+  const parts = Object.fromEntries(
+    fmt(tz)
+      .formatToParts(instant)
+      .map((p) => [p.type, p.value]),
+  );
   const hour = parts.hour === '24' ? '00' : parts.hour!;
   return {
     date: `${parts.year}-${parts.month}-${parts.day}`,

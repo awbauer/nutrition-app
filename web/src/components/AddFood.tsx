@@ -70,9 +70,7 @@ export function AddFood(props: {
     setLoading(true);
     const t = setTimeout(async () => {
       try {
-        const r = await api.get<{ history?: Food[]; local: Food[]; usda: UsdaHit[]; fatsecret?: FatSecretHit[]; usda_error?: string }>(
-          `/foods?q=${encodeURIComponent(term)}`,
-        );
+        const r = await api.get<{ history?: Food[]; local: Food[]; usda: UsdaHit[]; fatsecret?: FatSecretHit[]; usda_error?: string }>(`/foods?q=${encodeURIComponent(term)}`);
         if (n !== seq.current) return;
         setHits([
           ...[...(r.history ?? []), ...r.local].map((food) => ({ kind: 'local' as const, food })),
@@ -90,8 +88,7 @@ export function AddFood(props: {
 
   async function choose(h: Hit) {
     try {
-      const food =
-        h.kind === 'local' ? h.food : await api.get<Food>(h.hit.source === 'fatsecret' ? `/foods/fatsecret/${h.hit.sourceId}` : `/foods/fdc/${h.hit.sourceId}`);
+      const food = h.kind === 'local' ? h.food : await api.get<Food>(h.hit.source === 'fatsecret' ? `/foods/fatsecret/${h.hit.sourceId}` : `/foods/fdc/${h.hit.sourceId}`);
       // Something you've had before: keep what you usually call it.
       const yours = h.kind === 'local' ? h.food.history?.names[0] : undefined;
       setLabel(yours && yours.toLowerCase() !== food.name.toLowerCase() ? yours : undefined);
@@ -257,7 +254,7 @@ export function AddFood(props: {
       )}
       {q.trim().length >= 2 && !loading && (
         <button class="btn-quiet mx-auto flex text-sm" onClick={() => setCreating(true)}>
-          {hits.length ? "Not here? Add it from a label" : 'No matches. Add it from a label'}
+          {hits.length ? 'Not here? Add it from a label' : 'No matches. Add it from a label'}
         </button>
       )}
     </div>
