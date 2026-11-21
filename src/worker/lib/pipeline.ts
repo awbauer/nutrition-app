@@ -185,8 +185,11 @@ export async function materialise(db: D1Database, userId: string, p: Pending, an
     const unit = (normaliseUnit(b.unit) === 'piece' && countUnit(food.portions)) || b.unit;
     const conv = toGrams(b.amount, unit, food);
     const base = p.base.find((x) => x.food_id === b.food_id && x.name === b.name);
-    const grams =
-      conv.method === 'generic' && b.grams_estimate && base && base.unit === b.unit ? (b.grams_estimate * b.amount) / base.amount : undefined;
+    // A volume with no portion data is weighed as water: right for drinks, far off for leafy or fluffy solids
+    // (2 cups of lettuce is ~70 g, not 480 g). When the model's own estimate is that far off, use it.
+    const scaled = b.grams_estimate && base && base.unit === b.unit ? (b.grams_estimate * b.amount) / base.amount : undefined;
+    const offByFar = (a: number, c: number) => Math.max(a, c) / Math.max(1, Math.min(a, c)) > 1.8;
+    const grams = conv.method === 'generic' || (conv.method === 'volume' && scaled && offByFar(scaled, conv.grams)) ? scaled : undefined;
     out.push({
       food,
       display_name: b.name,
