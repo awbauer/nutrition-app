@@ -216,4 +216,10 @@ export interface Settings {
   model_vision: string;
   model_parser: string;
   model_speech: string;
+  home_blocks: HomeBlock[];
 }
+
+export const HOME_BLOCKS = ['summary', 'weight', 'repeat', 'meals'] as const;
+export type HomeBlock = (typeof HOME_BLOCKS)[number];
+/** The saved order with any blocks it doesn't mention appended. */
+export const homeOrder = (saved?: HomeBlock[] | null): HomeBlock[] => [...(saved ?? []), ...HOME_BLOCKS.filter((b) => !saved?.includes(b))];

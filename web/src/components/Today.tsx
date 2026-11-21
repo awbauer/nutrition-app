@@ -1,7 +1,7 @@
 import { ChevronLeft, ChevronRight, RotateCcw } from 'lucide-preact';
 import { useEffect, useState } from 'preact/hooks';
 import { onIntakeSettled, watch } from '../analysis';
-import { api, type Day, type Intake } from '../api';
+import { api, type Day, type HomeBlock, type Intake } from '../api';
 import { addDays, dayLabel, guessMeal, MEAL_LABEL, time } from '../format';
 import { onQueueChange } from '../queue';
 import { toast } from '../toast';
@@ -14,7 +14,21 @@ import { WeighIn } from './Weight';
 
 const longDate = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' });
 
-export function Today(props: { today: string; weightUnit: 'kg' | 'lb' }) {
+/** True at the desktop breakpoint (Tailwind lg), where meals get their own column. */
+function useWide() {
+  const q = '(min-width: 1024px)';
+  const [wide, setWide] = useState(() => matchMedia(q).matches);
+  useEffect(() => {
+    const mq = matchMedia(q);
+    const on = () => setWide(mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
+  return wide;
+}
+
+export function Today(props: { today: string; weightUnit: 'kg' | 'lb'; blocks: HomeBlock[] }) {
+  const wide = useWide();
   const [date, setDate] = useState(props.today);
   const [day, setDay] = useState<Day | null>(null);
   const [adding, setAdding] = useState<{ intake?: Intake } | null>(null);
@@ -71,6 +85,28 @@ export function Today(props: { today: string; weightUnit: 'kg' | 'lb' }) {
   const repeatable = day ? yesterday.filter((y) => y.meal_type !== 'snack' && !day.meals.some((m) => m.meal_type === y.meal_type)) : [];
   const meals = day ? [...day.meals].sort((a, b) => a.occurrence_at.localeCompare(b.occurrence_at)) : [];
   const isToday = date === props.today;
+  const mealList =
+    meals.length === 0 ? (
+      <EmptyDay isToday={isToday} onLog={() => setAdding({})} />
+    ) : (
+      <ol class="relative flex flex-col gap-4" aria-label="Meals">
+        {/* The day's timeline */}
+        {/* Tablet and up only; on phones the time sits in the card so cards get the full width. */}
+        <span class="absolute top-3 bottom-3 left-[3.5rem] hidden w-px bg-line md:block" aria-hidden="true" />
+        {meals.map((m, i) => (
+          <li class="rise items-start gap-4 md:grid md:grid-cols-[3rem_minmax(0,1fr)]" style={{ animationDelay: `${i * 40}ms` }}>
+            <div class="hidden flex-col items-end pt-4 whitespace-nowrap md:flex">
+              <span class="num text-[0.8rem] leading-none text-ink-2">{time(m.occurrence_at).replace(/\s?[AP]M/i, '')}</span>
+              <span class="mt-0.5 text-[10px] text-faint uppercase">{/PM/i.test(time(m.occurrence_at)) ? 'pm' : 'am'}</span>
+            </div>
+            <div class="relative min-w-0">
+              <span class="absolute top-5 -left-[0.82rem] hidden h-2.5 w-2.5 md:block rounded-full bg-accent ring-4 ring-paper" aria-hidden="true" />
+              <MealCard meal={m} onChange={() => load()} onAdd={(intake) => setAdding({ intake })} />
+            </div>
+          </li>
+        ))}
+      </ol>
+    );
 
   return (
     <div class="flex flex-col gap-5">
@@ -90,44 +126,35 @@ export function Today(props: { today: string; weightUnit: 'kg' | 'lb' }) {
       </header>
 
       {day ? (
-        // Desktop: the day's summary stays pinned on the left while the timeline scrolls.
-        <div class="flex flex-col gap-5 lg:grid lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:items-start lg:gap-10">
-          <div class="flex flex-col gap-4 lg:sticky lg:top-8">
-            <Summary day={day} />
-            <WeighIn unit={props.weightUnit} date={date} today={props.today} />
-            {repeatable.length > 0 && (
-              <div class="-mx-5 flex gap-2 overflow-x-auto px-5 pb-1 lg:mx-0 lg:flex-wrap lg:px-0">
-                {repeatable.map((m) => (
-                  <button class="chip flex shrink-0 items-center gap-1.5 hover:bg-sunken" onClick={() => repeat(m)}>
-                    <RotateCcw size={14} /> Yesterday's {MEAL_LABEL[m.meal_type].toLowerCase()}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {meals.length === 0 ? (
-            <EmptyDay isToday={isToday} onLog={() => setAdding({})} />
-          ) : (
-            <ol class="relative flex flex-col gap-4" aria-label="Meals">
-              {/* The day's timeline */}
-              {/* Tablet and up only; on phones the time sits in the card so cards get the full width. */}
-              <span class="absolute top-3 bottom-3 left-[3.5rem] hidden w-px bg-line md:block" aria-hidden="true" />
-              {meals.map((m, i) => (
-                <li class="rise items-start gap-4 md:grid md:grid-cols-[3rem_minmax(0,1fr)]" style={{ animationDelay: `${i * 40}ms` }}>
-                  <div class="hidden flex-col items-end pt-4 whitespace-nowrap md:flex">
-                    <span class="num text-[0.8rem] leading-none text-ink-2">{time(m.occurrence_at).replace(/\s?[AP]M/i, '')}</span>
-                    <span class="mt-0.5 text-[10px] text-faint uppercase">{/PM/i.test(time(m.occurrence_at)) ? 'pm' : 'am'}</span>
-                  </div>
-                  <div class="relative min-w-0">
-                    <span class="absolute top-5 -left-[0.82rem] hidden h-2.5 w-2.5 md:block rounded-full bg-accent ring-4 ring-paper" aria-hidden="true" />
-                    <MealCard meal={m} onChange={() => load()} onAdd={(intake) => setAdding({ intake })} />
-                  </div>
-                </li>
-              ))}
-            </ol>
-          )}
-        </div>
+        // Blocks in the order chosen in Settings. Desktop: meals get the right column and the rest stay
+        // pinned on the left in the same order; phones: one column.
+        (() => {
+          const block = (b: HomeBlock) =>
+            b === 'summary' ? (
+              <Summary day={day} />
+            ) : b === 'weight' ? (
+              <WeighIn unit={props.weightUnit} date={date} today={props.today} />
+            ) : b === 'repeat' ? (
+              repeatable.length > 0 && (
+                <div class="-mx-5 flex gap-2 overflow-x-auto px-5 pb-1 lg:mx-0 lg:flex-wrap lg:px-0">
+                  {repeatable.map((m) => (
+                    <button class="chip flex shrink-0 items-center gap-1.5 hover:bg-sunken" onClick={() => repeat(m)}>
+                      <RotateCcw size={14} /> Yesterday's {MEAL_LABEL[m.meal_type].toLowerCase()}
+                    </button>
+                  ))}
+                </div>
+              )
+            ) : (
+              mealList
+            );
+          if (!wide) return <div class="flex flex-col gap-5">{props.blocks.map(block)}</div>;
+          return (
+            <div class="grid grid-cols-[minmax(0,22rem)_minmax(0,1fr)] items-start gap-10">
+              <div class="sticky top-8 flex flex-col gap-4">{props.blocks.filter((b) => b !== 'meals').map(block)}</div>
+              {mealList}
+            </div>
+          );
+        })()
       ) : (
         <div class="flex flex-col gap-4 lg:grid lg:grid-cols-[22rem_1fr] lg:gap-10" aria-busy="true">
           <div class="card h-72 animate-pulse" />
