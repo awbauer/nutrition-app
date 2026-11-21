@@ -97,7 +97,7 @@ describe('meal change log', () => {
     expect(k).toContain('app:searched');
     expect(k.at(-1)).toBe('app:food_swapped');
     const logged = h.data.events[2];
-    expect(logged.detail).toMatchObject({ prompt_version: 'parse-v8' });
+    expect(logged.detail).toMatchObject({ prompt_version: 'parse-v8', matcher_version: MATCHER_VERSION });
     expect(logged.summary).toMatch(/^AI logged "bacon bits meatless" as Bacon bits meatless/);
     expect(h.data.events.find((e: any) => e.kind === 'searched').detail.results[0]).toBe('Bacon cooked slices');
 

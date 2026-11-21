@@ -163,7 +163,11 @@ export async function recordAiLogged(
           query: m?.query ?? null,
           via: m?.via ?? null,
           estimate_kcal_100g: m?.estimate_kcal_100g ?? null,
-          candidates: ((m?.candidates as any[]) ?? []).slice(0, 4).map((c) => ({ name: c.name, source: c.source, score: c.score, kcal_100g: c.kcal_100g })),
+          // With what each feature added to the score, so tuning can be checked against what was logged.
+          candidates: ((m?.candidates as any[]) ?? [])
+            .slice(0, 4)
+            .map((c) => ({ name: c.name, source: c.source, score: c.score, kcal_100g: c.kcal_100g, ...(c.parts ? { parts: c.parts } : {}) })),
+          ...(m?.missing_words ? { missing_words: m.missing_words } : {}),
         },
       };
     }),

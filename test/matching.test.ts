@@ -243,6 +243,11 @@ describe('matching with candidates', () => {
     expect(zesty.food_name).toBe('CHICK-FIL-A SAUCE, 16 FL OZ');
     expect(zesty.check_match).toBe(true);
     expect((await api(`/item/${zesty.id}`, {}, { DEV_USER_EMAIL: 'sauce@example.test' })).data.match.missing_words).toEqual(['zesty']);
+    // The change log keeps the structured reasons and the flag with what the AI logged.
+    const h = await api(`/intake/${r.data.id}/history`, {}, { DEV_USER_EMAIL: 'sauce@example.test' });
+    const logged = h.data.events.filter((e: any) => e.kind === 'ai_logged');
+    expect(logged[0].detail.candidates[0].parts.coverage).toBeGreaterThan(0);
+    expect(logged.map((e: any) => e.detail.missing_words ?? null)).toEqual([null, ['zesty']]);
   });
 
   it('uses the brand to prefer the branded product over a generic food', async () => {
