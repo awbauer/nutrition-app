@@ -1,7 +1,7 @@
 import type { Env, User } from '../env';
 import { localParts, logDate, mealTypeForTime } from './dates';
 import { sourceSql, getFood, resolveFatSecret, resolveFdc, type FoodRecord } from './foods';
-import { HttpError, newId, nowIso } from './ids';
+import { chunks, HttpError, newId, nowIso } from './ids';
 import { round, sumNutrients } from './nutrients';
 import { getSettings } from './settings';
 import type { MatchInfo } from './matcher';
@@ -222,32 +222,39 @@ interface IntakeRow extends Omit<IntakeView, 'items' | 'totals' | 'has_media' | 
 
 export async function loadIntakes(db: D1Database, rows: IntakeRow[]): Promise<IntakeView[]> {
   if (!rows.length) return [];
-  const ids = rows.map((r) => r.id);
-  const ph = ids.map(() => '?').join(',');
-  const [items, nutrients] = await db.batch([
-    db
-      .prepare(
-        `SELECT ci.*, f.source_id AS fdc_source_id, ${sourceSql('f')} AS food_source, f.name AS food_name, f.data_type AS food_data_type,
+  const groups = chunks(rows.map((r) => r.id));
+  const results = await db.batch(
+    groups.flatMap((ids) => {
+      const ph = ids.map(() => '?').join(',');
+      return [
+        db
+          .prepare(
+            `SELECT ci.*, f.source_id AS fdc_source_id, ${sourceSql('f')} AS food_source, f.name AS food_name, f.data_type AS food_data_type,
            (SELECT value_per_100g FROM food_nutrient fn WHERE fn.food_id = ci.food_id AND fn.nutrient_code = 'ENERC_KCAL') AS food_kcal100
          FROM consumed_item ci
          LEFT JOIN food f ON f.id = ci.food_id WHERE ci.intake_id IN (${ph}) ORDER BY ci.position`,
-      )
-      .bind(...ids),
-    db
-      .prepare(
-        `SELECT n.consumed_item_id, n.nutrient_code, n.value FROM intake_nutrient n
+          )
+          .bind(...ids),
+        db
+          .prepare(
+            `SELECT n.consumed_item_id, n.nutrient_code, n.value FROM intake_nutrient n
          JOIN consumed_item ci ON ci.id = n.consumed_item_id WHERE ci.intake_id IN (${ph})`,
-      )
-      .bind(...ids),
-  ]);
+          )
+          .bind(...ids),
+      ];
+    }),
+  );
+  // Each chunk is a meal's whole set of items, so per-meal position order survives concatenation.
+  const items = { results: results.filter((_, i) => i % 2 === 0).flatMap((r) => r.results) };
+  const nutrients = { results: results.filter((_, i) => i % 2 === 1).flatMap((r) => r.results) };
   const nByItem = new Map<string, { nutrient_code: string; value: number }[]>();
-  for (const n of nutrients!.results as { consumed_item_id: string; nutrient_code: string; value: number }[]) {
+  for (const n of nutrients.results as { consumed_item_id: string; nutrient_code: string; value: number }[]) {
     const l = nByItem.get(n.consumed_item_id) ?? [];
     l.push(n);
     nByItem.set(n.consumed_item_id, l);
   }
   const iByIntake = new Map<string, ItemView[]>();
-  for (const r of items!.results as Record<string, unknown>[]) {
+  for (const r of items.results as Record<string, unknown>[]) {
     const view: ItemView = {
       id: r.id as string,
       food_id: r.food_id as string | null,

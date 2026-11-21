@@ -43,6 +43,24 @@ describe('explicit grams', () => {
   });
 });
 
+describe('many meals', () => {
+  it('reads and exports more meals than D1 allows bound parameters in one query', async () => {
+    const E = U('qa-many@example.test');
+    await api('/settings', { method: 'PUT', json: { timezone: 'UTC' } }, E);
+    const fid = await food(E);
+    const ids: string[] = [];
+    for (let i = 0; i < 120; i++) {
+      const at = new Date(Date.UTC(2026, 0, 1 + Math.floor(i / 6), 8 + (i % 6) * 2)).toISOString();
+      const r = await api('/intake', { method: 'POST', json: { occurrence_at: at, items: [{ food_id: fid, amount: 1, unit: 'serving' }] } }, E);
+      ids.push(r.data.id);
+    }
+    const exp = await api('/export?from=2026-01-01&to=2026-01-31&format=json', {}, E);
+    expect(exp.status).toBe(200);
+    expect(exp.data.nutrition_intake).toHaveLength(120);
+    expect(exp.data.nutrition_intake.every((i: any) => i.consumed_item.length === 1)).toBe(true);
+  });
+});
+
 describe('settings', () => {
   it('changes nothing when part of an update is invalid', async () => {
     const E = U('qa-settings@example.test');
