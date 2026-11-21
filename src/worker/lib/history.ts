@@ -15,6 +15,7 @@
 import type { Env } from '../env';
 import { getFood, normName, type FoodRecord } from './foods';
 import { chunks, newId } from './ids';
+import { MATCH_CONFIG, type MatchConfig } from './match-config';
 import { has, tokens } from './scoring';
 
 export const EMBED_MODEL = '@cf/baai/bge-m3';
@@ -24,39 +25,7 @@ const EMBED_BATCH = 100;
 const DELETE_BATCH = 1000;
 
 /** Words that point at the user's past rather than describing the food. */
-const FILLER = new Set([
-  'those',
-  'that',
-  'these',
-  'this',
-  'my',
-  'usual',
-  'like',
-  'liked',
-  'love',
-  'i',
-  'ive',
-  'ones',
-  'one',
-  'same',
-  'again',
-  'before',
-  'favorite',
-  'favourite',
-  'had',
-  'have',
-  'eat',
-  'ate',
-  'always',
-  'get',
-  'got',
-  'the',
-  'from',
-  'last',
-  'time',
-  'yesterday',
-  'regular',
-]);
+const FILLER = new Set(MATCH_CONFIG.words.filler);
 
 /** "those chicken meatballs I like" -> "chicken meatballs". Falls back to the input if nothing is left. */
 export function foodWords(q: string): string {
@@ -77,9 +46,10 @@ export function coversQuery(q: string, name: string): boolean {
  * Extra score for a food the user has eaten, on top of its word score. Only when it covers every
  * food word of the query: having eaten chicken wings says nothing about "chicken meatballs".
  */
-export function historyBonus(h: { times: number; names: string[]; food: { name: string } }, query: string, fromHistory: boolean): number {
+export function historyBonus(h: { times: number; names: string[]; food: { name: string } }, query: string, fromHistory: boolean, cfg: MatchConfig = MATCH_CONFIG): number {
   if (![h.food.name, ...h.names].some((n) => coversQuery(query, n))) return 0;
-  return 0.3 + (h.times >= 3 ? 0.1 : 0) + (fromHistory ? 0.4 : 0);
+  const b = cfg.history;
+  return b.bonus + (h.times >= b.frequentTimes ? b.frequentBonus : 0) + (fromHistory ? b.fromHistoryBonus : 0);
 }
 
 export interface HistoryHit {
@@ -367,7 +337,7 @@ export function refreshLater(env: Env, ctx: { waitUntil(p: Promise<unknown>): vo
  * Foods the user has eaten that mean something like `q`, best first. Empty when the index
  * isn't bound or the search fails: history only ever adds candidates.
  */
-export async function searchHistory(env: Env, userId: string, q: string, topK = 6): Promise<HistoryHit[]> {
+export async function searchHistory(env: Env, userId: string, q: string, topK = MATCH_CONFIG.gather.historyTopK): Promise<HistoryHit[]> {
   if (!env.HISTORY || !q.trim()) return [];
   try {
     const [vec] = await embed(env, [foodWords(q)]);

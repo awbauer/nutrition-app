@@ -1,0 +1,236 @@
+[
+  {
+    "name": "Chick-fil-A Polynesian Sauce",
+    "amount": 1,
+    "unit": "serving",
+    "estimate_kcal_100g": 590,
+    "expect": ["Polynesian Sauce", "POLYNESIAN SAUCE"],
+    "note": "Reported mismatch: the AI pick was CHICK-FIL-A SAUCE, 16 FL OZ (a retail bottle of a different sauce); the model estimate (590 kcal/100 g) is high"
+  },
+  {
+    "name": "McDonald's Big Mac",
+    "amount": 1,
+    "unit": "serving",
+    "estimate_kcal_100g": 257,
+    "expect": ["Big Mac (McDonalds)", "McDONALD'S, BIG MAC"]
+  },
+  {
+    "name": "McDonald's Medium French Fries",
+    "amount": 1,
+    "unit": "serving",
+    "estimate_kcal_100g": 320,
+    "expect": ["McDONALD'S, french fries"]
+  },
+  {
+    "name": "Starbucks caffe latte",
+    "amount": 1,
+    "unit": "serving",
+    "estimate_kcal_100g": 45,
+    "expect": ["Caffè Latte (Short)", "Caffè Latte (Tall)", "Caffè Latte (Grande)", "Caffè Latte (Venti)"]
+  },
+  {
+    "name": "Taco Bell Baja Blast",
+    "amount": 1,
+    "unit": "serving",
+    "estimate_kcal_100g": 49,
+    "expect": [
+      "Mtn Dew Baja Blast - 16oz",
+      "Mtn Dew Baja Blast - 20oz",
+      "Mtn Dew Baja Blast - 30oz",
+      "ORIGINAL BAJA BLAST SODA",
+      "MOUNTAIN DEW, FLAVORED SODA, BAJA BLAST , BAJA BLAST",
+      "BAJA BLAST SODA WITH A BLAST OF TROPICAL LIME, BAJA BLAST"
+    ]
+  },
+  {
+    "name": "Wendy's Frosty",
+    "amount": 1,
+    "unit": "serving",
+    "estimate_kcal_100g": 150,
+    "expect": ["WENDY'S, Frosty Dairy Dessert"]
+  },
+  {
+    "name": "Heinz ketchup",
+    "amount": 1,
+    "unit": "[tbs_us]",
+    "estimate_kcal_100g": 110,
+    "expect": [
+      "Ketchup",
+      "Tomato Ketchup",
+      "Ketchup Packet",
+      "HEINZ, TOMATO KETCHUP",
+      "HEINZ TOMATO KETCHUP, 20 OZ",
+      "HEINZ TOMATO KETCHUP, 32 OZ BOTTLE",
+      "Heinz Tomato Ketchup, 38 oz Bottle",
+      "HEINZ TOMATO KETCHUP VALUE SIZE, 64 OZ",
+      "HEINZ TOMATO KETCHUP, 50.5 OZ, 2 COUNT",
+      "Tomato Ketchup Dip & Squeeze"
+    ]
+  },
+  {
+    "name": "egg",
+    "amount": 2,
+    "unit": "piece",
+    "estimate_kcal_100g": 155,
+    "expect": ["Eggs, Grade A, Large, egg whole", "EGG", "Egg", "Large Grade A Eggs", "Boiled Egg", "Hard-Boiled Egg", "Fried Egg", "Scrambled Egg (Whole, Cooked)"]
+  },
+  {
+    "name": "bacon",
+    "amount": 3,
+    "unit": "slice",
+    "estimate_kcal_100g": 540,
+    "expect": [
+      "BACON",
+      "Bacon",
+      "Traditional Bacon",
+      "Bacon Thick Sliced",
+      "Fully Cooked Bacon",
+      "Thick Cut Bacon",
+      "Black Label Bacon Thick Slices",
+      "Bacon (Cured, Pan-Fried, Cooked)"
+    ]
+  },
+  {
+    "name": "ham",
+    "amount": 2,
+    "unit": "[oz_av]",
+    "estimate_kcal_100g": 145,
+    "expect": ["Ham", "Deli Sliced Ham", "Sliced Ham  (Regular, Approx. 11% Fat)"],
+    "note": "Part of an omelet logged as pieces; an earlier matcher picked Ham stroganoff and the user searched \"ham\" again"
+  },
+  {
+    "name": "ham and cheese omelet",
+    "amount": 1,
+    "unit": "piece",
+    "estimate_kcal_100g": 190,
+    "expect": [
+      "Egg Omelet or Scrambled Egg with Cheese and Ham or Bacon",
+      "Egg omelet or scrambled egg, with cheese and meat, made with butter",
+      "Egg omelet or scrambled egg, with cheese and meat, made with margarine",
+      "Egg omelet or scrambled egg, with cheese and meat, made with oil",
+      "Egg omelet or scrambled egg, with cheese and meat, no added fat",
+      "Egg omelet or scrambled egg, with cheese and meat, NS as to fat",
+      "HAM & CHEESE OMELET",
+      "HAM & CHEESE OMELETS",
+      "HAM & CHEESE OMELETS, HAM & CHEESE",
+      "Ham & Cheese Omelets"
+    ]
+  },
+  {
+    "name": "lettuce",
+    "amount": 1,
+    "unit": "[cup_us]",
+    "estimate_kcal_100g": 15,
+    "expect": [
+      "Lettuce, raw",
+      "Lettuce, iceberg, raw",
+      "Lettuce, green leaf, raw",
+      "Lettuce, leaf, green, raw",
+      "Lettuce, iceberg (includes crisphead types), raw",
+      "Lettuce",
+      "Green Leaf Lettuce",
+      "Romaine lettuce, raw",
+      "Lettuce, cos or romaine, raw",
+      "Lettuce, Boston, raw",
+      "Iceberg Lettuce (Includes Crisphead Types)",
+      "Romaine Lettuce"
+    ]
+  },
+  {
+    "name": "shredded lettuce",
+    "amount": 0.5,
+    "unit": "[cup_us]",
+    "estimate_kcal_100g": 15,
+    "expect": ["SHREDDED LETTUCE", "Shredded Lettuce", "Shredded Iceberg Lettuce", "Lettuce, raw", "Lettuce, iceberg, raw", "Lettuce, iceberg (includes crisphead types), raw"],
+    "note": "Searched for again after logging"
+  },
+  {
+    "name": "french fries",
+    "amount": 1,
+    "unit": "medium",
+    "estimate_kcal_100g": 312,
+    "expect": [
+      "Potato, french fries, fast food",
+      "Potato, french fries, restaurant",
+      "Potato, french fries, NFS",
+      "Potato, french fries, from frozen, fried",
+      "Potato, french fries, from fresh, fried",
+      "Potato, french fries, NS as to fresh or frozen",
+      "FRENCH FRIES",
+      "Potato French Fries",
+      "French Fries",
+      "Restaurant, family style, french fries"
+    ]
+  },
+  {
+    "name": "chicken meatballs",
+    "amount": 3,
+    "unit": "piece",
+    "estimate_kcal_100g": 220,
+    "expect": ["Chicken Meatballs", "CHICKEN MEATBALLS"],
+    "note": "An earlier matcher picked Chicken wing, baked, coated"
+  },
+  {
+    "name": "latte, whole milk",
+    "query": "latte whole milk",
+    "amount": 1,
+    "unit": "serving",
+    "estimate_kcal_100g": 67,
+    "expect": ["Latte Coffee", "12 oz Latte with Whole Milk", "Coffee, Latte, decaffeinated"],
+    "note": "Known miss: whole milk outscores the lattes (the estimate is milk-like and no plain whole-milk latte is among the USDA results)"
+  },
+  {
+    "name": "salmon sashimi",
+    "amount": 100,
+    "unit": "g",
+    "estimate_kcal_100g": 180,
+    "expect": ["Salmon Sashimi", "SALMON SASHIMI", "SASHIMI (SALMON)", "Fish, salmon, raw", "Fish, salmon, chinook, raw"]
+  },
+  {
+    "name": "croissant",
+    "amount": 1,
+    "unit": "medium",
+    "estimate_kcal_100g": 406,
+    "expect": ["Croissant", "Croissants, butter", "CROISSANT", "Butter Croissant"]
+  },
+  {
+    "name": "chocolate milk",
+    "amount": 240,
+    "unit": "mL",
+    "estimate_kcal_100g": 80,
+    "expect": [
+      "Chocolate milk, NFS",
+      "Chocolate milk, whole",
+      "CHOCOLATE MILK",
+      "Chocolate Milk (Lowfat)",
+      "Chocolate Milk (Whole)",
+      "Chocolate Milk 1%",
+      "Chocolate Milk",
+      "Low Fat Chocolate Milk",
+      "2% Reduced Fat Chocolate Milk"
+    ]
+  },
+  {
+    "name": "greek yogurt",
+    "amount": 170,
+    "unit": "g",
+    "estimate_kcal_100g": 97,
+    "expect": [
+      "Yogurt, Greek, plain, lowfat",
+      "Yogurt, Greek, plain, nonfat",
+      "Yogurt, Greek, nonfat milk, plain",
+      "Yogurt, Greek, whole milk, plain",
+      "GREEK YOGURT",
+      "Greek Yogurt",
+      "Nonfat Plain Greek Yogurt (170g)",
+      "0% Plain Greek Yogurt (8 oz)"
+    ]
+  },
+  {
+    "name": "berries",
+    "amount": 80,
+    "unit": "g",
+    "estimate_kcal_100g": 50,
+    "expect": ["Berries, NFS", "Berries", "Berries, frozen", "Frozen Mixed Berries"]
+  }
+]

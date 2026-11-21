@@ -44,6 +44,26 @@ npm test          # worker + domain tests in workerd
 npm run typecheck
 ```
 
+## Matching evaluation
+
+Every weight, threshold and word list the food matcher uses is in `src/worker/lib/match-config.ts`. The matcher version recorded with each AI-logged item (and grouped on the logging-quality card) is a hash of that config, so it changes by itself when a weight does; bump `logic` there when scoring code changes in a way the numbers don't show.
+
+Ranking is a pure function, `decide()` in `src/worker/lib/decide.ts`. `test/golden.test.ts` runs it over the real cases in `test/fixtures/golden-matches.json` (each with the candidates the food databases returned, so it runs offline) and fails if fewer than its baseline are right. After a tuning change, run `npx vitest run test/golden.test.ts`: it prints the hit rate and every miss.
+
+To add cases from what you've logged locally:
+
+```bash
+# Items the AI logged in the local D1: swapped ones become reviewed cases (the food you swapped to is the answer),
+# the rest unreviewed. --refetch re-runs the USDA and FatSecret searches for full candidate lists (keys from .dev.vars).
+npm run golden -- --db .wrangler/state/v3/d1/miniflare-D1DatabaseObject/<id>.sqlite --refetch
+# or from an export: npx wrangler d1 export nutrition --local --output local.sql
+npm run golden -- --db local.sql --refetch
+# Hand-written cases (name, estimate, expected foods): add to test/fixtures/golden-queries.json, then
+npm run golden -- --queries test/fixtures/golden-queries.json --refetch
+```
+
+Existing cases are kept (pass `--replace` to rebuild them). Review each new `"status": "unreviewed"` case: set `expect` to the acceptable food names and `status` to `"reviewed"`; only reviewed cases count toward the hit rate. The fixture holds food names, brands, public database ids and nutrients only: no user or item ids, dates, meal text or custom foods.
+
 ## Deploy
 
 1. `npx wrangler login`

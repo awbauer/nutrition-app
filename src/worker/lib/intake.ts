@@ -5,6 +5,7 @@ import { chunks, HttpError, newId, nowIso } from './ids';
 import { round, sumNutrients } from './nutrients';
 import { getSettings } from './settings';
 import type { MatchInfo } from './matcher';
+import { MATCH_CONFIG } from './match-config';
 import type { MergeSpec } from './merge';
 import { toGrams, ucum } from './units';
 
@@ -339,14 +340,20 @@ function publicPending(json: string, mealType: MealType) {
   };
 }
 
-/** Flag items whose matched food is far (2x either way) from the model's own kcal estimate. */
+/**
+ * Flag items whose matched food lacks a word naming the item ("Chick-fil-A Sauce" for "Chick-fil-A
+ * Polynesian Sauce") or is far (2x either way) from the model's own kcal estimate.
+ */
 function needsCheck(matchJson: string | null, kcal100: number | null): boolean {
   if (!matchJson || kcal100 == null) return false;
   try {
     const m = JSON.parse(matchJson) as MatchInfo;
-    if (m.via === 'alias' || m.via === 'custom' || m.estimate_kcal_100g == null || m.estimate_kcal_100g <= 0) return false;
-    const ratio = (kcal100 + 10) / (m.estimate_kcal_100g + 10);
-    return ratio > 2 || ratio < 0.5;
+    if (m.via === 'alias' || m.via === 'custom') return false;
+    if (m.missing_words?.length) return true;
+    if (m.estimate_kcal_100g == null || m.estimate_kcal_100g <= 0) return false;
+    const k = MATCH_CONFIG.plausibility.kcalOffset;
+    const ratio = (kcal100 + k) / (m.estimate_kcal_100g + k);
+    return ratio > MATCH_CONFIG.checkMatchKcalRatio || ratio < 1 / MATCH_CONFIG.checkMatchKcalRatio;
   } catch {
     return false;
   }

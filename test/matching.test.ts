@@ -44,6 +44,12 @@ const FAIRLIFE = [
   food(170883, 'Milk shakes, thick chocolate', 'SR Legacy', 119, 3),
   { ...food(2345678, 'NUTRITION PLAN CHOCOLATE PROTEIN SHAKE', 'Branded', 44, 8.8), brandName: 'FAIRLIFE', gtinUpc: '811620022118' },
 ];
+// USDA results for "Chick-fil-A Polynesian Sauce" (a subset of the live response).
+const CHICK_FIL_A = [
+  food(170304, 'CHICK-FIL-A, hash browns', 'SR Legacy', 301, 3),
+  { ...food(2559846, 'CHICK-FIL-A SAUCE, 16 FL OZ', 'Branded', 516), brandName: 'CHICK-FIL-A' },
+  { ...food(2559847, 'POLYNESIAN SAUCE', 'Branded', 389), brandName: 'CHICK-FIL-A' },
+];
 let searches = 0;
 beforeEach(() => {
   searches = 0;
@@ -55,6 +61,8 @@ beforeEach(() => {
       const q = url.searchParams.get('query') ?? '';
       if (/salmon/i.test(q)) return json({ foods: SALMON });
       if (/811620022118|fairlife/i.test(q)) return json({ foods: FAIRLIFE });
+      if (/polynesian/i.test(q)) return json({ foods: CHICK_FIL_A });
+      if (/chick-fil-a/i.test(q)) return json({ foods: CHICK_FIL_A.filter((f) => f.fdcId !== 2559847) });
       return json({ foods: [] });
     }
     const m = /\/food\/(\d+)$/.exec(url.pathname);
@@ -209,6 +217,37 @@ describe('matching with candidates', () => {
     expect(item).toMatchObject({ estimation_method: 'label' });
     expect(item.nutrients.PROCNT).toBeCloseTo(29.9, 0);
     expect((await api(`/item/${item.id}`, {}, E)).data.match.via).toBe('barcode');
+  });
+
+  it('matches the item a brand makes, not another product that spells the brand, and flags a missing item word', async () => {
+    const sauce = (name: string) => ({
+      name,
+      amount: 1,
+      unit: 'serving',
+      confidence: 0.9,
+      menu_item: true,
+      search_terms: ['polynesian sauce'],
+      estimate_per_100g: { kcal: 590 },
+    });
+    const out = { items: [sauce('Chick-fil-A Polynesian Sauce'), sauce('Chick-fil-A Zesty Sauce')], questions: [] };
+    const r = await api('/intake', { method: 'POST', body: form('x') }, { DEV_USER_EMAIL: 'sauce@example.test', AI: ai(out) });
+    const [poly, zesty] = r.data.items;
+    expect(poly.food_name).toBe('POLYNESIAN SAUCE');
+    expect(poly.check_match).toBe(false);
+    const d = await api(`/item/${poly.id}`, {}, { DEV_USER_EMAIL: 'sauce@example.test' });
+    const bottle = d.data.match.candidates.find((c: any) => c.name === 'CHICK-FIL-A SAUCE, 16 FL OZ');
+    expect(bottle.notes).toContain('missing: polynesian');
+    // Structured reasons: what each feature added to the score.
+    expect(Object.keys(d.data.match.candidates[0].parts)).toEqual(expect.arrayContaining(['coverage', 'head', 'brand', 'plausibility']));
+    // Nothing better than the bottle for "Zesty": it's used, but flagged for a look.
+    expect(zesty.food_name).toBe('CHICK-FIL-A SAUCE, 16 FL OZ');
+    expect(zesty.check_match).toBe(true);
+    expect((await api(`/item/${zesty.id}`, {}, { DEV_USER_EMAIL: 'sauce@example.test' })).data.match.missing_words).toEqual(['zesty']);
+    // The change log keeps the structured reasons and the flag with what the AI logged.
+    const h = await api(`/intake/${r.data.id}/history`, {}, { DEV_USER_EMAIL: 'sauce@example.test' });
+    const logged = h.data.events.filter((e: any) => e.kind === 'ai_logged');
+    expect(logged[0].detail.candidates[0].parts.coverage).toBeGreaterThan(0);
+    expect(logged.map((e: any) => e.detail.missing_words ?? null)).toEqual([null, ['zesty']]);
   });
 
   it('uses the brand to prefer the branded product over a generic food', async () => {
