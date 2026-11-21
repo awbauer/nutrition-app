@@ -204,9 +204,10 @@ describe('manual intake and daily totals', () => {
     const id = r.data.items[0].id;
     const handful = await api(`/item/${id}`, { method: 'PATCH', json: { amount: 1, unit: 'handful' } });
     expect(handful.data.items[0]).toMatchObject({ grams: 30, amount_unit: 'handful' });
+    // A bowl is a cup and a half once the food's cup weight is known (chicken's "1 cup, chopped" is 140 g).
     const bowls = await api(`/item/${id}`, { method: 'PATCH', json: { amount: 1.5, unit: 'bowls' } });
-    expect(bowls.data.items[0]).toMatchObject({ grams: 450, amount_value: 1.5, amount_unit: 'bowl' });
-    expect(bowls.data.items[0].nutrients.ENERC_KCAL).toBeCloseTo(742.5, 1);
+    expect(bowls.data.items[0]).toMatchObject({ grams: 315, amount_value: 1.5, amount_unit: 'bowl' });
+    expect(bowls.data.items[0].nutrients.ENERC_KCAL).toBeCloseTo(519.75, 1);
     // The food's own portion beats the generic table: chicken's "1 cup, chopped" is 140 g, not 240.
     const cup = await api(`/item/${id}`, { method: 'PATCH', json: { amount: 1, unit: 'cup' } });
     expect(cup.data.items[0].grams).toBe(140);

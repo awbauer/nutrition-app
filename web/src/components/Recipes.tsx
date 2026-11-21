@@ -1,7 +1,7 @@
 import { ChefHat, Minus, Plus, Trash2 } from 'lucide-preact';
 import { useEffect, useState } from 'preact/hooks';
 import { api, type Favorite, type Intake, type Recipe } from '../api';
-import { amountLabel, guessMeal, kcal } from '../format';
+import { amountLabel, fromMass, getMassUnit, guessMeal, kcal, showsWeight, toMass, weight } from '../format';
 import { LogSheet } from './LogSheet';
 import { toast } from '../toast';
 import { Sheet } from './Sheet';
@@ -24,15 +24,15 @@ export const emptyRecipeFields = (name = ''): RecipeFieldValues => ({
   name,
   servings: 4,
   weight: '',
-  weightUnit: 'g',
+  weightUnit: getMassUnit(),
 });
 
 export function recipeFieldsFrom(r: Recipe): RecipeFieldValues {
   return {
     name: r.name,
     servings: r.servings,
-    weight: r.yield_grams ? String(r.yield_grams) : '',
-    weightUnit: 'g',
+    weight: r.yield_grams ? String(toMass(r.yield_grams)) : '',
+    weightUnit: getMassUnit(),
   };
 }
 
@@ -288,7 +288,7 @@ export function RecipesView(props: { today: string }) {
               <button class="flex flex-1 flex-col gap-1 px-4 pt-3.5 pb-2 text-left" onClick={() => setOpen(r)}>
                 <span class="display text-lg leading-tight font-semibold">{r.name}</span>
                 <span class="text-xs text-faint">
-                  {amountLabel(r.servings, 'serving')} of {Math.round(r.serving_grams)} g · {r.ingredients.length} ingredients
+                  {amountLabel(r.servings, 'serving')} of {weight(r.serving_grams)} · {r.ingredients.length} ingredients
                   {r.times_logged > 0 && ` · eaten ${r.times_logged}×`}
                 </span>
                 <span class="mt-1 flex items-baseline gap-3">
@@ -429,7 +429,7 @@ function RecipeDetail(props: { recipe: Recipe; onDone: () => void }) {
       <div class="grid grid-cols-3 gap-2 text-center">
         <Stat value={kcal(totalKcal / servings)} label="kcal a serving" />
         <Stat value={`${Math.round(totalProtein / servings)} g`} label="protein a serving" />
-        <Stat value={`${Math.round(batchGrams / servings)} g`} label="a serving" />
+        <Stat value={weight(batchGrams / servings)} label="a serving" />
       </div>
       <RecipeFields value={v} onChange={setV} />
       <div class="flex flex-col gap-1">
@@ -440,7 +440,7 @@ function RecipeDetail(props: { recipe: Recipe; onDone: () => void }) {
               <div class="min-w-0 flex-1">
                 <p class="truncate text-sm">{i.display_name}</p>
                 <p class="truncate text-xs text-faint">
-                  {i.amount_unit !== 'g' && `${amountLabel(i.amount_value, i.amount_unit)} · `}
+                  {!showsWeight(i.amount_unit) && `${amountLabel(i.amount_value, i.amount_unit)} · `}
                   {i.food_name !== i.display_name ? i.food_name : ''}
                 </p>
               </div>
@@ -451,14 +451,15 @@ function RecipeDetail(props: { recipe: Recipe; onDone: () => void }) {
                   inputMode="decimal"
                   min="0"
                   step="any"
-                  value={Math.round(i.grams)}
+                  value={toMass(i.grams)}
                   onChange={(e) => {
-                    const g = Number((e.target as HTMLInputElement).value);
-                    if (g > 0) setGrams(idx, g);
+                    // Typed in the user's weight unit; the recipe keeps grams.
+                    const v = Number((e.target as HTMLInputElement).value);
+                    if (v > 0) setGrams(idx, Math.round(fromMass(v) * 10) / 10);
                   }}
-                  aria-label={`Grams of ${i.display_name}`}
+                  aria-label={`Weight of ${i.display_name} in ${getMassUnit() === 'oz' ? 'ounces' : 'grams'}`}
                 />
-                g
+                {getMassUnit()}
               </label>
               <span class="num w-12 text-right text-sm text-ink-2">{kcal(i.kcal_per_g * i.grams)}</span>
               <button class="icon-btn h-8 w-8" onClick={() => setIngs(ings.filter((_, j) => j !== idx))} aria-label={`Remove ${i.display_name}`}>

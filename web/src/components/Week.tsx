@@ -9,7 +9,8 @@ import { WeightTrend } from './Weight';
 interface Summary {
   start: string;
   end: string;
-  days: { date: string; meals: number; totals: Record<string, number> }[];
+  /** `unconfirmed`: meals counted at their default answers (a question still open). */
+  days: { date: string; meals: number; unconfirmed?: number; totals: Record<string, number> }[];
   days_logged: number;
   /** Logged days before today: the ones the average is taken over. */
   days_counted: number;
@@ -168,7 +169,7 @@ function Bars(props: { days: Summary['days']; target?: number; today: string }) 
           let acc = 0;
           return (
             <g>
-              <title>{`${d.date}: ${Math.round(v)} kcal · protein ${Math.round(d.totals.PROCNT ?? 0)} g, carbs ${Math.round(d.totals.CHOCDF ?? 0)} g, fat ${Math.round(d.totals.FAT ?? 0)} g`}</title>
+              <title>{`${d.date}: ${Math.round(v)} kcal · protein ${Math.round(d.totals.PROCNT ?? 0)} g, carbs ${Math.round(d.totals.CHOCDF ?? 0)} g, fat ${Math.round(d.totals.FAT ?? 0)} g${d.unconfirmed ? ` · includes ${d.unconfirmed} unconfirmed` : ''}`}</title>
               {d.meals === 0 ? (
                 <rect x={x} y={H - pad - 3} width={w} height={3} rx="1.5" class="fill-[var(--sunken)]" />
               ) : (

@@ -2,7 +2,7 @@ import { ArrowUp, Camera, ChefHat, ImagePlus, Mic, Plus, Search, X } from 'lucid
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { watch } from '../analysis';
 import { api, type Favorite, type Intake, type MealType } from '../api';
-import { amountLabel, kcal, MEALS, MEAL_LABEL } from '../format';
+import { amountLabel, kcal, MEALS, MEAL_LABEL, weight } from '../format';
 import { resizeImage } from '../image';
 import { submitMeal } from '../queue';
 import { toast } from '../toast';
@@ -378,7 +378,7 @@ function DraftView(props: { draft: Intake; onDone: () => void; onChange: (i: Int
           <li class="flex items-center justify-between px-4 py-2.5 text-sm">
             <span class="min-w-0 truncate">
               {it.display_name}
-              <span class="ml-1 text-faint">· {Math.round(it.grams)} g</span>
+              <span class="ml-1 text-faint">· {weight(it.grams)}</span>
             </span>
             <span class="num text-ink-2">{kcal(it.nutrients.ENERC_KCAL)}</span>
           </li>

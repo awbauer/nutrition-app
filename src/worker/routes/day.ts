@@ -21,12 +21,16 @@ day.get('/day/:date', async (c) => {
   if (date === 'today') date = await today(c.env.DB, user.id, user.timezone);
   if (!isDate(date)) throw new HttpError(400, 'date must be YYYY-MM-DD');
   const [meals, goals] = await Promise.all([intakesForDates(c.env.DB, user.id, date, date), goalsOn(c.env.DB, user.id, date)]);
+  // Meals waiting on answers count at their default answers (what their cards show); `unconfirmed`
+  // says how many so the totals can be read honestly.
+  const counted = meals.filter((m) => m.status === 'completed' || m.status === 'in-progress');
   const totals: Record<string, number> = {};
-  for (const m of meals) if (m.status === 'completed') for (const [k, v] of Object.entries(m.totals)) totals[k] = round((totals[k] ?? 0) + v);
+  for (const m of counted) for (const [k, v] of Object.entries(m.totals)) totals[k] = round((totals[k] ?? 0) + v);
+  const unconfirmed = counted.filter((m) => m.status === 'in-progress').length;
   const targets = targetsFromGoals(goals);
   const remaining: Record<string, number> = {};
   for (const [k, t] of Object.entries(targets)) remaining[k] = round(t - (totals[k] ?? 0));
-  return c.json({ date, meals, totals, targets, remaining });
+  return c.json({ date, meals, totals, unconfirmed, targets, remaining });
 });
 
 /** GET /api/range?from=&to= -> daily totals for a range (max 366 days). */

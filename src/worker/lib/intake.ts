@@ -77,9 +77,16 @@ export function assertItemsEditable(status: string): void {
 export const requireStatus = (db: D1Database, intakeId: string, status: Status) =>
   db.prepare('UPDATE nutrition_intake SET status = CASE WHEN status = ? THEN status END WHERE id = ?').bind(status, intakeId);
 
+/** Highest confidence for an item whose grams come from a typical cup weight (see toGrams). */
+export const DENSITY_CONFIDENCE_CAP = 0.7;
+
 /** Statements inserting one consumed_item and its nutrient totals. */
 export function itemStatements(db: D1Database, userId: string, intakeId: string, item: ResolvedItem, position: number, id = newId()) {
-  const grams = item.grams ?? toGrams(item.amount, item.unit, item.food).grams;
+  const conv = item.grams == null ? toGrams(item.amount, item.unit, { ...item.food, name: [item.display_name ?? '', item.food.name] }) : null;
+  const grams = item.grams ?? conv!.grams;
+  // A cup of a solid food weighed from a typical cup of that kind of food is an estimate, however sure
+  // the amount: it depends on how it was cut and packed.
+  const confidence = conv?.method === 'density' ? Math.min(item.confidence, DENSITY_CONFIDENCE_CAP) : item.confidence;
   const stmts = [
     db
       .prepare(
@@ -96,7 +103,7 @@ export function itemStatements(db: D1Database, userId: string, intakeId: string,
         item.amount,
         ucum(item.unit),
         round(grams, 1),
-        round(item.confidence, 2),
+        round(confidence, 2),
         item.method,
         item.estimated || item.food.source === 'estimate' ? 1 : 0,
         item.match ? JSON.stringify(item.match) : null,
@@ -365,7 +372,14 @@ export async function intakesForDates(db: D1Database, userId: string, from: stri
   return loadIntakes(db, results);
 }
 
-/** Per-day completed totals for a date range. */
+/**
+ * Statuses whose items count toward totals. An `in-progress` meal already holds its items at the
+ * default answers (its card shows those calories), so leaving it out would under-count the day;
+ * callers report how many such unconfirmed meals a total includes.
+ */
+export const COUNTED_STATUSES = "('completed', 'in-progress')";
+
+/** Per-day totals (completed and unconfirmed meals) for a date range. */
 export async function dailyTotals(db: D1Database, userId: string, from: string, to: string) {
   const { results } = await db
     .prepare(
@@ -373,22 +387,22 @@ export async function dailyTotals(db: D1Database, userId: string, from: string, 
        FROM nutrition_intake i
        JOIN consumed_item ci ON ci.intake_id = i.id
        JOIN intake_nutrient n ON n.consumed_item_id = ci.id
-       WHERE i.user_id = ? AND i.status = 'completed' AND i.log_date BETWEEN ? AND ?
+       WHERE i.user_id = ? AND i.status IN ${COUNTED_STATUSES} AND i.log_date BETWEEN ? AND ?
        GROUP BY i.log_date, n.nutrient_code`,
     )
     .bind(userId, from, to)
     .all<{ log_date: string; nutrient_code: string; value: number }>();
   const counts = await db
     .prepare(
-      `SELECT log_date, COUNT(*) AS meals FROM nutrition_intake
-       WHERE user_id = ? AND status = 'completed' AND log_date BETWEEN ? AND ? GROUP BY log_date`,
+      `SELECT log_date, COUNT(*) AS meals, SUM(status = 'in-progress') AS unconfirmed FROM nutrition_intake
+       WHERE user_id = ? AND status IN ${COUNTED_STATUSES} AND log_date BETWEEN ? AND ? GROUP BY log_date`,
     )
     .bind(userId, from, to)
-    .all<{ log_date: string; meals: number }>();
-  const days = new Map<string, { date: string; meals: number; totals: Record<string, number> }>();
-  for (const c of counts.results) days.set(c.log_date, { date: c.log_date, meals: c.meals, totals: {} });
+    .all<{ log_date: string; meals: number; unconfirmed: number }>();
+  const days = new Map<string, { date: string; meals: number; unconfirmed: number; totals: Record<string, number> }>();
+  for (const c of counts.results) days.set(c.log_date, { date: c.log_date, meals: c.meals, unconfirmed: c.unconfirmed, totals: {} });
   for (const r of results) {
-    const d = days.get(r.log_date) ?? { date: r.log_date, meals: 0, totals: {} };
+    const d = days.get(r.log_date) ?? { date: r.log_date, meals: 0, unconfirmed: 0, totals: {} };
     d.totals[r.nutrient_code] = round(r.value);
     days.set(r.log_date, d);
   }

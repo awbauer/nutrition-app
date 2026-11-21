@@ -11,7 +11,7 @@ const ORDER: MealType[] = ['breakfast', 'lunch', 'dinner', 'snack'];
 
 /** The day at a glance: energy left (or over), how each meal filled it, and macros. */
 export function Summary(props: { day: Day; isToday?: boolean }) {
-  const { totals, targets } = props.day;
+  const { totals, targets, unconfirmed = 0 } = props.day;
   const eaten = totals.ENERC_KCAL ?? 0;
   const target = targets.ENERC_KCAL;
   const left = target != null ? Math.round(target - eaten) : null;
@@ -20,7 +20,7 @@ export function Summary(props: { day: Day; isToday?: boolean }) {
   // Energy by meal type, for the plate bar.
   const byMeal = ORDER.map((t) => ({
     type: t,
-    kcal: props.day.meals.filter((m) => m.meal_type === t && m.status === 'completed').reduce((s, m) => s + (m.totals.ENERC_KCAL ?? 0), 0),
+    kcal: props.day.meals.filter((m) => m.meal_type === t && (m.status === 'completed' || m.status === 'in-progress')).reduce((s, m) => s + (m.totals.ENERC_KCAL ?? 0), 0),
   })).filter((x) => x.kcal > 0);
   const scale = Math.max(target ?? 0, eaten, 1);
   // Past days (the Today screen's day arrows) aren't "today".
@@ -36,6 +36,13 @@ export function Summary(props: { day: Day; isToday?: boolean }) {
             <span class="ml-1.5 font-sans text-base font-medium text-faint">kcal</span>
           </p>
           <p class="mt-1.5 text-sm text-ink-2">{target == null ? 'Set a target in Settings to see what’s left' : `${kcal(eaten)} eaten of ${kcal(target)}`}</p>
+          {/* Meals with an open question count at their default answers; say so rather than hide them. */}
+          {unconfirmed > 0 && (
+            <p class="mt-1 flex items-center gap-1.5 text-xs text-faint">
+              <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-mustard" aria-hidden="true" />
+              Includes {unconfirmed} unconfirmed {unconfirmed === 1 ? 'meal' : 'meals'}
+            </p>
+          )}
         </div>
         <ProteinBadge eaten={totals.PROCNT ?? 0} target={targets.PROCNT} />
       </div>

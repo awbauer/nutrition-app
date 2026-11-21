@@ -197,9 +197,10 @@ describe('text logging', () => {
     expect(sauce.nutrients.ENERC_KCAL).toBe(60);
     expect(r.data.items[0].nutrients.ENERC_KCAL).toBeCloseTo(247.5);
 
-    // Draft totals are not counted in the day until completed.
+    // The draft counts in the day at its default answers, flagged as unconfirmed.
     const before = await api('/day/2026-11-14');
-    expect(before.data.totals.ENERC_KCAL ?? 0).toBe(0);
+    expect(before.data.totals.ENERC_KCAL).toBeCloseTo(r.data.totals.ENERC_KCAL, 0);
+    expect(before.data.unconfirmed).toBe(1);
 
     const done = await api(`/intake/${r.data.id}/answers`, { method: 'POST', json: { answers: { q1: '1 tbsp oil' } } });
     expect(done.status).toBe(200);

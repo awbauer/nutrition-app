@@ -12,16 +12,124 @@ export interface Portion {
 }
 
 const MASS: Record<string, number> = { g: 1, kg: 1000, mg: 0.001, oz: 28.3495, lb: 453.592 };
-// Volume converted at water density; acceptable for drinks and most liquids.
+// Volumes in ml. The cup is the 240 ml nutrition-label cup, and the spoons follow it (16 tbsp, 48 tsp),
+// so a food's grams per cup (CUP_GRAMS, its own portions) scales cleanly to every other measure.
 const VOLUME_ML: Record<string, number> = {
   ml: 1,
+  cl: 10,
+  dl: 100,
   l: 1000,
   'fl oz': 29.5735,
   floz: 29.5735,
   cup: 240,
   tbsp: 15,
   tsp: 5,
+  // US liquid measures.
+  pint: 473.176,
+  quart: 946.353,
+  gallon: 3785.41,
 };
+const CUP_ML = VOLUME_ML.cup!;
+/** A bowl, when the food's grams per cup are known: about a cup and a half (cereal, soup, rice). */
+const BOWL_CUPS = 1.5;
+
+/**
+ * Grams in one cup for foods that weigh very differently from water, from USDA SR Legacy / FNDDS cup
+ * portions. Used for any volume (and a bowl) when the food has no volume portion of its own: without
+ * it 2 cups of lettuce came out at 480 g. First match wins, so liquids come first ("almond milk",
+ * "oat milk") and light dry foods before the words in their names ("honey nut cheerios", "rice
+ * krispies"). `and`: must also match. `exact`: it pours or packs the same every time (liquids,
+ * yogurt, sugar); the rest depend on how it's cut and packed, so they're estimates.
+ */
+const COOKED = /\b(cooked|boiled|steamed|sauteed|sautéed|roasted|braised|creamed|frozen)\b/;
+interface CupWeight {
+  what: string;
+  re: RegExp;
+  and?: RegExp;
+  not?: RegExp;
+  g: number;
+  exact?: true;
+}
+const CUP_GRAMS: CupWeight[] = [
+  {
+    what: 'milk, juice or water',
+    re: /\b(milk|juice|water|broth|stock|coffee|tea|soda|beer|wine|kefir|smoothie|shake|lemonade|drink|beverage)s?\b/,
+    not: /\b(milk chocolate|powder(ed)?|dry|condensed|evaporated|in water|packed in)\b/,
+    g: 240,
+    exact: true,
+  },
+  { what: 'soup or stew', re: /\b(soup|stew|chili|chowder|bisque|curry|dal)s?\b/, g: 245, exact: true },
+  { what: 'yogurt', re: /\byogh?urts?\b/, not: /\bfrozen\b/, g: 245, exact: true },
+  { what: 'sauce or dip', re: /\b(sauce|applesauce|salsa|gravy|dressing|hummus|guacamole|dip)s?\b/, g: 250, exact: true },
+  // Light and dry: a cup weighs a fraction of a cup of water.
+  { what: 'popcorn', re: /\bpopcorn\b/, g: 9 },
+  { what: 'puffed cereal', re: /\bpuffed\b/, g: 14 },
+  { what: 'granola', re: /\bgranola\b/, g: 110 },
+  { what: 'muesli', re: /\bmuesli\b/, g: 85 },
+  { what: 'cooked oatmeal', re: /\b(oatmeal|porridge|overnight oats)\b/, not: /\b(dry|uncooked|cookies?)\b/, g: 234, exact: true },
+  { what: 'rolled oats', re: /\boats\b/, g: 81 },
+  { what: 'dry cereal', re: /\b(cereals?|flakes|cheerios|chex|krispies|bran)\b/, g: 35 },
+  { what: 'flour', re: /\bflour\b/, g: 125 },
+  // Vegetables: leafy ones are mostly air; cooked ones collapse.
+  { what: 'cooked greens', re: /\b(spinach|kale|chard|collards?|greens)\b/, and: COOKED, g: 165 },
+  { what: 'iceberg lettuce', re: /\biceberg\b/, g: 72 },
+  { what: 'leafy greens', re: /\b(lettuce|romaine|greens|spring mix|mesclun|salad mix|green salad|side salad|garden salad)\b/, g: 47 },
+  { what: 'raw spinach or kale', re: /\b(spinach|kale|chard|arugula|rocket|watercress)\b/, g: 30 },
+  { what: 'mushrooms', re: /\bmushrooms?\b/, g: 70 },
+  {
+    what: 'cooked vegetables',
+    re: /\b(broccoli|cauliflower|cabbage|green beans?|brussels sprouts|carrots?|zucchini|squash|peppers?|asparagus|vegetables|veggies)\b/,
+    and: COOKED,
+    g: 155,
+  },
+  {
+    what: 'chopped raw vegetables',
+    re: /\b(broccoli|cauliflower|cabbage|green beans?|snap peas|brussels sprouts|carrots?|celery|cucumbers?|zucchini|squash|peppers?|radish(es)?|asparagus|vegetables|veggies)\b/,
+    g: 110,
+  },
+  { what: 'chopped onion, tomato, corn or peas', re: /\b(onions?|tomato(es)?|corn|peas)\b/, g: 155 },
+  // Fruit.
+  { what: 'berries or grapes', re: /\b(berries|blueberries|raspberries|strawberries|blackberries|grapes|cherries)\b/, g: 145 },
+  { what: 'raisins or dried fruit', re: /\b(raisins|dried fruit|dates|dried cranberries)\b/, g: 150 },
+  { what: 'chopped fruit', re: /\b(fruit salad|fruit|melon|cantaloupe|honeydew|watermelon|pineapple|mango|papaya)\b/, g: 160 },
+  // Grains and starches: cooked unless the name says otherwise, as people log them.
+  { what: 'uncooked rice', re: /\brice\b/, and: /\b(raw|dry|uncooked)\b/, g: 185 },
+  { what: 'cooked brown rice', re: /\b(brown|wild) rice\b/, g: 195 },
+  { what: 'cooked rice', re: /\brice\b/, g: 160 },
+  { what: 'cooked pasta', re: /\b(pasta|spaghetti|macaroni|penne|fusilli|linguine|noodles?)\b/, g: 140 },
+  { what: 'cooked grains', re: /\b(quinoa|couscous|bulgur|barley|farro)\b/, g: 170 },
+  { what: 'cooked beans or lentils', re: /\b(beans|lentils|chickpeas|garbanzos?)\b/, g: 175 },
+  { what: 'mashed potatoes', re: /\bmashed\b/, g: 210 },
+  // Dairy, fats, sweets, nuts.
+  { what: 'cottage cheese, ricotta or cream cheese', re: /\b(cottage cheese|ricotta|cream cheese)\b/, g: 230 },
+  { what: 'shredded cheese', re: /\b(shredded|grated)\b.*\b(cheese|cheddar|mozzarella|parmesan)\b|\bparmesan\b/, g: 110 },
+  { what: 'diced cheese', re: /\b(cheese|cheddar|mozzarella|swiss|feta)\b/, g: 132 },
+  { what: 'ice cream', re: /\b(ice cream|gelato|frozen yogh?urt)\b/, g: 132 },
+  { what: 'oil', re: /\boils?\b/, not: /\b(in oil|packed)\b/, g: 218, exact: true },
+  { what: 'nut butter', re: /\b(peanut|almond|cashew|nut|seed|sunflower) butter\b|\btahini\b/, g: 258 },
+  { what: 'butter', re: /\b(butter|margarine|ghee)\b/, not: /\b(chicken|lettuce|beans?|cookies?|cake|croissant)\b/, g: 227, exact: true },
+  { what: 'honey or syrup', re: /\b(honey|syrup|molasses|agave)\b/, g: 330, exact: true },
+  { what: 'brown sugar', re: /\bbrown sugar\b/, g: 220, exact: true },
+  { what: 'powdered sugar', re: /\b(powdered|icing|confectioners'?) sugar\b/, g: 120, exact: true },
+  { what: 'sugar', re: /\bsugar\b/, not: /\b(free|substitute|snap)\b/, g: 200, exact: true },
+  { what: 'chocolate chips', re: /\bchocolate chips\b/, g: 170 },
+  { what: 'walnuts or pecans', re: /\b(walnuts?|pecans?)\b/, g: 110 },
+  { what: 'nuts or seeds', re: /\b(nuts?|almonds?|cashews?|peanuts?|pistachios?|hazelnuts?|macadamias?|seeds|trail mix)\b/, g: 140 },
+];
+
+/**
+ * Grams per cup from the table for a food, by its names (the user's words, then the database name)
+ * and source category; the head of each name first ("cereal with milk" is cereal). Null: not in the table.
+ */
+export function cupWeight(food: { name?: string | string[] | null; category?: string | null }): { what: string; grams: number; exact: boolean } | null {
+  const names = [food.name ?? []].flat().filter((n): n is string => !!n);
+  const texts = [...names.map((n) => n.split(/\s(?:with|and|in|on|&)\s/i)[0]!), ...names, food.category ?? ''].map((t) => t.toLowerCase().replace(/[,()]/g, ' ')).filter(Boolean);
+  for (const t of texts) {
+    const hit = CUP_GRAMS.find((e) => e.re.test(t) && (!e.and || e.and.test(t)) && !e.not?.test(t));
+    if (hit) return { what: hit.what, grams: hit.g, exact: !!hit.exact };
+  }
+  return null;
+}
 const GENERIC_GRAMS: Record<string, number> = {
   slice: 30,
   piece: 50,
@@ -95,6 +203,16 @@ const ALIASES: Record<string, string> = {
   teaspoons: 'tsp',
   'fluid ounce': 'fl oz',
   'fluid ounces': 'fl oz',
+  centiliter: 'cl',
+  centilitre: 'cl',
+  deciliter: 'dl',
+  decilitre: 'dl',
+  pt: 'pint',
+  pints: 'pint',
+  qt: 'quart',
+  quarts: 'quart',
+  gal: 'gallon',
+  gallons: 'gallon',
   slices: 'slice',
   pieces: 'piece',
   pc: 'piece',
@@ -134,11 +252,18 @@ const ALIASES: Record<string, string> = {
   '[tbs_us]': 'tbsp',
   '[tsp_us]': 'tsp',
   '[foz_us]': 'fl oz',
+  '[pt_us]': 'pint',
+  '[qt_us]': 'quart',
+  '[gal_us]': 'gallon',
 };
+
+/** "fl oz", "fl. oz", "fl.oz.", "floz", "fluid ounce(s)": every way people write it. */
+const FL_OZ = /^(?:fl\.?\s*oz\.?|fluid\s+ounces?)$/i;
 
 const KNOWN = new Set([...Object.keys(MASS), ...Object.keys(VOLUME_ML), ...Object.keys(GENERIC_GRAMS)]);
 
 export function normaliseUnit(unit: string): string {
+  if (FL_OZ.test(unit.trim())) return 'fl oz';
   const u = unit.trim().toLowerCase().replace(/\.$/, '');
   const alias = ALIASES[u] ?? ALIASES[unit.trim()];
   if (alias || KNOWN.has(u)) return alias ?? u;
@@ -153,7 +278,9 @@ export function normaliseUnit(unit: string): string {
 export function parsePortionText(text: string): { amount: number; unit: string } {
   const m = /^\s*(\d+\s+\d\/\d|\d+(?:[./]\d+)?)?\s*(.*)$/.exec(text) ?? [];
   const num = m[1] ? evalFraction(m[1]) : 1;
-  const unitWord = (m[2] ?? '').split(/[ ,(]/)[0] ?? '';
+  // The one two-word unit: "8 fl oz (240 ml)" is fluid ounces, not 8 "fl".
+  const flOz = /^(fl\.?\s*oz\.?|fluid\s+ounces?)(?=$|[\s,(])/i.exec(m[2] ?? '');
+  const unitWord = flOz ? flOz[1]! : ((m[2] ?? '').split(/[ ,(]/)[0] ?? '');
   return { amount: num || 1, unit: normaliseUnit(unitWord || 'serving') };
 }
 
@@ -198,11 +325,23 @@ export function countUnit(portions: Portion[]): string | null {
   return p?.unit ?? null;
 }
 
-export function toGrams(
-  amount: number,
-  rawUnit: string,
-  food?: { name?: string | null; portions?: Portion[]; default_serving_grams?: number | null },
-): { grams: number; method: 'mass' | 'portion' | 'default-serving' | 'volume' | 'generic' } {
+export interface FoodForGrams {
+  /** The user's words and/or the database name; used to look up slice weights and grams per cup. */
+  name?: string | string[] | null;
+  category?: string | null;
+  portions?: Portion[];
+  default_serving_grams?: number | null;
+}
+
+export interface Conversion {
+  grams: number;
+  /** `volume`: at the density of a liquid (water, or a known one like oil); `density`: a dry or packed food's typical cup, an estimate. */
+  method: 'mass' | 'portion' | 'default-serving' | 'volume' | 'density' | 'generic';
+  /** The cup-weight table entry used for a volume, to explain it. */
+  per_cup?: { what: string; grams: number };
+}
+
+export function toGrams(amount: number, rawUnit: string, food?: FoodForGrams): Conversion {
   const unit = normaliseUnit(rawUnit);
   if (unit in MASS) return { grams: amount * MASS[unit]!, method: 'mass' };
 
@@ -217,8 +356,18 @@ export function toGrams(
 
   if ((unit === 'serving' || unit === 'piece') && food?.default_serving_grams) return { grams: amount * food.default_serving_grams, method: 'default-serving' };
 
-  if (unit in VOLUME_ML) return { grams: amount * VOLUME_ML[unit]!, method: 'volume' };
-  const perSlice = unit === 'slice' ? sliceGrams(food?.name) : null;
+  // A volume the food has no portion for: its density from another volume portion it has ("1/4 cup =
+  // 58 g" makes a tbsp 14.5 g), else a typical cup of that kind of food, else water. A bowl is a
+  // volume too once the food's density is known; otherwise it stays the generic bowl below.
+  if (unit in VOLUME_ML || unit === 'bowl') {
+    const ml = unit === 'bowl' ? BOWL_CUPS * CUP_ML : VOLUME_ML[unit]!;
+    const own = portions.find((p) => p.unit in VOLUME_ML && p.amount > 0 && p.grams > 0);
+    if (own) return { grams: (amount * ml * own.grams) / (own.amount * VOLUME_ML[own.unit]!), method: 'portion' };
+    const cup = cupWeight(food ?? {});
+    if (cup) return { grams: (amount * ml * cup.grams) / CUP_ML, method: cup.exact ? 'volume' : 'density', per_cup: { what: cup.what, grams: cup.grams } };
+    if (unit !== 'bowl') return { grams: amount * ml, method: 'volume' };
+  }
+  const perSlice = unit === 'slice' ? sliceGrams([food?.name ?? []].flat().join(' ')) : null;
   if (perSlice) return { grams: amount * perSlice, method: 'generic' };
   if (unit in GENERIC_GRAMS) return { grams: amount * GENERIC_GRAMS[unit]!, method: 'generic' };
   if (food?.default_serving_grams) return { grams: amount * food.default_serving_grams, method: 'default-serving' };
@@ -229,6 +378,8 @@ export function toGrams(
 export function ucum(rawUnit: string): string {
   const u = normaliseUnit(rawUnit);
   if (u === 'ml') return 'mL';
+  if (u === 'cl') return 'cL';
+  if (u === 'dl') return 'dL';
   if (u === 'l') return 'L';
   if (u === 'fl oz') return '[foz_us]';
   if (u === 'oz') return '[oz_av]';
@@ -236,12 +387,15 @@ export function ucum(rawUnit: string): string {
   if (u === 'cup') return '[cup_us]';
   if (u === 'tbsp') return '[tbs_us]';
   if (u === 'tsp') return '[tsp_us]';
+  if (u === 'pint') return '[pt_us]';
+  if (u === 'quart') return '[qt_us]';
+  if (u === 'gallon') return '[gal_us]';
   return u;
 }
 
 /**
  * Units typed as an exact number in the amount editor, with grams per unit
- * (volume at water density, same as toGrams). Everything else is a counted size.
+ * (volume at water density; the editor converts between them with toGrams, which knows the food). Everything else is a counted size.
  */
 export const EXACT_UNITS: Record<string, { label: string; suffix: string; grams: number; step: number }> = {
   g: { label: 'Grams', suffix: 'g', grams: 1, step: 1 },
@@ -271,6 +425,11 @@ export const SIZE_LABEL: Record<string, string> = {
   shot: 'Shot',
   serving: 'Serving',
   l: 'Litre',
+  dl: 'dl',
+  cl: 'cl',
+  pint: 'Pint',
+  quart: 'Quart',
+  gallon: 'Gallon',
   kg: 'kg',
   lb: 'lb',
 };
@@ -750,6 +909,20 @@ export function sizesFor(food: FoodLike): { kind: FoodKind; exact: string[]; siz
 
 /** Stored UCUM unit back to the editor's unit name. */
 export function fromUcum(u: string): string {
-  const map: Record<string, string> = { '[cup_us]': 'cup', '[tbs_us]': 'tbsp', '[tsp_us]': 'tsp', '[oz_av]': 'oz', '[lb_av]': 'lb', '[foz_us]': 'fl oz', mL: 'ml', L: 'l' };
+  const map: Record<string, string> = {
+    '[cup_us]': 'cup',
+    '[tbs_us]': 'tbsp',
+    '[tsp_us]': 'tsp',
+    '[oz_av]': 'oz',
+    '[lb_av]': 'lb',
+    '[foz_us]': 'fl oz',
+    '[pt_us]': 'pint',
+    '[qt_us]': 'quart',
+    '[gal_us]': 'gallon',
+    mL: 'ml',
+    cL: 'cl',
+    dL: 'dl',
+    L: 'l',
+  };
   return map[u] ?? normaliseUnit(u);
 }

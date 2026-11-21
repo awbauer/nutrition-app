@@ -7,7 +7,8 @@ import { recordEvents } from '../lib/events';
 import { getFood, searchLocal } from '../lib/foods';
 import { localCandidate, rankedUsda, rememberChoice, fatsecretCandidate, rankedFatSecret, usdaCandidate, type MatchInfo } from '../lib/matcher';
 import { rankCandidates } from '../lib/scoring';
-import { toGrams, ucum } from '../lib/units';
+import type { FoodRecord } from '../lib/foods';
+import { toGrams, ucum, type Conversion } from '../lib/units';
 
 export const items = new Hono<AppEnv>();
 
@@ -33,6 +34,18 @@ const loadRow = (db: D1Database, id: string, userId: string) =>
     .bind(id, userId)
     .first<ItemRow>();
 
+/** How the saved grams were reached for this item's amount, with the user's words helping pick the cup weight. */
+const convert = (row: ItemRow, food: FoodRecord, amount = row.amount_value, unit = row.amount_unit) => toGrams(amount, unit, { ...food, name: [row.display_name, food.name] });
+
+/**
+ * The grams were the AI's own estimate: the stored weight differs from what the size table gives for
+ * the amount (pipeline.ts keeps the model's weight when the table has nothing better). For volumes
+ * only AI-logged items (with match details) count: manual cups saved before the cup-weight table
+ * were weighed as water, and that's not an estimate to keep.
+ */
+const usedAiWeight = (row: ItemRow, conv: Conversion) =>
+  Math.abs(conv.grams - row.grams) > 0.5 && (conv.method === 'generic' || ((conv.method === 'volume' || conv.method === 'density') && row.match_json != null));
+
 const parseMatch = (j: string | null): MatchInfo | null => {
   try {
     return j ? (JSON.parse(j) as MatchInfo) : null;
@@ -52,7 +65,8 @@ items.get('/:id', async (c) => {
   const food = row.food_id ? await getFood(c.env.DB, user.id, row.food_id) : null;
   const intake = await getIntake(c.env.DB, user.id, row.intake_id);
   const item = intake?.items.find((i) => i.id === row.id);
-  const conv = food ? toGrams(row.amount_value, row.amount_unit, food) : null;
+  const conv = food ? convert(row, food) : null;
+  const aiWeight = conv ? usedAiWeight(row, conv) : false;
   return c.json({
     item,
     intake_id: row.intake_id,
@@ -61,10 +75,11 @@ items.get('/:id', async (c) => {
       fdc_url: food.source === 'usda' && food.source_id ? `https://fdc.nal.usda.gov/food-details/${food.source_id}/nutrients` : null,
     },
     conversion: conv && {
-      // Stored grams differ from the generic table when the AI's weight estimate was used.
-      method: conv.method === 'generic' && Math.abs(conv.grams - row.grams) > 0.5 ? 'ai-estimate' : conv.method,
+      method: aiWeight ? 'ai-estimate' : conv.method,
       grams_per_unit: row.grams / row.amount_value,
       stored_grams: row.grams,
+      // The typical cup the weight came from ("leafy greens, 47 g"), for a volume of a food with no cup portion.
+      per_cup: aiWeight ? null : (conv.per_cup ?? null),
     },
     match: parseMatch(row.match_json),
   });
@@ -142,13 +157,9 @@ items.patch('/:id', async (c) => {
   validAmount({ amount, unit, grams: body.grams });
   const amountChanged = body.amount !== undefined || body.unit !== undefined;
   // Same household unit, new count, and the saved weight came from the AI's estimate rather than the
-  // generic size table: keep its weight per unit ("2 small" bananas = 2 × its 80 g, not 2 × 100 g).
+  // size or cup tables: keep its weight per unit ("2 small" bananas = 2 × its 80 g, not 2 × 100 g).
   const sameUnit = !swapping && ucum(unit) === row.amount_unit;
-  const fromAi =
-    sameUnit &&
-    row.amount_value > 0 &&
-    toGrams(row.amount_value, row.amount_unit, food).method === 'generic' &&
-    Math.abs(toGrams(row.amount_value, row.amount_unit, food).grams - row.grams) > 0.5;
+  const fromAi = sameUnit && row.amount_value > 0 && usedAiWeight(row, convert(row, food));
   const grams = body.grams ?? (fromAi ? (row.grams / row.amount_value) * amount : amountChanged || swapping ? undefined : row.grams);
   const edited = swapping || amountChanged || body.grams !== undefined;
   // AI-logged items keep the user's words as the label; the matched food is shown separately.

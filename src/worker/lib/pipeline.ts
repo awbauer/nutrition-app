@@ -183,13 +183,13 @@ export async function materialise(db: D1Database, userId: string, p: Pending, an
     // the model's own weight estimate is much closer. Scale it if a question changed the amount.
     // "3 Oreos" logged as pieces reads as 3 cookies, in the food's own word for one.
     const unit = (normaliseUnit(b.unit) === 'piece' && countUnit(food.portions)) || b.unit;
-    const conv = toGrams(b.amount, unit, food);
+    const conv = toGrams(b.amount, unit, { ...food, name: [b.name, food.name] });
     const base = p.base.find((x) => x.food_id === b.food_id && x.name === b.name);
-    // A volume with no portion data is weighed as water: right for drinks, far off for leafy or fluffy solids
-    // (2 cups of lettuce is ~70 g, not 480 g). When the model's own estimate is that far off, use it.
+    // A volume with no portion data is weighed as water, or from a typical cup of that kind of food
+    // (units.ts); either can be far off for what's on the plate. When the model's own estimate is that far off, use it.
     const scaled = b.grams_estimate && base && base.unit === b.unit ? (b.grams_estimate * b.amount) / base.amount : undefined;
     const offByFar = (a: number, c: number) => Math.max(a, c) / Math.max(1, Math.min(a, c)) > 1.8;
-    const grams = conv.method === 'generic' || (conv.method === 'volume' && scaled && offByFar(scaled, conv.grams)) ? scaled : undefined;
+    const grams = conv.method === 'generic' || ((conv.method === 'volume' || conv.method === 'density') && scaled && offByFar(scaled, conv.grams)) ? scaled : undefined;
     out.push({
       food,
       display_name: b.name,

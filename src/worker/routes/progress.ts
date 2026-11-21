@@ -4,7 +4,7 @@ import { addDays, isDate, logDate } from '../lib/dates';
 import { suggestTargets, validProfile, weightTrend, type Profile } from '../lib/energy';
 import { goalsOn, targetsFromGoals, type GoalRow } from '../lib/goals';
 import { HttpError, newId } from '../lib/ids';
-import { dailyTotals } from '../lib/intake';
+import { COUNTED_STATUSES, dailyTotals } from '../lib/intake';
 import { round } from '../lib/nutrients';
 import { getSettings } from '../lib/settings';
 import { today } from './day';
@@ -132,7 +132,8 @@ progress.get('/summary', async (c) => {
   const [days, goals, logged] = await Promise.all([
     dailyTotals(c.env.DB, user.id, start, end),
     goalsOn(c.env.DB, user.id, end),
-    c.env.DB.prepare(`SELECT DISTINCT log_date FROM nutrition_intake WHERE user_id = ? AND status = 'completed' AND log_date <= ? ORDER BY log_date DESC LIMIT 400`)
+    // Same days as the totals: a day whose only meal still has a question open was still logged.
+    c.env.DB.prepare(`SELECT DISTINCT log_date FROM nutrition_intake WHERE user_id = ? AND status IN ${COUNTED_STATUSES} AND log_date <= ? ORDER BY log_date DESC LIMIT 400`)
       .bind(user.id, t)
       .all<{ log_date: string }>(),
   ]);
@@ -152,6 +153,6 @@ progress.get('/summary', async (c) => {
     streak++;
     cursor = addDays(cursor, -1);
   }
-  const series = Array.from({ length: 7 }, (_, i) => addDays(start, i)).map((d) => days.find((x) => x.date === d) ?? { date: d, meals: 0, totals: {} });
+  const series = Array.from({ length: 7 }, (_, i) => addDays(start, i)).map((d) => days.find((x) => x.date === d) ?? { date: d, meals: 0, unconfirmed: 0, totals: {} });
   return c.json({ start, end, days: series, days_logged: loggedDays.length, days_counted: counted.length, average, targets, streak });
 });
