@@ -4,10 +4,9 @@ import { HttpError } from '../lib/ids';
 import { round } from '../lib/nutrients';
 import { assertItemsEditable, getIntake, itemStatements, refreshConfidence, resolveRef, validAmount, type ItemRef } from '../lib/intake';
 import { recordEvents } from '../lib/events';
-import { getFood, searchLocal } from '../lib/foods';
-import { localCandidate, rankedUsda, rememberChoice, fatsecretCandidate, rankedFatSecret, usdaCandidate, type MatchInfo } from '../lib/matcher';
-import { rankCandidates } from '../lib/scoring';
-import type { FoodRecord } from '../lib/foods';
+import { getFood, type FoodRecord } from '../lib/foods';
+import { gatherLocal, gatherRemote, rememberChoice, toMatchCandidate, type MatchInfo } from '../lib/matcher';
+import { decide } from '../lib/decide';
 import { toGrams, ucum, type Conversion } from '../lib/units';
 
 export const items = new Hono<AppEnv>();
@@ -94,23 +93,12 @@ items.get('/:id/search', async (c) => {
   const q = (c.req.query('q') ?? match?.query ?? row.display_name).trim();
   if (q.length < 2) throw new HttpError(400, 'search needs at least 2 characters');
   const est = match?.estimate_kcal_100g ?? null;
-  const local = (await searchLocal(c.env.DB, user.id, q, 10)).filter((f) => f.source !== 'estimate');
-  const per100 = (f: { nutrients: { code: string; value: number }[] }) => f.nutrients.find((n) => n.code === 'ENERC_KCAL')?.value ?? null;
-  const rankedLocal = rankCandidates(
-    q,
-    local.map((f) => ({ ...f, dataType: f.data_type, kcal100: per100(f) })),
-    est,
-  ).map((r) => localCandidate(r.candidate, r.score, r.reasons));
-  let remote: ReturnType<typeof usdaCandidate>[] = [];
-  let error: string | undefined;
-  const seenUsda = new Set(rankedLocal.map((r) => r.fdc_id).filter(Boolean));
-  const seenFs = new Set(rankedLocal.map((r) => r.fatsecret_id).filter(Boolean));
-  const [usda, fs] = await Promise.allSettled([c.env.USDA_API_KEY ? rankedUsda(c.env, q, est, 25) : Promise.resolve([]), rankedFatSecret(c.env, q, est, 20)]);
-  if (usda.status === 'fulfilled') remote.push(...usda.value.filter((r) => !seenUsda.has(r.candidate.sourceId)).map((r) => usdaCandidate(r.candidate, r.score, r.reasons)));
-  else error = (usda.reason as Error).message;
-  if (fs.status === 'fulfilled') remote.push(...fs.value.filter((r) => !seenFs.has(r.candidate.sourceId)).map((r) => fatsecretCandidate(r.candidate, r.score, r.reasons)));
-  else console.warn('FatSecret search failed', q, (fs.reason as Error).message);
-  const candidates = [...rankedLocal, ...remote].sort((a, b) => b.score - a.score).slice(0, 20);
+  // The same gathering and ranking as matching, without history (this is a search, not a description).
+  const local = await gatherLocal(c.env, user.id, { name: q, query: q, history: false, localMax: 10 });
+  const remote = await gatherRemote(c.env, q, local, { usdaPageSize: 25, fatsecretMax: 20 });
+  const error = remote.lookupError;
+  const ranked = decide({ name: q, query: q, estimateKcal100: est }, [...local, ...remote.options]).ranked;
+  const candidates = ranked.slice(0, 20).map(toMatchCandidate);
   // The change log: a search for a different food usually means the match was wrong.
   const logged = recordEvents(c.env.DB, user.id, [
     {
@@ -164,7 +152,11 @@ items.patch('/:id', async (c) => {
   const edited = swapping || amountChanged || body.grams !== undefined;
   // AI-logged items keep the user's words as the label; the matched food is shown separately.
   const match = parseMatch(row.match_json);
-  if (swapping && match) match.chosen = (food.source === 'usda' || food.source === 'fatsecret') && food.source_id ? food.source_id : food.id;
+  if (swapping && match) {
+    match.chosen = (food.source === 'usda' || food.source === 'fatsecret') && food.source_id ? food.source_id : food.id;
+    // The user picked this food: words the matcher's pick lacked no longer apply.
+    delete match.missing_words;
+  }
   const label = body.display_name ?? (swapping && !match ? food.name : row.display_name);
   const stmts = [
     c.env.DB.prepare('DELETE FROM intake_nutrient WHERE consumed_item_id = ?').bind(row.id),

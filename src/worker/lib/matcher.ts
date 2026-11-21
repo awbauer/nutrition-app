@@ -20,8 +20,9 @@ import { fatsecretClient } from './fatsecret';
 import { newId } from './ids';
 import { NUTRIENT_BY_CODE } from './nutrients';
 import { offByBarcode } from './off';
-import { historyBonus, searchHistory } from './history';
-import { ACCEPT_SCORE, CONFIDENT_SCORE, rankCandidates, scoreCandidate } from './scoring';
+import { searchHistory } from './history';
+import { CONFIDENT_SCORE, type ScoredCandidate } from './scoring';
+import { decide, type DecideRequest, type MatchOption, type Origin } from './decide';
 import { MATCH_CONFIG } from './match-config';
 import type { NormalisedFood } from './usda';
 
@@ -77,7 +78,10 @@ export interface MatchCandidate {
   kcal_100g: number | null;
   protein_100g: number | null;
   score: number;
+  /** Short reasons shown in the UI. */
   notes: string[];
+  /** Feature -> contribution to `score` (scoring.ts Feature); absent on older items. */
+  parts?: Record<string, number>;
 }
 
 export interface MatchInfo {
@@ -89,6 +93,8 @@ export interface MatchInfo {
   chosen: string | null;
   /** Set when the food database couldn't be reached, so "no match" isn't the real story. */
   lookup_error?: string;
+  /** Words naming the item that the chosen food doesn't have ("polynesian"): worth a look. */
+  missing_words?: string[];
 }
 
 export interface MatchResult {
@@ -144,26 +150,90 @@ export const localCandidate = (f: FoodRecord, score = 0, notes: string[] = []): 
   notes,
 });
 
-/** Search FatSecret (when configured) and rank the results; [] when it isn't. */
-export async function rankedFatSecret(env: Env, query: string, estimateKcal: number | null, max = 20) {
-  const client = fatsecretClient(env);
-  if (!client) return [];
-  const hits = await client.search(query, max);
-  return rankCandidates(
-    query,
-    hits.map((h, i) => ({ ...h, kcal100: per100(h.nutrients, 'ENERC_KCAL'), sourceRank: i })),
-    estimateKcal,
-  );
+/** A candidate as gathered: what decide() ranks, plus the food it stands for. */
+export type GatheredOption = MatchOption & { food?: FoodRecord; remote?: NormalisedFood | ExternalFood };
+
+const keyOf = (f: { source: string; source_id: string | null; id: string }) =>
+  (f.source === 'usda' || f.source === 'fatsecret') && f.source_id ? `${f.source}:${f.source_id}` : `food:${f.id}`;
+
+const localOption = (f: FoodRecord, origin: Origin, history?: { times: number; names: string[] }): GatheredOption => ({
+  key: keyOf(f),
+  origin,
+  name: f.name,
+  brand: f.brand,
+  dataType: f.data_type,
+  kcal100: per100(f.nutrients, 'ENERC_KCAL'),
+  ...(history ? { history } : {}),
+  food: f,
+});
+
+/**
+ * Candidates from the user's own data: foods they've eaten (by meaning, when `history`), then the
+ * local food cache and their custom foods. No estimates.
+ */
+export async function gatherLocal(env: Env, userId: string, opts: { name: string; query: string; history: boolean; localMax?: number }): Promise<GatheredOption[]> {
+  // History: foods the user has eaten, found by meaning; decide() scores them on their words (under the
+  // user's own names too) plus a bonus for familiarity. "Turkey meatballs" is near "chicken meatballs" as
+  // a vector but misses a word, so it doesn't win.
+  const history = opts.history ? await searchHistory(env, userId, opts.name) : [];
+  const historyIds = new Set(history.map((h) => h.food.id));
+  const local = (await searchLocal(env.DB, userId, opts.query, opts.localMax ?? MATCH_CONFIG.gather.localMax)).filter((f) => f.source !== 'estimate' && !historyIds.has(f.id));
+  return [...history.map((h) => localOption(h.food, 'history', { times: h.times, names: h.names })), ...local.map((f) => localOption(f, f.owner_user_id ? 'custom' : 'cache'))];
 }
 
-/** Search USDA (all tiers, one request) and rank the results for a query. */
-export async function rankedUsda(env: Env, query: string, estimateKcal: number | null, pageSize = 25) {
-  const hits = await usdaClient(env).searchAll(query, pageSize);
-  return rankCandidates(
-    query,
-    hits.map((h) => ({ ...h, kcal100: per100(h.nutrients, 'ENERC_KCAL') })),
-    estimateKcal,
-  );
+/**
+ * Search USDA (all tiers, one request) and FatSecret (when configured) at once; either failing leaves
+ * the other. Foods already among `have` (by source id) are left out.
+ */
+export async function gatherRemote(
+  env: Env,
+  query: string,
+  have: { key: string }[] = [],
+  sizes: { usdaPageSize?: number; fatsecretMax?: number } = {},
+): Promise<{ options: GatheredOption[]; lookupError?: string }> {
+  const seen = new Set(have.map((o) => o.key));
+  const fs = fatsecretClient(env);
+  const [usda, fat] = await Promise.allSettled([
+    env.USDA_API_KEY ? usdaClient(env).searchAll(query, sizes.usdaPageSize ?? MATCH_CONFIG.gather.usdaPageSize) : Promise.resolve([]),
+    fs ? fs.search(query, sizes.fatsecretMax ?? MATCH_CONFIG.gather.fatsecretMax) : Promise.resolve([]),
+  ]);
+  let lookupError: string | undefined;
+  const options: GatheredOption[] = [];
+  if (usda.status === 'fulfilled')
+    for (const h of usda.value)
+      options.push({ key: `usda:${h.sourceId}`, origin: 'usda', name: h.name, brand: h.brand, dataType: h.dataType, kcal100: per100(h.nutrients, 'ENERC_KCAL'), remote: h });
+  else {
+    lookupError = (usda.reason as Error).message;
+    console.warn('USDA search failed', query, lookupError);
+  }
+  if (fat.status === 'fulfilled')
+    fat.value.forEach((h, i) =>
+      options.push({
+        key: `fatsecret:${h.sourceId}`,
+        origin: 'fatsecret',
+        name: h.name,
+        brand: h.brand,
+        dataType: h.dataType,
+        kcal100: per100(h.nutrients, 'ENERC_KCAL'),
+        sourceRank: i,
+        remote: h,
+      }),
+    );
+  else console.warn('FatSecret search failed', query, (fat.reason as Error).message);
+  return { options: options.filter((o) => !seen.has(o.key)), ...(lookupError ? { lookupError } : {}) };
+}
+
+const round3 = (n: number) => Math.round(n * 1000) / 1000;
+
+/** A ranked option as stored on the item and shown in the UI. */
+export function toMatchCandidate(r: ScoredCandidate<GatheredOption>): MatchCandidate {
+  const o = r.candidate;
+  const c = o.food
+    ? localCandidate(o.food, r.score, r.reasons)
+    : o.origin === 'fatsecret'
+      ? fatsecretCandidate(o.remote as ExternalFood, r.score, r.reasons)
+      : usdaCandidate(o.remote as NormalisedFood, r.score, r.reasons);
+  return { ...c, parts: Object.fromEntries(Object.entries(r.parts).map(([k, v]) => [k, round3(v)])) };
 }
 
 export async function matchFood(env: Env, userId: string, req: MatchRequest): Promise<MatchResult> {
@@ -234,63 +304,29 @@ export async function matchFood(env: Env, userId: string, req: MatchRequest): Pr
     return { food, via: 'label', match: info('label', [localCandidate(food, 9, ['from the package label'])], food.id), matchConfidence: 0.95, fromPackage: true };
   }
 
-  // 3 + 4. Rank history, local cache and USDA together so a known food only wins on merit.
-  // History: foods the user has eaten, found by meaning, then scored on their words (under the
-  // user's own names too) plus a bonus for familiarity. "Turkey meatballs" is near "chicken
-  // meatballs" as a vector but misses a word, so it doesn't win.
-  const history = await searchHistory(env, userId, req.name);
-  const rankedHistory = history
-    .map((h) => {
-      const c = { ...h.food, dataType: h.food.data_type, kcal100: per100(h.food.nutrients, 'ENERC_KCAL') };
-      const best = [h.food.name, ...h.names].map((name) => scoreCandidate(req.name, { ...c, name }, est)).sort((a, b) => b.score - a.score)[0]!;
-      const bonus = historyBonus(h, req.name, !!req.from_history);
-      return { candidate: h.food, score: Math.round((best.score + bonus) * 100) / 100, reasons: [...best.reasons, `you've had it ${h.times}×`] };
-    })
-    .sort((a, b) => b.score - a.score);
-  const historyIds = new Set(history.map((h) => h.food.id));
-  const local = (await searchLocal(db, userId, query, 8)).filter((f) => f.source !== 'estimate' && !historyIds.has(f.id));
-  const rankedLocal = [
-    ...rankedHistory,
-    ...rankCandidates(
-      query,
-      local.map((f) => ({ ...f, dataType: f.data_type, kcal100: per100(f.nutrients, 'ENERC_KCAL') })),
-      est,
-    ),
-  ].sort((a, b) => b.score - a.score);
-  let rankedRemote: Awaited<ReturnType<typeof rankedUsda>> = [];
-  let rankedFs: Awaited<ReturnType<typeof rankedFatSecret>> = [];
-  const bestLocal = rankedLocal[0];
-  if (!(bestLocal && bestLocal.score >= CONFIDENT_SCORE)) {
-    // Both databases at once; either failing leaves the other.
-    const [usda, fs] = await Promise.allSettled([env.USDA_API_KEY ? rankedUsda(env, query, est) : Promise.resolve([]), rankedFatSecret(env, query, est)]);
-    if (usda.status === 'fulfilled') rankedRemote = usda.value;
-    else {
-      lookupError = (usda.reason as Error).message;
-      console.warn('USDA search failed', query, lookupError);
-    }
-    if (fs.status === 'fulfilled') rankedFs = fs.value;
-    else console.warn('FatSecret search failed', query, (fs.reason as Error).message);
+  // 3 + 4. Rank history, local foods, USDA and FatSecret together so a known food only wins on merit.
+  const dreq: DecideRequest = { name: req.name, query, brand: req.brand, estimateKcal100: est, fromHistory: !!req.from_history };
+  let options = await gatherLocal(env, userId, { name: req.name, query, history: true });
+  // A local food that's already a sure match saves the remote search.
+  if (!((decide(dreq, options).ranked[0]?.score ?? -Infinity) >= CONFIDENT_SCORE)) {
+    const remote = await gatherRemote(env, query, options);
+    lookupError = remote.lookupError;
+    options = [...options, ...remote.options];
   }
-  const seen = new Set(rankedLocal.map((r) => `${r.candidate.source}:${r.candidate.source_id}`));
-  const candidates: (MatchCandidate & { _local?: FoodRecord; _remote?: NormalisedFood | ExternalFood })[] = [
-    ...rankedLocal.map((r) => ({ ...localCandidate(r.candidate, r.score, r.reasons), _local: r.candidate })),
-    ...rankedRemote.filter((r) => !seen.has(`usda:${r.candidate.sourceId}`)).map((r) => ({ ...usdaCandidate(r.candidate, r.score, r.reasons), _remote: r.candidate })),
-    ...rankedFs.filter((r) => !seen.has(`fatsecret:${r.candidate.sourceId}`)).map((r) => ({ ...fatsecretCandidate(r.candidate, r.score, r.reasons), _remote: r.candidate })),
-  ].sort((a, b) => b.score - a.score);
-
-  const strip = (cs: typeof candidates): MatchCandidate[] => cs.map(({ _local, _remote, ...c }) => c);
-  const best = candidates[0];
-  if (best && best.score >= ACCEPT_SCORE) {
-    const food = best._local ?? (await cacheFood(db, best._remote!));
-    const via: Via = best._local ? (historyIds.has(food.id) ? 'history' : food.owner_user_id ? 'custom' : 'cache') : best._remote!.source === 'fatsecret' ? 'fatsecret' : 'usda';
-    // Map score to confidence: ACCEPT_SCORE → 0.5, CONFIDENT_SCORE and up → 0.9.
-    const t = Math.min(1, Math.max(0, (best.score - ACCEPT_SCORE) / (CONFIDENT_SCORE - ACCEPT_SCORE)));
-    return { food, via, match: info(via, strip(candidates), best.fdc_id ?? best.fatsecret_id ?? best.food_id ?? null), matchConfidence: 0.5 + 0.4 * t };
+  const d = decide(dreq, options);
+  const candidates = d.ranked.map(toMatchCandidate);
+  if (d.chosen) {
+    const o = d.chosen.candidate;
+    const food = o.food ?? (await cacheFood(db, o.remote!));
+    const via: Via = o.origin;
+    const top = candidates[0]!;
+    const missing = d.chosen.missing.length ? { missing_words: d.chosen.missing } : {};
+    return { food, via, match: { ...info(via, candidates, top.fdc_id ?? top.fatsecret_id ?? top.food_id ?? null), ...missing }, matchConfidence: d.confidence };
   }
 
   // 5. Nothing good enough: keep the candidates so the user can still pick one.
   const food = await estimateFood(db, userId, req);
-  return { food, via: 'estimate', match: info('estimate', strip(candidates), null), matchConfidence: ESTIMATE_CONFIDENCE_CAP };
+  return { food, via: 'estimate', match: info('estimate', candidates, null), matchConfidence: d.confidence };
 }
 
 /** Private food row holding the model's rough estimate. */
