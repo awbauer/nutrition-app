@@ -14,7 +14,8 @@
     "pretest": "npm run build:cards && vite build --logLevel warn",
     "build:cards": "vite build -c vite.cards.config.ts --logLevel warn",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "golden": "esbuild scripts/golden-matches.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/golden-matches.mjs --log-level=warning && node node_modules/.cache/golden-matches.mjs"
   },
   "dependencies": {
     "@cloudflare/workers-oauth-provider": "^1.2.4",
