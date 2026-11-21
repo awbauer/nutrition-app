@@ -54,8 +54,13 @@ function sourceLabel(source: string | null | undefined, dataType: string | null 
   return dataType && source === 'usda' ? `${s} · ${dataType}` : s;
 }
 
-/** Everything behind one item's numbers, plus other matches and a search to switch. */
-export function ItemSheet(props: { itemId: string; onChange: (m: Intake) => void; onClose: () => void }) {
+/**
+ * Everything behind one item's numbers, plus other matches and a search to switch. `locked`: the meal
+ * still has a question open (or is being read), and answering rebuilds its items, so the server refuses
+ * item edits (409); the sheet is read-only until then.
+ */
+export function ItemSheet(props: { itemId: string; locked?: boolean; onChange: (m: Intake) => void; onClose: () => void }) {
+  const locked = !!props.locked;
   const [d, setD] = useState<ItemDetail | null>(null);
   const [amt, setAmt] = useState<{ amount: number; unit: string }>({ amount: 0, unit: 'g' });
   const [q, setQ] = useState('');
@@ -169,6 +174,8 @@ export function ItemSheet(props: { itemId: string; onChange: (m: Intake) => void
         )}
       </section>
 
+      {locked && <p class="rounded-xl bg-accent-soft p-3 text-sm text-ink">Answer this meal's question first. Then you can change the amount, switch the food or remove it.</p>}
+
       {/* Numbers */}
       <section class="grid grid-cols-2 gap-2 text-center">
         <div class="rounded-xl bg-sunken p-3 ">
@@ -202,88 +209,103 @@ export function ItemSheet(props: { itemId: string; onChange: (m: Intake) => void
         </div>
       </section>
 
-      {/* How sure */}
-      <section class="flex flex-col gap-2">
-        <p class="eyebrow">How sure are you about this item?</p>
-        <div class="grid grid-cols-4 gap-1 rounded-xl bg-sunken p-1 text-sm " role="radiogroup" aria-label="Confidence">
-          {CONFIDENCE_LEVELS.map((l) => {
-            const on = confidenceLevel(item.confidence)?.key === l.key;
-            return (
-              <button
-                role="radio"
-                aria-checked={on}
-                class={`rounded-lg py-1.5 font-medium ${on ? 'bg-card shadow-sm ' : 'text-ink-2'}`}
-                disabled={busy}
-                onClick={() => !on && patch({ confidence: l.value }, `Confidence set to ${l.label.toLowerCase()}`)}
-              >
-                {l.label}
-              </button>
-            );
-          })}
-        </div>
-        <p class="text-xs text-ink-2">{confidenceLevel(item.confidence)?.hint}. Low-confidence items are flagged so you know which numbers to trust less.</p>
-      </section>
+      {/* How sure (an edit too, so not while the meal has a question open) */}
+      {!locked && (
+        <section class="flex flex-col gap-2">
+          <p class="eyebrow">How sure are you about this item?</p>
+          <div class="grid grid-cols-4 gap-1 rounded-xl bg-sunken p-1 text-sm " role="radiogroup" aria-label="Confidence">
+            {CONFIDENCE_LEVELS.map((l) => {
+              const on = confidenceLevel(item.confidence)?.key === l.key;
+              return (
+                <button
+                  role="radio"
+                  aria-checked={on}
+                  class={`rounded-lg py-1.5 font-medium ${on ? 'bg-card shadow-sm ' : 'text-ink-2'}`}
+                  disabled={busy}
+                  onClick={() => !on && patch({ confidence: l.value }, `Confidence set to ${l.label.toLowerCase()}`)}
+                >
+                  {l.label}
+                </button>
+              );
+            })}
+          </div>
+          <p class="text-xs text-ink-2">{confidenceLevel(item.confidence)?.hint}. Low-confidence items are flagged so you know which numbers to trust less.</p>
+        </section>
+      )}
 
       {/* Amount: relative size or exact grams */}
       <section class="flex flex-col gap-3">
         <p class="eyebrow">How much</p>
-        <AmountEditor
-          amount={amt.amount}
-          unit={amt.unit}
-          onChange={(amount, unit) => setAmt({ amount, unit })}
-          portions={food?.portions}
-          category={food?.category}
-          name={[item.display_name, food?.name ?? '']}
-          defaultServingGrams={food?.default_serving_grams}
-          kcalPer100={per100('ENERC_KCAL')}
-          hint={false}
-          knownUnit={aiUnit}
-        />
+        {locked ? (
+          <p class="text-sm text-ink-2">
+            <span class="text-ink">{amountLabel(item.amount_value, item.amount_unit)}</span>
+            {item.amount_unit !== 'g' && ` ≈ ${Math.round(item.grams)} g`} · {kcal(item.nutrients.ENERC_KCAL)} kcal
+          </p>
+        ) : (
+          <AmountEditor
+            amount={amt.amount}
+            unit={amt.unit}
+            onChange={(amount, unit) => setAmt({ amount, unit })}
+            portions={food?.portions}
+            category={food?.category}
+            name={[item.display_name, food?.name ?? '']}
+            defaultServingGrams={food?.default_serving_grams}
+            kcalPer100={per100('ENERC_KCAL')}
+            hint={false}
+            knownUnit={aiUnit}
+          />
+        )}
         {/* How a household amount became grams; nothing to explain when it's already grams. */}
         {conversion && item.amount_unit !== 'g' && (
           <p class="text-xs text-faint">
             Saved as {amountLabel(item.amount_value, item.amount_unit)} = {Math.round(item.grams)} g. {conversionLabel(conversion)}.
           </p>
         )}
-        <button
-          class="btn-primary self-start"
-          disabled={busy || !(amt.amount > 0) || (amt.amount === item.amount_value && amt.unit === fromUcum(item.amount_unit))}
-          onClick={() => patch({ amount: amt.amount, unit: amt.unit }, 'Amount updated')}
-        >
-          Save amount
-        </button>
+        {!locked && (
+          <button
+            class="btn-primary self-start"
+            disabled={busy || !(amt.amount > 0) || (amt.amount === item.amount_value && amt.unit === fromUcum(item.amount_unit))}
+            onClick={() => patch({ amount: amt.amount, unit: amt.unit }, 'Amount updated')}
+          >
+            Save amount
+          </button>
+        )}
       </section>
 
       {/* Other matches */}
       {others.length > 0 && !results && (
         <section class="flex flex-col gap-1">
           <p class="eyebrow">Other matches considered</p>
-          <CandidateList items={others} onUse={use} busy={busy} />
+          <CandidateList items={others} onUse={locked ? undefined : use} busy={busy} />
         </section>
       )}
 
-      {/* Search */}
-      <section class="flex flex-col gap-2">
-        <p class="eyebrow">Find a different food</p>
-        <form
-          class="flex gap-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            search();
-          }}
-        >
-          <input class="input py-1.5" type="search" value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} enterkeyhint="search" aria-label="Search foods" />
-          <button class="btn-ghost shrink-0 px-3 py-1.5" disabled={searching}>
-            {searching ? '…' : 'Search'}
-          </button>
-        </form>
-        {results && (results.length ? <CandidateList items={results} onUse={use} busy={busy} isChosen={isChosen} /> : <p class="text-sm text-ink-2">No matches.</p>)}
-        <p class="text-xs text-ink-2">When you switch, the app remembers it the next time you log “{item.display_name}”.</p>
-      </section>
+      {!locked && (
+        <>
+          {/* Search */}
+          <section class="flex flex-col gap-2">
+            <p class="eyebrow">Find a different food</p>
+            <form
+              class="flex gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                search();
+              }}
+            >
+              <input class="input py-1.5" type="search" value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} enterkeyhint="search" aria-label="Search foods" />
+              <button class="btn-ghost shrink-0 px-3 py-1.5" disabled={searching}>
+                {searching ? '…' : 'Search'}
+              </button>
+            </form>
+            {results && (results.length ? <CandidateList items={results} onUse={use} busy={busy} isChosen={isChosen} /> : <p class="text-sm text-ink-2">No matches.</p>)}
+            <p class="text-xs text-ink-2">When you switch, the app remembers it the next time you log “{item.display_name}”.</p>
+          </section>
 
-      <button class="btn-ghost self-start text-berry" disabled={busy} onClick={remove}>
-        Remove item
-      </button>
+          <button class="btn-ghost self-start text-berry" disabled={busy} onClick={remove}>
+            Remove item
+          </button>
+        </>
+      )}
     </div>
   );
 }
@@ -297,7 +319,8 @@ export function FatSecretCredit() {
   );
 }
 
-function CandidateList(props: { items: MatchCandidate[]; onUse: (c: MatchCandidate) => void; busy: boolean; isChosen?: (c: MatchCandidate) => boolean | '' | undefined }) {
+/** Candidate foods; without `onUse` (read-only) there's no Use button. */
+function CandidateList(props: { items: MatchCandidate[]; onUse?: (c: MatchCandidate) => void; busy: boolean; isChosen?: (c: MatchCandidate) => boolean | '' | undefined }) {
   return (
     <div class="flex flex-col gap-1.5">
       <ul class="divide-y divide-line rounded-xl ring-1 ring-line">
@@ -320,9 +343,11 @@ function CandidateList(props: { items: MatchCandidate[]; onUse: (c: MatchCandida
               {chosen ? (
                 <span class="shrink-0 text-xs font-medium text-accent-ink">Current</span>
               ) : (
-                <button class="btn-ghost shrink-0 px-2.5 py-1 text-xs" disabled={props.busy} onClick={() => props.onUse(c)}>
-                  Use
-                </button>
+                props.onUse && (
+                  <button class="btn-ghost shrink-0 px-2.5 py-1 text-xs" disabled={props.busy} onClick={() => props.onUse!(c)}>
+                    Use
+                  </button>
+                )
               )}
             </li>
           );

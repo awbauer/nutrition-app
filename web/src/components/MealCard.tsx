@@ -185,7 +185,8 @@ export function MealCard(props: { meal: Intake; onChange: (m: Intake | null) => 
       )}
 
       <Sheet open={!!openItem} onClose={() => setOpenItem(null)} title="Food details">
-        {openItem && <ItemSheet itemId={openItem} onChange={props.onChange} onClose={() => setOpenItem(null)} />}
+        {/* Items of a meal waiting on answers open read-only: answering rebuilds them. */}
+        {openItem && <ItemSheet itemId={openItem} locked={!done} onChange={props.onChange} onClose={() => setOpenItem(null)} />}
       </Sheet>
       <Sheet open={history} onClose={() => setHistory(false)} title="Change history">
         {history && <MealHistory mealId={meal.id} />}
