@@ -53,7 +53,11 @@ function show(t: Omit<Toast, 'id' | 'tone'> & { id?: string; tone?: Tone }): str
   timers.delete(id);
   const i = toasts.findIndex((x) => x.id === id);
   toasts = i >= 0 ? toasts.map((x) => (x.id === id ? next : x)) : [...toasts, next].slice(-MAX_VISIBLE);
-  if (!t.sticky && tone !== 'progress') timers.set(id, setTimeout(() => dismiss(id, false), DURATION[tone]));
+  if (!t.sticky && tone !== 'progress')
+    timers.set(
+      id,
+      setTimeout(() => dismiss(id, false), DURATION[tone]),
+    );
   emit();
   return id;
 }

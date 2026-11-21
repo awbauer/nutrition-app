@@ -9,7 +9,10 @@ const oilSearch = {
       fdcId: 171413,
       description: 'Oil, olive, salad or cooking',
       dataType: 'SR Legacy',
-      foodNutrients: [{ nutrientId: 1008, unitName: 'KCAL', value: 884 }, { nutrientId: 1004, unitName: 'G', value: 100 }],
+      foodNutrients: [
+        { nutrientId: 1008, unitName: 'KCAL', value: 884 },
+        { nutrientId: 1004, unitName: 'G', value: 100 },
+      ],
       foodMeasures: [
         { disseminationText: '1 tbsp', gramWeight: 13.5, rank: 1 },
         { disseminationText: '1 tsp', gramWeight: 4.5, rank: 2 },
@@ -23,7 +26,10 @@ const chickenSearch = {
       fdcId: 171477,
       description: 'Chicken, broilers or fryers, breast, meat only, cooked, roasted',
       dataType: 'SR Legacy',
-      foodNutrients: [{ nutrientId: 1008, unitName: 'KCAL', value: 165 }, { nutrientId: 1003, unitName: 'G', value: 31 }],
+      foodNutrients: [
+        { nutrientId: 1008, unitName: 'KCAL', value: 165 },
+        { nutrientId: 1003, unitName: 'G', value: 31 },
+      ],
       foodMeasures: [],
     },
   ],
@@ -36,7 +42,13 @@ beforeEach(() => {
     if (url.hostname === 'world.openfoodfacts.org') {
       return json({
         status: 1,
-        product: { product_name: 'Sparkling Water Lime', brands: 'Fizz Co', serving_quantity: 355, serving_size: '1 can', nutriments: { 'energy-kcal_100g': 0, sodium_100g: 0.01 } },
+        product: {
+          product_name: 'Sparkling Water Lime',
+          brands: 'Fizz Co',
+          serving_quantity: 355,
+          serving_size: '1 can',
+          nutriments: { 'energy-kcal_100g': 0, sodium_100g: 0.01 },
+        },
       });
     }
     if (url.hostname !== 'api.nal.usda.gov') return undefined;
@@ -139,7 +151,11 @@ describe('model output validation', () => {
     expect(r.data.items[0].display_name).toBe('apple');
   });
   it('normalises barcodes and validates printed label values', () => {
-    const v = validateOutput({ items: [{ name: 'x', amount: 1, unit: 'bottle', barcode: '8 11620 02211 8', brand: ' fairlife ', label: { serving_amount: '340', serving_unit: 'mL', kcal: 150, protein: 30 } }] });
+    const v = validateOutput({
+      items: [
+        { name: 'x', amount: 1, unit: 'bottle', barcode: '8 11620 02211 8', brand: ' fairlife ', label: { serving_amount: '340', serving_unit: 'mL', kcal: 150, protein: 30 } },
+      ],
+    });
     expect(v.items[0]).toMatchObject({ barcode: '811620022118', brand: 'fairlife', label: { serving_amount: 340, serving_unit: 'ml', kcal: 150, protein: 30 } });
     const bad = validateOutput({ items: [{ name: 'x', amount: 1, unit: 'g', label: { kcal: 150 } }] });
     expect(bad.items[0]!.label).toBeNull();
@@ -161,11 +177,7 @@ describe('text logging', () => {
   it('parses, matches foods, asks only questions that matter, and completes on answers', async () => {
     const ai = fakeAI([{ response: JSON.stringify(chickenOutput) }]);
     await api('/settings', { method: 'PUT', json: { timezone: 'UTC' } });
-    const r = await api(
-      '/intake',
-      { method: 'POST', body: form({ text: 'chicken breast with some sauce', occurrence_at: '2026-11-14T19:00:00Z' }) },
-      { AI: ai.AI },
-    );
+    const r = await api('/intake', { method: 'POST', body: form({ text: 'chicken breast with some sauce', occurrence_at: '2026-11-14T19:00:00Z' }) }, { AI: ai.AI });
     expect(r.status).toBe(202);
     expect(ai.calls[0]!.opts).toEqual({ gateway: { id: 'nutrition' } });
     expect(r.data).toMatchObject({ source: 'text', status: 'in-progress', meal_type: 'dinner', prompt_version: 'parse-v8', pipeline_version: '2.0' });
@@ -272,7 +284,11 @@ describe('text logging', () => {
 
 describe('photo logging', () => {
   it('stores the photo privately, runs the vision model and serves media only to the owner', async () => {
-    const out = { meal_type_guess: 'lunch', items: [{ name: 'roast chicken breast', amount: 120, unit: 'g', confidence: 0.8, search_terms: ['chicken breast roasted'] }], questions: [] };
+    const out = {
+      meal_type_guess: 'lunch',
+      items: [{ name: 'roast chicken breast', amount: 120, unit: 'g', confidence: 0.8, search_terms: ['chicken breast roasted'] }],
+      questions: [],
+    };
     const ai = fakeAI([{ response: JSON.stringify(out) }]);
     const jpeg = new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3])], { type: 'image/jpeg' });
     const r = await api('/intake', { method: 'POST', body: form({ photo: new File([jpeg], 'meal.jpg', { type: 'image/jpeg' }) }) }, { AI: ai.AI });
@@ -358,7 +374,9 @@ describe('several photos of one meal', () => {
     const a = { items: [{ name: 'apple', amount: 1, unit: 'medium', confidence: 0.9 }], questions: [] };
     const b = {
       items: [{ name: 'latte', amount: 350, unit: 'ml', confidence: 0.5, estimate_per_100g: { kcal: 60 } }],
-      questions: [{ id: 'q1', item_index: 0, text: 'Size?', options: ['Regular', 'Large'], default: 'Regular', effects: { Regular: {}, Large: { set_amount: { amount: 700, unit: 'ml' } } } }],
+      questions: [
+        { id: 'q1', item_index: 0, text: 'Size?', options: ['Regular', 'Large'], default: 'Regular', effects: { Regular: {}, Large: { set_amount: { amount: 700, unit: 'ml' } } } },
+      ],
     };
     const ai = fakeAI([{ response: a }, { response: b }]);
     const r = await api('/intake', { method: 'POST', body: multi([jpg(1), jpg(2)]) }, { AI: ai.AI, DEV_USER_EMAIL: 'single-image@example.test' } as any);
@@ -412,7 +430,11 @@ describe('background processing', () => {
     expect(day.data.meals.find((m: any) => m.id === r.data.id).status).toBe('preparation');
 
     const { consume } = await import('../src/worker/lib/jobs');
-    const out = { meal_type_guess: 'dinner', items: [{ name: 'chicken breast', amount: 120, unit: 'g', confidence: 0.9, search_terms: ['chicken breast roasted'] }], questions: [] };
+    const out = {
+      meal_type_guess: 'dinner',
+      items: [{ name: 'chicken breast', amount: 120, unit: 'g', confidence: 0.9, search_terms: ['chicken breast roasted'] }],
+      questions: [],
+    };
     const acks: string[] = [];
     const msg = { body: sent[0], attempts: 1, ack: () => acks.push('ack'), retry: () => acks.push('retry') };
     await consume({ messages: [msg] } as never, { ...testEnv, AI: fakeAI([{ response: out }]).AI } as never, 2);

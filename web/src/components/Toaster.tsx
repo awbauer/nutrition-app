@@ -20,7 +20,11 @@ export function Toaster() {
   const [items, setItems] = useState<Toast[]>([]);
   useEffect(() => subscribe(setItems), []);
   return (
-    <div class="pointer-events-none fixed inset-x-0 top-0 z-50 flex flex-col items-center gap-2 px-4" style={{ paddingTop: 'max(env(safe-area-inset-top), 0.75rem)' }} aria-live="polite">
+    <div
+      class="pointer-events-none fixed inset-x-0 top-0 z-50 flex flex-col items-center gap-2 px-4"
+      style={{ paddingTop: 'max(env(safe-area-inset-top), 0.75rem)' }}
+      aria-live="polite"
+    >
       {items.map((t) => (
         <div
           key={t.id}

@@ -44,8 +44,7 @@ describe('settings', () => {
     const ok = await api('/settings', { method: 'PUT', json: { home_blocks: ['summary', 'repeat', 'meals', 'weight'] } });
     expect(ok.data.home_blocks).toEqual(['summary', 'repeat', 'meals', 'weight']);
     expect((await api('/me')).data.settings.home_blocks).toEqual(['summary', 'repeat', 'meals', 'weight']);
-    for (const bad of [['summary', 'summary'], ['summary', 'nope'], 'summary'])
-      expect((await api('/settings', { method: 'PUT', json: { home_blocks: bad } })).status).toBe(400);
+    for (const bad of [['summary', 'summary'], ['summary', 'nope'], 'summary']) expect((await api('/settings', { method: 'PUT', json: { home_blocks: bad } })).status).toBe(400);
   });
 });
 
@@ -178,7 +177,13 @@ describe('manual intake and daily totals', () => {
   it('sets confidence per item without touching the numbers', async () => {
     const r = await api('/intake', {
       method: 'POST',
-      json: { occurrence_at: '2026-11-06T12:00:00Z', items: [{ fdc_id: 171477, amount: 100, unit: 'g' }, { fdc_id: 168878, amount: 100, unit: 'g' }] },
+      json: {
+        occurrence_at: '2026-11-06T12:00:00Z',
+        items: [
+          { fdc_id: 171477, amount: 100, unit: 'g' },
+          { fdc_id: 168878, amount: 100, unit: 'g' },
+        ],
+      },
     });
     const [a, b] = r.data.items;
     const low = await api(`/item/${a.id}`, { method: 'PATCH', json: { confidence: 0.3 } });
@@ -194,7 +199,7 @@ describe('manual intake and daily totals', () => {
     expect((await api(`/item/${a.id}`, { method: 'PATCH', json: { confidence: 2 } })).status).toBe(400);
   });
 
-  it('accepts relative sizes: handfuls, bowls, glasses, and the food\'s own portions first', async () => {
+  it("accepts relative sizes: handfuls, bowls, glasses, and the food's own portions first", async () => {
     const r = await api('/intake', { method: 'POST', json: { occurrence_at: '2026-11-07T12:00:00Z', items: [{ fdc_id: 171477, amount: 100, unit: 'g' }] } });
     const id = r.data.items[0].id;
     const handful = await api(`/item/${id}`, { method: 'PATCH', json: { amount: 1, unit: 'handful' } });

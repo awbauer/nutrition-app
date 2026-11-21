@@ -147,9 +147,7 @@ intake.patch('/:id', async (c) => {
     vals.push(body.status);
   }
   if (!sets.length) throw new HttpError(400, 'nothing to update');
-  await c.env.DB.prepare(
-    `UPDATE nutrition_intake SET ${sets.join(', ')}, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ? AND user_id = ?`,
-  )
+  await c.env.DB.prepare(`UPDATE nutrition_intake SET ${sets.join(', ')}, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ? AND user_id = ?`)
     .bind(...vals, id, user.id)
     .run();
   return c.json(await getIntake(c.env.DB, user.id, id));
@@ -158,9 +156,7 @@ intake.patch('/:id', async (c) => {
 /** DELETE /api/intake/:id -> soft delete (status entered-in-error). */
 intake.delete('/:id', async (c) => {
   const user = c.get('user');
-  const r = await c.env.DB.prepare(
-    `UPDATE nutrition_intake SET status = 'entered-in-error', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ? AND user_id = ?`,
-  )
+  const r = await c.env.DB.prepare(`UPDATE nutrition_intake SET status = 'entered-in-error', updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ? AND user_id = ?`)
     .bind(c.req.param('id'), user.id)
     .run();
   if (!r.meta.changes) throw new HttpError(404, 'intake not found');
@@ -212,11 +208,6 @@ intake.post('/:id/copy', async (c) => {
     });
   }
   if (!items.length) throw new HttpError(400, 'meal has no items to copy');
-  const newId = await createIntake(
-    c.env,
-    user,
-    { source: 'copy', meal_type: body.meal_type ?? src.meal_type, occurrence_at: body.occurrence_at, note: src.note },
-    items,
-  );
+  const newId = await createIntake(c.env, user, { source: 'copy', meal_type: body.meal_type ?? src.meal_type, occurrence_at: body.occurrence_at, note: src.note }, items);
   return c.json(await getIntake(c.env.DB, user.id, newId), 201);
 });

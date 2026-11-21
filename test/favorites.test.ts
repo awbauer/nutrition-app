@@ -6,9 +6,8 @@ const OTHER = { DEV_USER_EMAIL: 'fav-other@example.test' };
 
 describe('favorite foods', () => {
   it('stars, lists with kcal, updates by name, shows in quick add and unstars', async () => {
-    const oreo = (
-      await api('/foods', { method: 'POST', json: { name: 'Oreo', per_100g: { ENERC_KCAL: 500 }, serving_grams: 36, serving_label: '2 cookies (36g)' } }, U)
-    ).data.id as string;
+    const oreo = (await api('/foods', { method: 'POST', json: { name: 'Oreo', per_100g: { ENERC_KCAL: 500 }, serving_grams: 36, serving_label: '2 cookies (36g)' } }, U)).data
+      .id as string;
     const yogurt = (await api('/foods', { method: 'POST', json: { name: 'Greek yogurt', per_100g: { ENERC_KCAL: 60 } } }, U)).data.id as string;
 
     const a = await api('/foods/favorites', { method: 'POST', json: { name: 'oreos', food_id: oreo, amount: 3, unit: 'cookie' } }, U);

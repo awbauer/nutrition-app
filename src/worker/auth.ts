@@ -42,10 +42,7 @@ function cookie(req: Request, name: string): string | null {
 }
 
 export async function upsertUser(db: D1Database, sub: string, email: string | null): Promise<User> {
-  const existing = await db
-    .prepare('SELECT id, access_sub, email, timezone FROM users WHERE access_sub = ?')
-    .bind(sub)
-    .first<User>();
+  const existing = await db.prepare('SELECT id, access_sub, email, timezone FROM users WHERE access_sub = ?').bind(sub).first<User>();
   if (existing) {
     if (email && existing.email !== email) {
       await db.prepare('UPDATE users SET email = ? WHERE id = ?').bind(email, existing.id).run();
@@ -54,14 +51,8 @@ export async function upsertUser(db: D1Database, sub: string, email: string | nu
     return existing;
   }
   const id = newId();
-  await db
-    .prepare('INSERT INTO users (id, access_sub, email) VALUES (?, ?, ?) ON CONFLICT (access_sub) DO NOTHING')
-    .bind(id, sub, email)
-    .run();
-  return (await db
-    .prepare('SELECT id, access_sub, email, timezone FROM users WHERE access_sub = ?')
-    .bind(sub)
-    .first<User>())!;
+  await db.prepare('INSERT INTO users (id, access_sub, email) VALUES (?, ?, ?) ON CONFLICT (access_sub) DO NOTHING').bind(id, sub, email).run();
+  return (await db.prepare('SELECT id, access_sub, email, timezone FROM users WHERE access_sub = ?').bind(sub).first<User>())!;
 }
 
 export const requireUser = createMiddleware<AppEnv>(async (c, next) => {

@@ -18,7 +18,7 @@ async function setup(email: string) {
 }
 
 describe('adding to an existing meal', () => {
-  it('main button: a second lunch joins the day\'s lunch; snacks stay separate', async () => {
+  it("main button: a second lunch joins the day's lunch; snacks stay separate", async () => {
     const { U, toast, egg } = await setup('merge-manual@example.test');
     const a = await api('/intake', { method: 'POST', json: { meal_type: 'lunch', occurrence_at: AT(12), merge: true, items: [{ food_id: toast, amount: 50, unit: 'g' }] } }, U);
     const b = await api('/intake', { method: 'POST', json: { meal_type: 'lunch', occurrence_at: AT(13), merge: true, items: [{ food_id: egg, amount: 100, unit: 'g' }] } }, U);
@@ -33,7 +33,11 @@ describe('adding to an existing meal', () => {
     const c = await api('/intake', { method: 'POST', json: { meal_type: 'lunch', occurrence_at: AT(14), items: [{ food_id: egg, amount: 50, unit: 'g' }] } }, U);
     expect(c.data.id).not.toBe(a.data.id);
     // A different day doesn't merge.
-    const d = await api('/intake', { method: 'POST', json: { meal_type: 'lunch', occurrence_at: '2026-11-11T12:00:00Z', merge: true, items: [{ food_id: egg, amount: 50, unit: 'g' }] } }, U);
+    const d = await api(
+      '/intake',
+      { method: 'POST', json: { meal_type: 'lunch', occurrence_at: '2026-11-11T12:00:00Z', merge: true, items: [{ food_id: egg, amount: 50, unit: 'g' }] } },
+      U,
+    );
     expect(d.data.log_date).toBe('2026-11-11');
     expect(d.data.id).not.toBe(a.data.id);
   });
@@ -46,7 +50,7 @@ describe('adding to an existing meal', () => {
     expect(r.data.items).toHaveLength(2);
   });
 
-  it('AI entries are analyzed, then merged into the day\'s meal of their type', async () => {
+  it("AI entries are analyzed, then merged into the day's meal of their type", async () => {
     const { U, toast } = await setup('merge-ai@example.test');
     const lunch = await api('/intake', { method: 'POST', json: { meal_type: 'lunch', occurrence_at: AT(12), items: [{ food_id: toast, amount: 50, unit: 'g' }] } }, U);
     const out = { items: [{ name: 'egg', amount: 100, unit: 'g', confidence: 0.9, estimate_per_100g: { kcal: 143, protein: 12 } }], questions: [] };
@@ -69,7 +73,16 @@ describe('adding to an existing meal', () => {
     const dinner = await api('/intake', { method: 'POST', json: { meal_type: 'dinner', occurrence_at: AT(19), items: [{ food_id: toast, amount: 50, unit: 'g' }] } }, U);
     const out = {
       items: [{ name: 'egg', amount: 100, unit: 'g', confidence: 0.5, estimate_per_100g: { kcal: 143 } }],
-      questions: [{ id: 'q1', item_index: 0, text: 'How many?', options: ['One (50 g)', 'Three (150 g)'], default: 'One (50 g)', effects: { 'One (50 g)': { set_amount: { amount: 50, unit: 'g' } }, 'Three (150 g)': { set_amount: { amount: 150, unit: 'g' } } } }],
+      questions: [
+        {
+          id: 'q1',
+          item_index: 0,
+          text: 'How many?',
+          options: ['One (50 g)', 'Three (150 g)'],
+          default: 'One (50 g)',
+          effects: { 'One (50 g)': { set_amount: { amount: 50, unit: 'g' } }, 'Three (150 g)': { set_amount: { amount: 150, unit: 'g' } } },
+        },
+      ],
     };
     const r = await api('/intake', { method: 'POST', body: form({ text: 'eggs', meal_type: 'dinner', occurrence_at: AT(20), merge: '1' }) }, { ...U, AI: ai(out) });
     expect(r.data.status).toBe('in-progress');
@@ -111,7 +124,19 @@ describe('adding to an existing meal', () => {
 
   it('only finished meals accept new items', async () => {
     const { U } = await setup('merge-guard@example.test');
-    const out = { items: [{ name: 'egg', amount: 100, unit: 'g', confidence: 0.5 }], questions: [{ id: 'q1', item_index: 0, text: 'Size?', options: ['S', 'L'], default: 'S', effects: { S: { set_amount: { amount: 50, unit: 'g' } }, L: { set_amount: { amount: 300, unit: 'g' } } } }] };
+    const out = {
+      items: [{ name: 'egg', amount: 100, unit: 'g', confidence: 0.5 }],
+      questions: [
+        {
+          id: 'q1',
+          item_index: 0,
+          text: 'Size?',
+          options: ['S', 'L'],
+          default: 'S',
+          effects: { S: { set_amount: { amount: 50, unit: 'g' } }, L: { set_amount: { amount: 300, unit: 'g' } } },
+        },
+      ],
+    };
     const open = await api('/intake', { method: 'POST', body: form({ text: 'eggs', meal_type: 'dinner' }) }, { ...U, AI: ai(out) });
     expect(open.data.status).toBe('in-progress');
     const r = await api('/intake', { method: 'POST', body: form({ text: 'toast', append_to: open.data.id }) }, U);

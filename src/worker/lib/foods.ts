@@ -44,9 +44,7 @@ export const sourceSql = (f: string) =>
   `CASE WHEN ${f}.source = 'custom' AND ${f}.owner_user_id IS NULL AND ${f}.source_id LIKE '${FS_PREFIX}%' THEN 'fatsecret' ELSE ${f}.source END`;
 const toStored = (source: string, sourceId: string): [string, string] => (source === 'fatsecret' ? ['custom', FS_PREFIX + sourceId] : [source, sourceId]);
 function fromStored(r: FoodRow): FoodRow {
-  return r.source === 'custom' && r.owner_user_id == null && r.source_id?.startsWith(FS_PREFIX)
-    ? { ...r, source: 'fatsecret', source_id: r.source_id.slice(FS_PREFIX.length) }
-    : r;
+  return r.source === 'custom' && r.owner_user_id == null && r.source_id?.startsWith(FS_PREFIX) ? { ...r, source: 'fatsecret', source_id: r.source_id.slice(FS_PREFIX.length) } : r;
 }
 
 interface FoodRow {
@@ -97,10 +95,7 @@ const FOOD_COLS = 'id, source, source_id, name, brand, data_type, category, defa
 
 /** Load a food visible to the user (shared, or owned by them). */
 export async function getFood(db: D1Database, userId: string, id: string): Promise<FoodRecord | null> {
-  const row = await db
-    .prepare(`SELECT ${FOOD_COLS} FROM food WHERE id = ? AND (owner_user_id IS NULL OR owner_user_id = ?)`)
-    .bind(id, userId)
-    .first<FoodRow>();
+  const row = await db.prepare(`SELECT ${FOOD_COLS} FROM food WHERE id = ? AND (owner_user_id IS NULL OR owner_user_id = ?)`).bind(id, userId).first<FoodRow>();
   return row ? (await hydrate(db, [row]))[0]! : null;
 }
 
@@ -115,10 +110,7 @@ export async function findCachedBySource(db: D1Database, source: string, sourceI
 /** Insert or refresh a database food (shared) and its nutrients. Returns the stored record. */
 export async function cacheFood(db: D1Database, f: NormalisedFood | ExternalFood): Promise<FoodRecord> {
   const [source, sourceId] = toStored(f.source, f.sourceId);
-  const existing = await db
-    .prepare('SELECT id FROM food WHERE source = ? AND source_id = ? AND owner_user_id IS NULL')
-    .bind(source, sourceId)
-    .first<{ id: string }>();
+  const existing = await db.prepare('SELECT id FROM food WHERE source = ? AND source_id = ? AND owner_user_id IS NULL').bind(source, sourceId).first<{ id: string }>();
   const id = existing?.id ?? newId();
   const stmts: D1PreparedStatement[] = [];
   if (existing) {
@@ -140,9 +132,7 @@ export async function cacheFood(db: D1Database, f: NormalisedFood | ExternalFood
   }
   for (const n of f.nutrients) {
     stmts.push(
-      db
-        .prepare('INSERT INTO food_nutrient (food_id, nutrient_code, usda_nutrient_id, value_per_100g, unit) VALUES (?, ?, ?, ?, ?)')
-        .bind(id, n.code, n.usdaId, n.value, n.unit),
+      db.prepare('INSERT INTO food_nutrient (food_id, nutrient_code, usda_nutrient_id, value_per_100g, unit) VALUES (?, ?, ?, ?, ?)').bind(id, n.code, n.usdaId, n.value, n.unit),
     );
   }
   if ('raw' in f && f.raw) {
@@ -222,7 +212,10 @@ const NOT_ARCHIVED = 'food.archived_at IS NULL AND NOT EXISTS (SELECT 1 FROM rec
 
 /** Token-based fuzzy search over the user's custom foods and the shared cache. */
 export async function searchLocal(db: D1Database, userId: string, q: string, limit = 10): Promise<FoodRecord[]> {
-  const tokens = normName(q).split(' ').filter((t) => t.length > 1).slice(0, 5);
+  const tokens = normName(q)
+    .split(' ')
+    .filter((t) => t.length > 1)
+    .slice(0, 5);
   if (!tokens.length) return [];
   const where = tokens.map(() => 'name_norm LIKE ?').join(' AND ');
   const { results } = await db
@@ -274,9 +267,7 @@ function customParts(input: CustomFoodInput): { per100: Record<string, number>; 
   }
   if (!per100) throw new HttpError(400, 'per_100g or per_serving is required');
   if (!(Number.isFinite(per100.ENERC_KCAL) && per100.ENERC_KCAL! >= 0)) throw new HttpError(400, 'calories are required');
-  const portions: Portion[] = input.serving_grams
-    ? [{ label: input.serving_label || 'serving', unit: 'serving', amount: 1, grams: input.serving_grams }]
-    : [];
+  const portions: Portion[] = input.serving_grams ? [{ label: input.serving_label || 'serving', unit: 'serving', amount: 1, grams: input.serving_grams }] : [];
   return { per100, portions };
 }
 
@@ -286,9 +277,7 @@ function nutrientInserts(db: D1Database, id: string, per100: Record<string, numb
     const def = NUTRIENT_BY_CODE.get(code);
     if (!def || !Number.isFinite(value) || value < 0) continue;
     out.push(
-      db
-        .prepare('INSERT INTO food_nutrient (food_id, nutrient_code, usda_nutrient_id, value_per_100g, unit) VALUES (?, ?, ?, ?, ?)')
-        .bind(id, code, def.usdaId, value, def.unit),
+      db.prepare('INSERT INTO food_nutrient (food_id, nutrient_code, usda_nutrient_id, value_per_100g, unit) VALUES (?, ?, ?, ?, ?)').bind(id, code, def.usdaId, value, def.unit),
     );
   }
   return out;

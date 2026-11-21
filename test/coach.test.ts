@@ -58,9 +58,22 @@ describe('coach digest', () => {
 
   it('scores logging from coverage, matching, answers and promptness', () => {
     const base: PeriodStats = {
-      from: '', to: '', days: 7, days_logged: 7, days_probably_incomplete: 0, avg: {}, days_within_10pct_kcal: 0, days_protein_target_met: 0,
-      meals_per_logged_day: 3, meal_days: { breakfast: 7, lunch: 7, dinner: 7 }, items: 20, pct_items_ai_estimate: 0, pct_items_unsure: 0,
-      meals_waiting_on_answers: 0, median_log_delay_min: 0, sources: {},
+      from: '',
+      to: '',
+      days: 7,
+      days_logged: 7,
+      days_probably_incomplete: 0,
+      avg: {},
+      days_within_10pct_kcal: 0,
+      days_protein_target_met: 0,
+      meals_per_logged_day: 3,
+      meal_days: { breakfast: 7, lunch: 7, dinner: 7 },
+      items: 20,
+      pct_items_ai_estimate: 0,
+      pct_items_unsure: 0,
+      meals_waiting_on_answers: 0,
+      median_log_delay_min: 0,
+      sources: {},
     };
     expect(loggingScore(base)).toBe(100);
     expect(loggingScore({ ...base, days_logged: 0 })).toBe(0);
@@ -68,7 +81,9 @@ describe('coach digest', () => {
   });
 
   it('keeps only well-formed report fields', () => {
-    expect(validateReport(JSON.stringify({ ...REPORT, coaching: [{ title: 'x' }, { title: 'y', detail: 'z' }], extra: 1 }))).toMatchObject({ coaching: [{ title: 'y', detail: 'z' }] });
+    expect(validateReport(JSON.stringify({ ...REPORT, coaching: [{ title: 'x' }, { title: 'y', detail: 'z' }], extra: 1 }))).toMatchObject({
+      coaching: [{ title: 'y', detail: 'z' }],
+    });
     expect(() => validateReport({ summary: 'no headline' })).toThrow();
   });
 });
@@ -190,7 +205,7 @@ describe('coach v2: macro split, streaks, changes, plans, no repeats', () => {
     expect((d.plans.high_protein_meals.breakfast ?? []).some((m) => m.items.includes('brunch'))).toBe(false);
   });
 
-  it("rewrites a headline that repeats a recent one, and tells the coach what it said before", async () => {
+  it('rewrites a headline that repeats a recent one, and tells the coach what it said before', async () => {
     const { E, log, user } = await setup('coach-repeat@example.test');
     await log('lunch', '2026-11-12T12:00:00Z');
     await log('lunch', '2026-11-13T12:00:00Z');

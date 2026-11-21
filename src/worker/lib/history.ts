@@ -22,8 +22,37 @@ const DELETE_BATCH = 1000;
 
 /** Words that point at the user's past rather than describing the food. */
 const FILLER = new Set([
-  'those', 'that', 'these', 'this', 'my', 'usual', 'like', 'liked', 'love', 'i', 'ive', 'ones', 'one', 'same', 'again', 'before',
-  'favorite', 'favourite', 'had', 'have', 'eat', 'ate', 'always', 'get', 'got', 'the', 'from', 'last', 'time', 'yesterday', 'regular',
+  'those',
+  'that',
+  'these',
+  'this',
+  'my',
+  'usual',
+  'like',
+  'liked',
+  'love',
+  'i',
+  'ive',
+  'ones',
+  'one',
+  'same',
+  'again',
+  'before',
+  'favorite',
+  'favourite',
+  'had',
+  'have',
+  'eat',
+  'ate',
+  'always',
+  'get',
+  'got',
+  'the',
+  'from',
+  'last',
+  'time',
+  'yesterday',
+  'regular',
 ]);
 
 /** "those chicken meatballs I like" -> "chicken meatballs". Falls back to the input if nothing is left. */
@@ -124,7 +153,10 @@ async function currentGroups(db: D1Database, userId?: string): Promise<Group[]> 
   }
   return [...byKey.values()].map(({ counts, ...g }) => ({
     ...g,
-    names: [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([n]) => n),
+    names: [...counts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 4)
+      .map(([n]) => n),
   }));
 }
 
@@ -151,7 +183,9 @@ export async function refreshHistory(env: Env, userId?: string): Promise<{ embed
     const names = JSON.stringify(g.names);
     if (prev && prev.text === text && prev.indexed_at) {
       if (prev.times !== g.times || prev.last_at !== g.last_at || prev.names_json !== names)
-        stmts.push(db.prepare('UPDATE history_entry SET times = ?, last_at = ?, names_json = ? WHERE user_id = ? AND food_id = ?').bind(g.times, g.last_at, names, g.user_id, g.food_id));
+        stmts.push(
+          db.prepare('UPDATE history_entry SET times = ?, last_at = ?, names_json = ? WHERE user_id = ? AND food_id = ?').bind(g.times, g.last_at, names, g.user_id, g.food_id),
+        );
       continue;
     }
     toEmbed.push({ ...g, vector_id: prev?.vector_id ?? (await sha256(key)), text });
@@ -159,10 +193,11 @@ export async function refreshHistory(env: Env, userId?: string): Promise<{ embed
   const gone = [...old.values()];
 
   if (toEmbed.length && env.HISTORY) {
-    const vectors = await embed(env, toEmbed.map((e) => e.text));
-    await env.HISTORY.upsert(
-      toEmbed.map((e, i) => ({ id: e.vector_id, values: vectors[i]!, metadata: { user_id: e.user_id, food_id: e.food_id } })),
+    const vectors = await embed(
+      env,
+      toEmbed.map((e) => e.text),
     );
+    await env.HISTORY.upsert(toEmbed.map((e, i) => ({ id: e.vector_id, values: vectors[i]!, metadata: { user_id: e.user_id, food_id: e.food_id } })));
   }
   for (const e of toEmbed) {
     stmts.push(

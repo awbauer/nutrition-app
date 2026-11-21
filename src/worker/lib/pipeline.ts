@@ -273,9 +273,7 @@ export async function applyAnswers(env: Env, user: User, intakeId: string, answe
   ];
   items.forEach((it, i) => stmts.push(...itemStatements(env.DB, user.id, intakeId, it, i)));
   stmts.push(
-    env.DB.prepare(
-      `UPDATE nutrition_intake SET status = 'completed', pending_json = NULL, recorded_at = ? WHERE id = ? AND user_id = ?`,
-    ).bind(nowIso(), intakeId, user.id),
+    env.DB.prepare(`UPDATE nutrition_intake SET status = 'completed', pending_json = NULL, recorded_at = ? WHERE id = ? AND user_id = ?`).bind(nowIso(), intakeId, user.id),
     refreshConfidence(env.DB, intakeId),
   );
   await env.DB.batch(stmts);

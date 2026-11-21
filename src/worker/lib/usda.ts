@@ -97,7 +97,10 @@ export class UsdaClient {
   async searchAll(query: string, pageSize = 15): Promise<NormalisedFood[]> {
     const hits = await this.search(query, SEARCH_TIERS.flat(), pageSize);
     const rank = (dt: string) => SEARCH_TIERS.findIndex((t) => (t as readonly string[]).includes(dt));
-    return hits.map((h, i) => ({ h, i })).sort((a, b) => rank(a.h.dataType) - rank(b.h.dataType) || a.i - b.i).map((x) => x.h);
+    return hits
+      .map((h, i) => ({ h, i }))
+      .sort((a, b) => rank(a.h.dataType) - rank(b.h.dataType) || a.i - b.i)
+      .map((x) => x.h);
   }
 
   /** Search tiers in order and return the first non-empty tier (or all tiers merged when `all`). */
@@ -158,9 +161,7 @@ function brandedServing(f: { servingSize?: number; servingSizeUnit?: string; hou
   const unit = f.servingSizeUnit?.toLowerCase();
   if (!f.servingSize || !unit) return { grams: null, portions: [] as Portion[] };
   const grams = unit === 'g' || unit === 'grm' || unit === 'ml' || unit === 'mlt' ? f.servingSize : null;
-  const portions: Portion[] = grams
-    ? [{ label: f.householdServingFullText || 'serving', unit: 'serving', amount: 1, grams }]
-    : [];
+  const portions: Portion[] = grams ? [{ label: f.householdServingFullText || 'serving', unit: 'serving', amount: 1, grams }] : [];
   return { grams, portions };
 }
 
@@ -193,7 +194,8 @@ export function snapshotOf<T extends object>(f: T): T {
         const keep = strip(n, 'nutrientAnalysisDetails', 'type', 'id', 'foodNutrientId', 'rank', 'indentLevel') as Record<string, unknown>;
         if (keep.nutrient) keep.nutrient = strip(keep.nutrient, 'rank');
         const der = keep.foodNutrientDerivation as Record<string, unknown> | undefined;
-        if (der && typeof der === 'object') keep.foodNutrientDerivation = { ...(strip(der, 'id') as object), ...(der.foodNutrientSource ? { foodNutrientSource: strip(der.foodNutrientSource, 'id') } : {}) };
+        if (der && typeof der === 'object')
+          keep.foodNutrientDerivation = { ...(strip(der, 'id') as object), ...(der.foodNutrientSource ? { foodNutrientSource: strip(der.foodNutrientSource, 'id') } : {}) };
         return keep;
       }),
   } as T;
@@ -226,9 +228,7 @@ export function normaliseSearchFood(f: UsdaSearchFood): NormalisedFood {
 
 export function normaliseDetailFood(f: UsdaDetailFood): NormalisedFood {
   const nutrients = fromUsda(
-    (f.foodNutrients ?? [])
-      .filter((n) => n.nutrient && typeof n.amount === 'number')
-      .map((n) => ({ id: n.nutrient!.id, value: n.amount!, unit: n.nutrient!.unitName })),
+    (f.foodNutrients ?? []).filter((n) => n.nutrient && typeof n.amount === 'number').map((n) => ({ id: n.nutrient!.id, value: n.amount!, unit: n.nutrient!.unitName })),
   );
   const branded = brandedServing(f);
   const portions: Portion[] = (f.foodPortions ?? [])

@@ -56,9 +56,7 @@ export async function dispatchReminders(env: Env, now = new Date(), send = sendP
     const due = dueOn(r, now, r.timezone);
     if (!due) continue;
     // Mark first so an overlapping cron run can't double-send.
-    const claimed = await env.DB.prepare(`UPDATE reminder SET last_sent_on = ? WHERE id = ? AND (last_sent_on IS NULL OR last_sent_on != ?)`)
-      .bind(due, r.id, due)
-      .run();
+    const claimed = await env.DB.prepare(`UPDATE reminder SET last_sent_on = ? WHERE id = ? AND (last_sent_on IS NULL OR last_sent_on != ?)`).bind(due, r.id, due).run();
     if (!claimed.meta.changes) continue;
 
     const msg = await buildMessage(env, r, now);
@@ -91,14 +89,17 @@ export async function buildMessage(env: Env, r: ReminderRow & { timezone: string
   const date = logDate(now.toISOString(), r.timezone, settings.day_cutoff);
   if (r.kind === 'meal') {
     if (r.meal_type) {
-      const logged = await env.DB.prepare(
-        `SELECT 1 FROM nutrition_intake WHERE user_id = ? AND log_date = ? AND meal_type = ? AND status != 'entered-in-error' LIMIT 1`,
-      )
+      const logged = await env.DB.prepare(`SELECT 1 FROM nutrition_intake WHERE user_id = ? AND log_date = ? AND meal_type = ? AND status != 'entered-in-error' LIMIT 1`)
         .bind(r.user_id, date, r.meal_type)
         .first();
       if (logged) return null;
     }
-    return { title: r.label, body: r.meal_type ? `Log your ${r.meal_type}? It takes a few seconds.` : 'Time to log what you ate.', url: '/#today', tag: `meal-${r.meal_type ?? 'any'}` };
+    return {
+      title: r.label,
+      body: r.meal_type ? `Log your ${r.meal_type}? It takes a few seconds.` : 'Time to log what you ate.',
+      url: '/#today',
+      tag: `meal-${r.meal_type ?? 'any'}`,
+    };
   }
   // End-of-day nudge.
   const [days, goals] = await Promise.all([dailyTotals(env.DB, r.user_id, date, date), goalsOn(env.DB, r.user_id, date)]);

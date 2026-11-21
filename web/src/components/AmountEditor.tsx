@@ -114,14 +114,22 @@ export function AmountEditor(props: {
         )}
         <p class="text-sm text-ink-2">
           {/* With grams the weight is already in the box; just show the energy. */}
-          {grams ? '=' : <>≈ <span class="num text-ink">{Math.round(estimate.grams)}</span> g</>}
+          {grams ? (
+            '='
+          ) : (
+            <>
+              ≈ <span class="num text-ink">{Math.round(estimate.grams)}</span> g
+            </>
+          )}
           {props.kcalPer100 != null && (
             <>
               {grams ? ' ' : ' · '}
               <span class="num text-ink">{Math.round((props.kcalPer100 * estimate.grams) / 100)}</span> kcal
             </>
           )}
-          {props.hint !== false && !exactUnit && estimate.method === 'generic' && <span class="block text-xs text-faint">typical size; switch to {EXACT_UNITS[fit.exact[0]!]!.label.toLowerCase()} for an exact amount</span>}
+          {props.hint !== false && !exactUnit && estimate.method === 'generic' && (
+            <span class="block text-xs text-faint">typical size; switch to {EXACT_UNITS[fit.exact[0]!]!.label.toLowerCase()} for an exact amount</span>
+          )}
         </p>
       </div>
     </div>

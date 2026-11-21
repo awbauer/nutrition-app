@@ -59,7 +59,13 @@ function valuesFrom(f?: Food): Values {
 function amountText(a: number): string {
   const whole = Math.floor(a + 1e-6);
   const frac = a - whole;
-  const f = [[1 / 4, '1/4'], [1 / 3, '1/3'], [1 / 2, '1/2'], [2 / 3, '2/3'], [3 / 4, '3/4']].find(([v]) => Math.abs(frac - (v as number)) < 0.02)?.[1];
+  const f = [
+    [1 / 4, '1/4'],
+    [1 / 3, '1/3'],
+    [1 / 2, '1/2'],
+    [2 / 3, '2/3'],
+    [3 / 4, '3/4'],
+  ].find(([v]) => Math.abs(frac - (v as number)) < 0.02)?.[1];
   if (frac < 0.02) return String(whole);
   return f ? (whole ? `${whole} ${f}` : String(f)) : round(a);
 }
@@ -163,11 +169,7 @@ export function CustomFoodForm(props: { food?: Food; initialName?: string; onSav
           </>
         )}
       </button>
-      {!props.food && (
-        <p class="-mt-2 text-xs text-ink-2">
-          A photo of the Nutrition Facts panel, or a screenshot of a restaurant app's nutrition screen. Or type the numbers in.
-        </p>
-      )}
+      {!props.food && <p class="-mt-2 text-xs text-ink-2">A photo of the Nutrition Facts panel, or a screenshot of a restaurant app's nutrition screen. Or type the numbers in.</p>}
 
       <label class="flex flex-col gap-1">
         <span class="text-sm font-medium">Name</span>
@@ -200,9 +202,7 @@ export function CustomFoodForm(props: { food?: Food; initialName?: string; onSav
           </div>
         </label>
       </div>
-      {v.gramsEstimated && (
-        <p class="-mt-2 text-xs text-mustard">The label doesn't give a weight, so this is an estimate. It only matters if you log this food by weight.</p>
-      )}
+      {v.gramsEstimated && <p class="-mt-2 text-xs text-mustard">The label doesn't give a weight, so this is an estimate. It only matters if you log this food by weight.</p>}
 
       <fieldset class="card px-4 py-1">
         <legend class="sr-only">Nutrition per serving</legend>

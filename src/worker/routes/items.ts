@@ -26,8 +26,7 @@ interface ItemRow {
   match_json: string | null;
 }
 
-const loadRow = (db: D1Database, id: string, userId: string) =>
-  db.prepare('SELECT * FROM consumed_item WHERE id = ? AND user_id = ?').bind(id, userId).first<ItemRow>();
+const loadRow = (db: D1Database, id: string, userId: string) => db.prepare('SELECT * FROM consumed_item WHERE id = ? AND user_id = ?').bind(id, userId).first<ItemRow>();
 
 const parseMatch = (j: string | null): MatchInfo | null => {
   try {
@@ -77,9 +76,11 @@ items.get('/:id/search', async (c) => {
   const est = match?.estimate_kcal_100g ?? null;
   const local = (await searchLocal(c.env.DB, user.id, q, 10)).filter((f) => f.source !== 'estimate');
   const per100 = (f: { nutrients: { code: string; value: number }[] }) => f.nutrients.find((n) => n.code === 'ENERC_KCAL')?.value ?? null;
-  const rankedLocal = rankCandidates(q, local.map((f) => ({ ...f, dataType: f.data_type, kcal100: per100(f) })), est).map((r) =>
-    localCandidate(r.candidate, r.score, r.reasons),
-  );
+  const rankedLocal = rankCandidates(
+    q,
+    local.map((f) => ({ ...f, dataType: f.data_type, kcal100: per100(f) })),
+    est,
+  ).map((r) => localCandidate(r.candidate, r.score, r.reasons));
   let remote: ReturnType<typeof usdaCandidate>[] = [];
   let error: string | undefined;
   const seenUsda = new Set(rankedLocal.map((r) => r.fdc_id).filter(Boolean));
@@ -137,7 +138,10 @@ items.patch('/:id', async (c) => {
   // Same household unit, new count, and the saved weight came from the AI's estimate rather than the
   // generic size table: keep its weight per unit ("2 small" bananas = 2 × its 80 g, not 2 × 100 g).
   const sameUnit = !swapping && ucum(unit) === row.amount_unit;
-  const fromAi = sameUnit && row.amount_value > 0 && toGrams(row.amount_value, row.amount_unit, food).method === 'generic' &&
+  const fromAi =
+    sameUnit &&
+    row.amount_value > 0 &&
+    toGrams(row.amount_value, row.amount_unit, food).method === 'generic' &&
     Math.abs(toGrams(row.amount_value, row.amount_unit, food).grams - row.grams) > 0.5;
   const grams = body.grams ?? (fromAi ? (row.grams / row.amount_value) * amount : amountChanged || swapping ? undefined : row.grams);
   const edited = swapping || amountChanged || body.grams !== undefined;

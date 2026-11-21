@@ -40,7 +40,16 @@ describe('meal change log', () => {
 
     const h = await api(`/intake/${id}/history`);
     expect(h.status).toBe(200);
-    expect(kinds(h)).toEqual(['app:meal_created', 'app:item_added', 'app:food_swapped', 'app:renamed', 'app:amount_changed', 'app:item_added', 'app:item_removed', 'mcp:meal_changed']);
+    expect(kinds(h)).toEqual([
+      'app:meal_created',
+      'app:item_added',
+      'app:food_swapped',
+      'app:renamed',
+      'app:amount_changed',
+      'app:item_added',
+      'app:item_removed',
+      'mcp:meal_changed',
+    ]);
     const swap = h.data.events[2];
     expect(swap.before.food_name).toBe('Egg deviled');
     expect(swap.after.food_name).toBe('Egg whole cooked');

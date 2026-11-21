@@ -67,14 +67,19 @@ function dayCard(p: Payload): string {
   const g = p.targets ?? {};
   const meals = (p.meals ?? []).filter((m: Rec) => m.status !== 'entered-in-error');
   const left = g.ENERC_KCAL != null ? g.ENERC_KCAL - (t.ENERC_KCAL ?? 0) : null;
-  const status =
-    left == null ? `${n0(t.ENERC_KCAL)} kcal logged` : left >= 0 ? `${n0(left)} kcal left` : `${n0(-left)} kcal over`;
+  const status = left == null ? `${n0(t.ENERC_KCAL)} kcal logged` : left >= 0 ? `${n0(left)} kcal left` : `${n0(-left)} kcal over`;
   return `<header><p class="eyebrow">${esc(day(p.date))}</p><h1>${esc(status)}</h1></header>
   <section class="rings">
     ${ring(t.ENERC_KCAL ?? 0, g.ENERC_KCAL, 'var(--clem-accent)', 'Calories', 'kcal')}
     ${ring(t.PROCNT ?? 0, g.PROCNT, 'var(--clem-sage)', 'Protein', 'g')}
     <div class="macros">
-      ${[['Carbs', 'CHOCDF', 'g'], ['Fat', 'FAT', 'g'], ['Fiber', 'FIBTG', 'g'], ['Sugars', 'SUGAR', 'g'], ['Sodium', 'NA', 'mg']]
+      ${[
+        ['Carbs', 'CHOCDF', 'g'],
+        ['Fat', 'FAT', 'g'],
+        ['Fiber', 'FIBTG', 'g'],
+        ['Sugars', 'SUGAR', 'g'],
+        ['Sodium', 'NA', 'mg'],
+      ]
         .map(([label, code, unit]) => `<div><span class="muted">${label}</span><b>${n0(t[code!])}<small> ${unit}</small></b></div>`)
         .join('')}
     </div>
@@ -191,7 +196,7 @@ function render(p: Payload | null, error?: string) {
     root.innerHTML = `<p class="error">${esc(error)}</p>`;
     return;
   }
-  root.innerHTML = p ? RENDER[p.card]?.(p) ?? '' : '<p class="muted">Loading…</p>';
+  root.innerHTML = p ? (RENDER[p.card]?.(p) ?? '') : '<p class="muted">Loading…</p>';
 }
 
 // ---------- interactions ----------

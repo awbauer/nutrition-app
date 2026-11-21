@@ -11,7 +11,7 @@
     "enabled": true,
     "logs": { "enabled": true, "head_sampling_rate": 1 },
     "traces": { "enabled": true, "head_sampling_rate": 1 },
-    "issues": { "enabled": true }
+    "issues": { "enabled": true },
   },
   // Served at nutrition-app.<subdomain>.workers.dev behind Cloudflare Access (worker-destination app).
   "workers_dev": true,
@@ -23,12 +23,10 @@
     "not_found_handling": "single-page-application",
     // The Worker answers the API and the MCP / OAuth endpoints; without this the SPA fallback would serve
     // index.html for them.
-    "run_worker_first": ["/api/*", "/mcp", "/mcp/*", "/authorize", "/oauth/*", "/.well-known/*"]
+    "run_worker_first": ["/api/*", "/mcp", "/mcp/*", "/authorize", "/oauth/*", "/.well-known/*"],
   },
   // IDs are intentionally omitted: wrangler provisions the resources on first deploy.
-  "d1_databases": [
-    { "binding": "DB", "database_name": "nutrition", "migrations_dir": "migrations" }
-  ],
+  "d1_databases": [{ "binding": "DB", "database_name": "nutrition", "migrations_dir": "migrations" }],
   // OAuth grants and tokens for the MCP server (/mcp). Hashed and encrypted by workers-oauth-provider.
   "kv_namespaces": [{ "binding": "OAUTH_KV" }],
   "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "nutrition-media" }],
@@ -40,13 +38,13 @@
   // AI processing runs in the background so logging returns immediately.
   "queues": {
     "producers": [{ "binding": "JOBS", "queue": "nutrition-jobs" }],
-    "consumers": [{ "queue": "nutrition-jobs", "max_batch_size": 5, "max_batch_timeout": 1, "max_retries": 2 }]
+    "consumers": [{ "queue": "nutrition-jobs", "max_batch_size": 5, "max_batch_timeout": 1, "max_retries": 2 }],
   },
   "triggers": { "crons": ["*/15 * * * *"] },
   "vars": {
     // AI Gateway id used for every Workers AI call.
-    "AI_GATEWAY_ID": "nutrition"
-  }
+    "AI_GATEWAY_ID": "nutrition",
+  },
   // Secrets (wrangler secret put): ACCESS_TEAM_DOMAIN, ACCESS_AUD (both required, or every API call is 401),
   // USDA_API_KEY, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT
 }

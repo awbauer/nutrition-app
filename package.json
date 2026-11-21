@@ -12,7 +12,9 @@
     "db:migrate:remote": "wrangler d1 migrations apply nutrition --remote",
     "deploy": "npm run build:cards && vite build && wrangler d1 migrations apply nutrition --remote && wrangler deploy",
     "pretest": "npm run build:cards && vite build --logLevel warn",
-    "build:cards": "vite build -c vite.cards.config.ts --logLevel warn"
+    "build:cards": "vite build -c vite.cards.config.ts --logLevel warn",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "dependencies": {
     "@cloudflare/workers-oauth-provider": "^1.2.4",
@@ -38,6 +40,7 @@
     "idb": "^8.0.4",
     "lucide-preact": "^1.73.0",
     "preact": "^11.2.0",
+    "prettier": "3.10.1",
     "tailwindcss": "^4.3.5",
     "typescript": "^5.9.3",
     "vite": "^8.3.8",

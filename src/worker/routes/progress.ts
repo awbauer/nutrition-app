@@ -132,9 +132,7 @@ progress.get('/summary', async (c) => {
   const [days, goals, logged] = await Promise.all([
     dailyTotals(c.env.DB, user.id, start, end),
     goalsOn(c.env.DB, user.id, end),
-    c.env.DB.prepare(
-      `SELECT DISTINCT log_date FROM nutrition_intake WHERE user_id = ? AND status = 'completed' AND log_date <= ? ORDER BY log_date DESC LIMIT 400`,
-    )
+    c.env.DB.prepare(`SELECT DISTINCT log_date FROM nutrition_intake WHERE user_id = ? AND status = 'completed' AND log_date <= ? ORDER BY log_date DESC LIMIT 400`)
       .bind(user.id, t)
       .all<{ log_date: string }>(),
   ]);

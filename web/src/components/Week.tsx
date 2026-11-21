@@ -61,7 +61,11 @@ export function Week(props: { today: string; weightUnit: 'kg' | 'lb' }) {
             </div>
             {s.end >= props.today && <p class="mt-1 text-xs text-faint">Today counts once it's over.</p>}
             <div class="mt-3 grid grid-cols-3 gap-2 text-center">
-              <Stat label="Protein / day" value={s.days_counted ? `${Math.round(s.average.PROCNT ?? 0)} g` : '–'} sub={s.targets.PROCNT ? `target ${Math.round(s.targets.PROCNT)} g` : undefined} />
+              <Stat
+                label="Protein / day"
+                value={s.days_counted ? `${Math.round(s.average.PROCNT ?? 0)} g` : '–'}
+                sub={s.targets.PROCNT ? `target ${Math.round(s.targets.PROCNT)} g` : undefined}
+              />
               <Stat label="Target" value={s.targets.ENERC_KCAL ? kcal(s.targets.ENERC_KCAL) : '–'} sub="kcal / day" />
               <Stat label="Streak" value={`${s.streak}`} sub={s.streak === 1 ? 'day' : 'days'} />
             </div>
@@ -181,7 +185,16 @@ function Bars(props: { days: Summary['days']; target?: number; today: string }) 
                     })}
                   </g>
                   {/* A card-coloured halo keeps the total legible where it crosses the target line. */}
-                  <text x={x + w / 2} y={y(v) - 5} text-anchor="middle" paint-order="stroke" stroke="var(--card)" stroke-width="4" stroke-linejoin="round" class={`num text-[10px] ${over ? 'fill-[var(--berry)] font-semibold' : 'fill-[var(--ink-2)]'}`}>
+                  <text
+                    x={x + w / 2}
+                    y={y(v) - 5}
+                    text-anchor="middle"
+                    paint-order="stroke"
+                    stroke="var(--card)"
+                    stroke-width="4"
+                    stroke-linejoin="round"
+                    class={`num text-[10px] ${over ? 'fill-[var(--berry)] font-semibold' : 'fill-[var(--ink-2)]'}`}
+                  >
                     {Math.round(v).toLocaleString()}
                   </text>
                 </>

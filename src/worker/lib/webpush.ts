@@ -62,13 +62,9 @@ export async function vapidAuthorization(endpoint: string, keys: VapidKeys, expi
   const aud = new URL(endpoint).origin;
   const header = b64urlEncode(enc.encode(JSON.stringify({ typ: 'JWT', alg: 'ES256' })));
   const payload = b64urlEncode(enc.encode(JSON.stringify({ aud, exp: Math.floor(Date.now() / 1000) + expiresIn, sub: keys.subject })));
-  const key = await crypto.subtle.importKey(
-    'jwk',
-    pointToJwk(b64urlDecode(keys.publicKey), b64urlDecode(keys.privateKey)),
-    { name: 'ECDSA', namedCurve: 'P-256' },
-    false,
-    ['sign'],
-  );
+  const key = await crypto.subtle.importKey('jwk', pointToJwk(b64urlDecode(keys.publicKey), b64urlDecode(keys.privateKey)), { name: 'ECDSA', namedCurve: 'P-256' }, false, [
+    'sign',
+  ]);
   // WebCrypto ECDSA signatures are already raw r||s, which is what JWS ES256 wants.
   const sig = await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' }, key, enc.encode(`${header}.${payload}`));
   return `vapid t=${header}.${payload}.${b64urlEncode(sig)}, k=${keys.publicKey}`;
@@ -86,7 +82,7 @@ export async function encryptPayload(
   const server = opts.serverKeys ?? ((await crypto.subtle.generateKey({ name: 'ECDH', namedCurve: 'P-256' }, true, ['deriveBits'])) as CryptoKeyPair);
   const asPublic = new Uint8Array((await crypto.subtle.exportKey('raw', server.publicKey)) as ArrayBuffer);
   const uaKey = await crypto.subtle.importKey('raw', uaPublic, { name: 'ECDH', namedCurve: 'P-256' }, false, []);
-  const ecdhSecret = new Uint8Array(await crypto.subtle.deriveBits({ name: "ECDH", public: uaKey } as unknown as SubtleCryptoDeriveKeyAlgorithm, server.privateKey, 256));
+  const ecdhSecret = new Uint8Array(await crypto.subtle.deriveBits({ name: 'ECDH', public: uaKey } as unknown as SubtleCryptoDeriveKeyAlgorithm, server.privateKey, 256));
 
   const keyInfo = concat(enc.encode('WebPush: info\0'), uaPublic, asPublic);
   const ikm = await hkdf(authSecret, ecdhSecret, keyInfo, 32);

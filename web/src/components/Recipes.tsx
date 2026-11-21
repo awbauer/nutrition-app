@@ -72,12 +72,7 @@ export function RecipeFields(props: { value: RecipeFieldValues; onChange: (v: Re
             Makes
           </span>
           <div class="flex w-fit items-center gap-1 rounded-full bg-sunken p-1" role="group" aria-labelledby="servings-label">
-            <button
-              class="icon-btn h-9 w-9 bg-card"
-              onClick={() => set({ servings: Math.max(1, v.servings - 1) })}
-              disabled={v.servings <= 1}
-              aria-label="Fewer servings"
-            >
+            <button class="icon-btn h-9 w-9 bg-card" onClick={() => set({ servings: Math.max(1, v.servings - 1) })} disabled={v.servings <= 1} aria-label="Fewer servings">
               <Minus size={16} />
             </button>
             <input
@@ -128,8 +123,7 @@ export function RecipeFields(props: { value: RecipeFieldValues; onChange: (v: Re
         </label>
       </div>
       <p class="text-xs text-ink-2">
-        Weighing the finished batch (less the pot) lets you log portions by weight accurately. Cooking changes weight, so without it portions are counted in
-        servings.
+        Weighing the finished batch (less the pot) lets you log portions by weight accurately. Cooking changes weight, so without it portions are counted in servings.
       </p>
     </div>
   );
@@ -162,8 +156,7 @@ export function SaveAsRecipe(props: { meal: Intake; onSaved: () => void }) {
     <div class="flex flex-col gap-4">
       <p class="text-sm text-ink-2">
         {props.meal.items.length === 1 ? 'This item becomes the recipe' : `These ${props.meal.items.length} items become the recipe's ingredients`} (
-        {kcal(props.meal.totals.ENERC_KCAL)} kcal for the whole batch). This entry comes off your log, since you haven't eaten the batch yet. Then log servings
-        as you eat them.
+        {kcal(props.meal.totals.ENERC_KCAL)} kcal for the whole batch). This entry comes off your log, since you haven't eaten the batch yet. Then log servings as you eat them.
       </p>
       <RecipeFields value={v} onChange={setV} autoFocus />
       <button class="btn-primary w-full py-3" disabled={busy} onClick={save}>
@@ -193,10 +186,7 @@ export function RecipePicks(props: { onPick: (r: Recipe) => void }) {
       <p class="eyebrow">Your recipes</p>
       <div class="-mx-5 flex gap-2 overflow-x-auto px-5 pb-1">
         {list.map((r) => (
-          <button
-            class="card flex min-w-36 shrink-0 flex-col items-start gap-0.5 px-3.5 py-2.5 text-left hover:bg-sunken/70 active:bg-sunken"
-            onClick={() => props.onPick(r)}
-          >
+          <button class="card flex min-w-36 shrink-0 flex-col items-start gap-0.5 px-3.5 py-2.5 text-left hover:bg-sunken/70 active:bg-sunken" onClick={() => props.onPick(r)}>
             <span class="max-w-44 truncate text-[0.95rem] font-medium">{r.name}</span>
             <span class="text-xs text-faint">
               <span class="num text-ink-2">{kcal(r.per_serving.ENERC_KCAL)}</span> kcal a serving
@@ -282,8 +272,7 @@ export function RecipesView(props: { today: string }) {
           <ChefHat size={40} strokeWidth={1.5} class="text-faint" aria-hidden="true" />
           <p class="display text-xl font-semibold">No recipes yet</p>
           <p class="max-w-[19rem] text-sm text-ink-2">
-            Made a pot of chili or a tray of meal prep? Add it as a recipe: list what went in, say how many servings it makes, then log servings as you eat
-            them.
+            Made a pot of chili or a tray of meal prep? Add it as a recipe: list what went in, say how many servings it makes, then log servings as you eat them.
           </p>
           <button class="btn-primary mt-1" onClick={() => setLog({ batch: true })}>
             Add your first recipe
@@ -310,10 +299,7 @@ export function RecipesView(props: { today: string }) {
                   <span class="text-xs text-faint">a serving</span>
                 </span>
               </button>
-              <button
-                class="flex items-center gap-2 border-t border-dashed border-line px-4 py-2.5 text-sm font-medium text-accent-ink"
-                onClick={() => setLog({ pick: r })}
-              >
+              <button class="flex items-center gap-2 border-t border-dashed border-line px-4 py-2.5 text-sm font-medium text-accent-ink" onClick={() => setLog({ pick: r })}>
                 <Plus size={16} /> Log a serving
               </button>
             </li>

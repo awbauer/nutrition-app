@@ -23,9 +23,7 @@ export class LabelReadError extends Error {}
 
 export function labelPrompt(hint?: string): string {
   return `The image(s) show a food's nutrition information: a Nutrition Facts panel on a package, or a screenshot of a
-restaurant or coffee-shop app or website (e.g. a drink's nutrition screen). Transcribe it exactly.${
-    hint ? `\nThe user calls this food: "${hint}".` : ''
-  }
+restaurant or coffee-shop app or website (e.g. a drink's nutrition screen). Transcribe it exactly.${hint ? `\nThe user calls this food: "${hint}".` : ''}
 Return ONLY a JSON object, no prose:
 {
   "name": "Pistachio Cream Cold Brew, Grande",  // product name with flavor and size; the user's name if given

@@ -80,7 +80,14 @@ describe('recipes', () => {
     const milk = await food('Recipe test milk', 60, 3.3);
     const r = await api('/recipes', {
       method: 'POST',
-      json: { name: 'Overnight oats', servings: 4, ingredients: [{ food_id: oats, amount: 200, unit: 'g' }, { food_id: milk, amount: 600, unit: 'g' }] },
+      json: {
+        name: 'Overnight oats',
+        servings: 4,
+        ingredients: [
+          { food_id: oats, amount: 200, unit: 'g' },
+          { food_id: milk, amount: 600, unit: 'g' },
+        ],
+      },
     });
     expect(r.data).toMatchObject({ yield_grams: null, batch_grams: 800, serving_grams: 200 });
     expect(r.data.per_serving.ENERC_KCAL).toBe(280);
@@ -143,7 +150,11 @@ describe('recipes', () => {
   it('tells the AI about saved recipes and logs a described portion as the recipe', async () => {
     const lentils = await food('Recipe test lentils', 116, 9);
     const r = await api('/recipes', { method: 'POST', json: { name: 'Red lentil soup', servings: 5, ingredients: [{ food_id: lentils, amount: 1500, unit: 'g' }] } });
-    const ai = fakeAI({ meal_type_guess: 'lunch', items: [{ name: 'Red lentil soup', amount: 1, unit: 'serving', grams: 300, confidence: 0.9, search_terms: ['lentil soup'] }], questions: [] });
+    const ai = fakeAI({
+      meal_type_guess: 'lunch',
+      items: [{ name: 'Red lentil soup', amount: 1, unit: 'serving', grams: 300, confidence: 0.9, search_terms: ['lentil soup'] }],
+      questions: [],
+    });
     const m = await api('/intake', { method: 'POST', body: form({ text: 'a bowl of my lentil soup' }) }, { AI: ai.AI });
     expect(ai.calls[0]!.inputs.messages[0].content).toContain('"Red lentil soup"');
     expect(m.data.status).toBe('completed');
@@ -166,7 +177,10 @@ describe('recipes from a description', () => {
     });
     const m = await api(
       '/intake',
-      { method: 'POST', body: form({ text: '2 lb ground turkey, 800 g black beans', recipe: JSON.stringify({ name: 'Turkey chili', servings: 8 }), merge: '1', meal_type: 'dinner' }) },
+      {
+        method: 'POST',
+        body: form({ text: '2 lb ground turkey, 800 g black beans', recipe: JSON.stringify({ name: 'Turkey chili', servings: 8 }), merge: '1', meal_type: 'dinner' }),
+      },
       { AI: ai.AI },
     );
     expect(m.status).toBe(202);

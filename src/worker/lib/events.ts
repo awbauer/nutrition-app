@@ -102,8 +102,7 @@ export function diffMeal(before: MealSnap | null, after: MealSnap | null, actor:
   if (!before || !after) return out;
   const { items: _b, ...bm } = before;
   const { items: _a, ...am } = after;
-  if (bm.meal_type !== am.meal_type || bm.occurrence_at !== am.occurrence_at || bm.log_date !== am.log_date)
-    out.push(ev({ kind: 'meal_changed', before: bm, after: am }));
+  if (bm.meal_type !== am.meal_type || bm.occurrence_at !== am.occurrence_at || bm.log_date !== am.log_date) out.push(ev({ kind: 'meal_changed', before: bm, after: am }));
   const was = new Map(before.items.map((i) => [i.id, i]));
   const now = new Map(after.items.map((i) => [i.id, i]));
   for (const [iid, b] of was) {
@@ -198,9 +197,11 @@ export function summarize(e: Omit<StoredEvent, 'summary'>): string {
     case 'ai_logged':
       return `AI logged "${a?.name}" as ${a?.food_name ?? 'an estimate'}, ${amt(a)}${d.via ? ` · via ${d.via}` : ''}${d.query ? ` for "${d.query}"` : ''}`;
     case 'answered':
-      return `${who(e.actor)} answered ${Object.entries((d.answers as Record<string, string>) ?? {})
-        .map(([, v]) => `"${v}"`)
-        .join(', ') || 'with the defaults'}`;
+      return `${who(e.actor)} answered ${
+        Object.entries((d.answers as Record<string, string>) ?? {})
+          .map(([, v]) => `"${v}"`)
+          .join(', ') || 'with the defaults'
+      }`;
     case 'searched':
       return `${who(e.actor)} searched "${d.query}" for "${d.item_name}"${d.results?.length ? `: ${d.results.slice(0, 3).join(' · ')}` : ': no results'}`;
     case 'food_swapped':
@@ -238,7 +239,17 @@ export async function mealHistory(db: D1Database, userId: string, intakeId: stri
        ORDER BY at, rowid`,
     )
     .bind(userId, ...ids, intakeId)
-    .all<{ id: string; intake_id: string; item_id: string | null; at: string; actor: Actor; kind: string; before_json: string | null; after_json: string | null; detail_json: string | null }>();
+    .all<{
+      id: string;
+      intake_id: string;
+      item_id: string | null;
+      at: string;
+      actor: Actor;
+      kind: string;
+      before_json: string | null;
+      after_json: string | null;
+      detail_json: string | null;
+    }>();
   return results.map((r) => {
     const e = {
       id: r.id,
@@ -306,7 +317,8 @@ export async function loggingQuality(db: D1Database, userId: string, days = 30, 
   };
   const aiMeals = new Set(ai.map((r) => r.intake_id));
   const fixesPerMeal = new Map<string, number>();
-  for (const r of results) if (r.actor !== 'ai' && fixedKinds.concat('item_added', 'searched').includes(r.kind)) fixesPerMeal.set(r.intake_id, (fixesPerMeal.get(r.intake_id) ?? 0) + 1);
+  for (const r of results)
+    if (r.actor !== 'ai' && fixedKinds.concat('item_added', 'searched').includes(r.kind)) fixesPerMeal.set(r.intake_id, (fixesPerMeal.get(r.intake_id) ?? 0) + 1);
   const swaps = new Map<string, { name: string; from: string; to: string; times: number }>();
   const aiIds = new Set(ai.map((r) => r.item_id));
   for (const r of results.filter((r) => r.kind === 'food_swapped' && aiIds.has(r.item_id))) {

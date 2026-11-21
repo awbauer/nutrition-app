@@ -5,7 +5,10 @@ import { api, json, mockFetch } from './helpers';
 /** Bag-of-words embedding: texts sharing words point the same way (enough to exercise the plumbing). */
 function embedText(t: string): number[] {
   const v = new Array(64).fill(0);
-  for (const w of t.toLowerCase().split(/[^a-z]+/).filter(Boolean)) {
+  for (const w of t
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .filter(Boolean)) {
     let h = 0;
     for (const ch of w.replace(/s$/, '')) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
     v[h % 64] += 1;
@@ -13,8 +16,10 @@ function embedText(t: string): number[] {
   return v;
 }
 const cos = (a: number[], b: number[]) => {
-  let d = 0, na = 0, nb = 0;
-  for (let i = 0; i < a.length; i++) (d += a[i]! * b[i]!), (na += a[i]! ** 2), (nb += b[i]! ** 2);
+  let d = 0,
+    na = 0,
+    nb = 0;
+  for (let i = 0; i < a.length; i++) ((d += a[i]! * b[i]!), (na += a[i]! ** 2), (nb += b[i]! ** 2));
   return na && nb ? d / Math.sqrt(na * nb) : 0;
 };
 
@@ -78,7 +83,11 @@ async function custom(E: object, name: string, kcal: number) {
   return r.data.id as string;
 }
 async function eat(E: object, foodId: string, displayName: string, at: string) {
-  const r = await api('/intake', { method: 'POST', json: { meal_type: 'dinner', occurrence_at: at, items: [{ food_id: foodId, amount: 1, unit: 'serving', display_name: displayName }] } }, E);
+  const r = await api(
+    '/intake',
+    { method: 'POST', json: { meal_type: 'dinner', occurrence_at: at, items: [{ food_id: foodId, amount: 1, unit: 'serving', display_name: displayName }] } },
+    E,
+  );
   expect(r.status).toBe(201);
   return r.data.id as string;
 }
@@ -121,7 +130,7 @@ describe('foods you have eaten', () => {
     expect((await api('/foods?q=chicken%20meatballs&remote=0', {}, E)).data.history).toEqual([]);
   });
 
-  it("matches \"those chicken meatballs I like\" to the meatballs you've had, not USDA's chicken wing or your turkey meatballs", async () => {
+  it('matches "those chicken meatballs I like" to the meatballs you\'ve had, not USDA\'s chicken wing or your turkey meatballs', async () => {
     const E = { DEV_USER_EMAIL: 'history-match@example.test', AI: ai(), HISTORY: index as unknown as VectorizeIndex };
     const chicken = await custom(E, 'Chicken meatballs, Kirkland', 180);
     const turkey = await custom(E, 'Turkey meatballs', 160);
@@ -129,7 +138,18 @@ describe('foods you have eaten', () => {
     await eat(E, turkey, 'turkey meatballs', '2026-11-07T19:00:00Z');
 
     const out = {
-      items: [{ name: 'chicken meatballs', from_history: true, amount: 4, unit: 'piece', grams: 120, confidence: 0.8, search_terms: ['chicken meatballs'], estimate_per_100g: { kcal: 200 } }],
+      items: [
+        {
+          name: 'chicken meatballs',
+          from_history: true,
+          amount: 4,
+          unit: 'piece',
+          grams: 120,
+          confidence: 0.8,
+          search_terms: ['chicken meatballs'],
+          estimate_per_100g: { kcal: 200 },
+        },
+      ],
       questions: [],
     };
     const f = new FormData();

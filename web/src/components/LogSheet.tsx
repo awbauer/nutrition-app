@@ -232,7 +232,12 @@ export function LogSheet(props: {
             <ToolButton onClick={() => fileRef.current?.click()} icon={<Camera size={19} />} label="Photo" />
             <ToolButton onClick={() => setView('record')} icon={<Mic size={19} />} label="Voice" />
             {!batch && <ToolButton onClick={() => setView('search')} icon={<Search size={18} />} label="Search" />}
-            <button class="ml-auto flex h-11 w-11 items-center justify-center rounded-full bg-accent text-white transition active:scale-95 disabled:bg-sunken disabled:text-faint" disabled={!ready || busy} onClick={submit} aria-label="Log it">
+            <button
+              class="ml-auto flex h-11 w-11 items-center justify-center rounded-full bg-accent text-white transition active:scale-95 disabled:bg-sunken disabled:text-faint"
+              disabled={!ready || busy}
+              onClick={submit}
+              aria-label="Log it"
+            >
               {busy ? <span class="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" /> : <ArrowUp size={22} strokeWidth={2.5} />}
             </button>
           </div>
@@ -297,8 +302,7 @@ function QuickAdd(props: { mealType: MealType; intakeId?: string; onPick: (q: Qu
   if (!data || (!goesWith.length && !favorites.length && !data.recent.length && !data.frequent.length)) return null;
   // Unstarring the last favorite falls back to another list.
   const shown = tab === 'favorites' && !favorites.length ? (data.frequent.length ? 'frequent' : 'recent') : tab;
-  const list: (Quick | Favorite | GoesWith)[] =
-    shown === 'with' ? goesWith : shown === 'favorites' ? favorites : shown === 'frequent' ? data.frequent : data.recent;
+  const list: (Quick | Favorite | GoesWith)[] = shown === 'with' ? goesWith : shown === 'favorites' ? favorites : shown === 'frequent' ? data.frequent : data.recent;
   const tabs: [QuickTab, string][] = [];
   if (goesWith.length) tabs.push(['with', 'Goes with']);
   if (favorites.length) tabs.push(['favorites', 'Starred']);

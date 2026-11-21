@@ -135,19 +135,26 @@ describe('matching with candidates', () => {
     const first = await api('/intake', { method: 'POST', body: form('x') }, { ...E, AI: ai(nothing) });
     expect(first.data.items[0].estimated).toBe(true);
     // Same name again, now with something the database can match: it searches instead of reusing the estimate.
-    const second = await api('/intake', { method: 'POST', body: form('x') }, { ...E, AI: ai({ ...nothing, items: [{ ...nothing.items[0], search_terms: ['salmon raw'], estimate_per_100g: { kcal: 180 } }] }) });
+    const second = await api(
+      '/intake',
+      { method: 'POST', body: form('x') },
+      { ...E, AI: ai({ ...nothing, items: [{ ...nothing.items[0], search_terms: ['salmon raw'], estimate_per_100g: { kcal: 180 } }] }) },
+    );
     expect(second.data.items[0].estimated).toBe(false);
     expect((await api(`/item/${second.data.items[0].id}`, {}, E)).data.match.via).not.toBe('custom');
   });
 
-  it("isolates item details by user", async () => {
+  it('isolates item details by user', async () => {
     const r = await api('/intake', { method: 'POST', body: form('salmon sashimi') }, { ...U, AI: ai(sashimi) });
     expect((await api(`/item/${r.data.items[0].id}`, {}, { DEV_USER_EMAIL: 'intruder@example.test' })).status).toBe(404);
     expect((await api(`/item/${r.data.items[0].id}/search?q=salmon`, {}, { DEV_USER_EMAIL: 'intruder@example.test' })).status).toBe(404);
   });
 
   it("uses the model's weight estimate instead of the generic size table", async () => {
-    const out = { items: [{ name: 'salmon sashimi', amount: 1, unit: 'medium', grams: 60, confidence: 0.8, search_terms: ['salmon raw'], estimate_per_100g: { kcal: 180 } }], questions: [] };
+    const out = {
+      items: [{ name: 'salmon sashimi', amount: 1, unit: 'medium', grams: 60, confidence: 0.8, search_terms: ['salmon raw'], estimate_per_100g: { kcal: 180 } }],
+      questions: [],
+    };
     const r = await api('/intake', { method: 'POST', body: form('x') }, { DEV_USER_EMAIL: 'grams@example.test', AI: ai(out) });
     expect(r.data.items[0].grams).toBe(60); // generic "medium" would be 150 g
     const d = await api(`/item/${r.data.items[0].id}`, {}, { DEV_USER_EMAIL: 'grams@example.test' });
@@ -156,8 +163,18 @@ describe('matching with candidates', () => {
 
   it('reads printed label values and saves the product as your food', async () => {
     const out = {
-      items: [{ name: 'fairlife nutrition plan chocolate protein shake', brand: 'fairlife', amount: 340, unit: 'ml', grams: 340, confidence: 0.95,
-        label: { serving_amount: 340, serving_unit: 'ml', kcal: 150, protein: 30, fat: 2.5, carbs: 4 }, estimate_per_100g: { kcal: 60 } }],
+      items: [
+        {
+          name: 'fairlife nutrition plan chocolate protein shake',
+          brand: 'fairlife',
+          amount: 340,
+          unit: 'ml',
+          grams: 340,
+          confidence: 0.95,
+          label: { serving_amount: 340, serving_unit: 'ml', kcal: 150, protein: 30, fat: 2.5, carbs: 4 },
+          estimate_per_100g: { kcal: 60 },
+        },
+      ],
       questions: [],
     };
     const E = { DEV_USER_EMAIL: 'label@example.test', AI: ai(out) };
@@ -181,7 +198,10 @@ describe('matching with candidates', () => {
   });
 
   it('matches a barcode to USDA Branded when Open Food Facts has nothing', async () => {
-    const out = { items: [{ name: 'fairlife chocolate milk', brand: 'fairlife', amount: 340, unit: 'ml', confidence: 0.8, barcode: '8 11620 02211 8', estimate_per_100g: { kcal: 60 } }], questions: [] };
+    const out = {
+      items: [{ name: 'fairlife chocolate milk', brand: 'fairlife', amount: 340, unit: 'ml', confidence: 0.8, barcode: '8 11620 02211 8', estimate_per_100g: { kcal: 60 } }],
+      questions: [],
+    };
     const E = { DEV_USER_EMAIL: 'barcode@example.test', AI: ai(out) };
     const r = await api('/intake', { method: 'POST', body: form('x') }, E);
     const item = r.data.items[0];
@@ -192,7 +212,20 @@ describe('matching with candidates', () => {
   });
 
   it('uses the brand to prefer the branded product over a generic food', async () => {
-    const out = { items: [{ name: 'chocolate protein shake', brand: 'fairlife', amount: 340, unit: 'ml', confidence: 0.8, search_terms: ['chocolate protein shake'], estimate_per_100g: { kcal: 50 } }], questions: [] };
+    const out = {
+      items: [
+        {
+          name: 'chocolate protein shake',
+          brand: 'fairlife',
+          amount: 340,
+          unit: 'ml',
+          confidence: 0.8,
+          search_terms: ['chocolate protein shake'],
+          estimate_per_100g: { kcal: 50 },
+        },
+      ],
+      questions: [],
+    };
     const r = await api('/intake', { method: 'POST', body: form('x') }, { DEV_USER_EMAIL: 'brand@example.test', AI: ai(out) });
     expect(r.data.items[0].food_name).toBe('NUTRITION PLAN CHOCOLATE PROTEIN SHAKE');
   });

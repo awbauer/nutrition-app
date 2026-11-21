@@ -304,9 +304,7 @@ export function validateOutput(raw: unknown): ModelOutput {
       unit: typeof it.unit === 'string' && it.unit.trim() ? it.unit.trim() : 'g',
       confidence: clamp01(it.confidence),
       ...(typeof it.grams === 'number' && it.grams > 0 && it.grams < 5000 ? { grams: it.grams } : {}),
-      search_terms: (Array.isArray(it.search_terms) ? it.search_terms : [])
-        .filter((t: unknown): t is string => typeof t === 'string' && !!t.trim())
-        .slice(0, 3),
+      search_terms: (Array.isArray(it.search_terms) ? it.search_terms : []).filter((t: unknown): t is string => typeof t === 'string' && !!t.trim()).slice(0, 3),
       barcode: normaliseBarcode(it.barcode),
       brand: typeof it.brand === 'string' && it.brand.trim() ? it.brand.trim().slice(0, 60) : null,
       label: validLabel(it.label),
@@ -314,9 +312,7 @@ export function validateOutput(raw: unknown): ModelOutput {
       ...(it.menu_item === true ? { menu_item: true } : {}),
       ...(est
         ? {
-            estimate_per_100g: Object.fromEntries(
-              ['kcal', 'protein', 'fat', 'carbs'].filter((k) => typeof est[k] === 'number' && est[k] >= 0).map((k) => [k, est[k]]),
-            ),
+            estimate_per_100g: Object.fromEntries(['kcal', 'protein', 'fat', 'carbs'].filter((k) => typeof est[k] === 'number' && est[k] >= 0).map((k) => [k, est[k]])),
           }
         : {}),
     });
@@ -434,11 +430,7 @@ export const FALLBACK_MODELS = {
  * with `fallback`. Returns the output and the model that produced it. If the fallback fails too,
  * the original capacity error is thrown so the caller can retry later.
  */
-export async function withCapacityFallback(
-  model: string,
-  fallback: string,
-  call: (model: string) => Promise<ModelOutput>,
-): Promise<{ out: ModelOutput; model: string }> {
+export async function withCapacityFallback(model: string, fallback: string, call: (model: string) => Promise<ModelOutput>): Promise<{ out: ModelOutput; model: string }> {
   try {
     return { out: await call(model), model };
   } catch (e) {
@@ -494,10 +486,7 @@ export async function parsePhotos(env: Env, model: string, photos: PhotoInput[],
             messages: [
               {
                 role: 'user',
-                content: [
-                  { type: 'text', text },
-                  ...photos.map((p) => ({ type: 'image_url', image_url: { url: `data:${p.mime};base64,${b64(p.bytes)}` } })),
-                ],
+                content: [{ type: 'text', text }, ...photos.map((p) => ({ type: 'image_url', image_url: { url: `data:${p.mime};base64,${b64(p.bytes)}` } }))],
               },
             ],
             temperature: 0.2,

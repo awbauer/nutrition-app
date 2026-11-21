@@ -47,13 +47,31 @@ describe('recent and frequent foods', () => {
     const meal = (d: number, items: [string, number, string?][]) =>
       api(
         '/intake',
-        { method: 'POST', json: { meal_type: 'dinner', occurrence_at: at(d, 19), items: items.map(([food_id, g, display_name]) => ({ food_id, amount: g, unit: 'g', display_name })) } },
+        {
+          method: 'POST',
+          json: { meal_type: 'dinner', occurrence_at: at(d, 19), items: items.map(([food_id, g, display_name]) => ({ food_id, amount: g, unit: 'g', display_name })) },
+        },
         W,
       );
-    await meal(10, [[pasta, 200], [parm, 10], [sauce, 120]]);
-    await meal(6, [[pasta, 180, 'spaghetti'], [parm, 15]]); // other wording, same food: still pasta
-    await meal(3, [[pasta, 200], [parm, 20], [salad, 100], [parm, 5]]); // parmesan twice counts once
-    await meal(2, [[oats, 50], [salad, 80]]); // nothing in common with pasta
+    await meal(10, [
+      [pasta, 200],
+      [parm, 10],
+      [sauce, 120],
+    ]);
+    await meal(6, [
+      [pasta, 180, 'spaghetti'],
+      [parm, 15],
+    ]); // other wording, same food: still pasta
+    await meal(3, [
+      [pasta, 200],
+      [parm, 20],
+      [salad, 100],
+      [parm, 5],
+    ]); // parmesan twice counts once
+    await meal(2, [
+      [oats, 50],
+      [salad, 80],
+    ]); // nothing in common with pasta
     const now = await meal(0, [[pasta, 200]]);
 
     const r = await api(`/foods/quick?meal_type=dinner&with=${now.data.id}`, {}, W);

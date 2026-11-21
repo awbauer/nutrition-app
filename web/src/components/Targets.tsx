@@ -41,7 +41,7 @@ export function Targets(props: { weightUnit: 'kg' | 'lb' }) {
   const load = () =>
     api.get<Goals>('/goals').then((r) => {
       setG(r);
-      setEdit(Object.fromEntries(FIELDS.map(([, code, ]) => [code, r.targets[code] != null ? String(r.targets[code]) : ''])));
+      setEdit(Object.fromEntries(FIELDS.map(([, code]) => [code, r.targets[code] != null ? String(r.targets[code]) : ''])));
       if (r.profile) setP(r.profile);
     });
   useEffect(() => {

@@ -1,6 +1,19 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../env';
-import { archiveCustomFood, backfillCategories, createCustomFood, getFood, listCustomFoods, resolveFatSecret, updateCustomFood, getSnapshot, resolveFdc, searchLocal, usdaClient, type CustomFoodInput } from '../lib/foods';
+import {
+  archiveCustomFood,
+  backfillCategories,
+  createCustomFood,
+  getFood,
+  listCustomFoods,
+  resolveFatSecret,
+  updateCustomFood,
+  getSnapshot,
+  resolveFdc,
+  searchLocal,
+  usdaClient,
+  type CustomFoodInput,
+} from '../lib/foods';
 import { HttpError } from '../lib/ids';
 import { MEAL_TYPES, type MealType } from '../lib/intake';
 import { goesWith, quickFoods } from '../lib/quick';

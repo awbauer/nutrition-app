@@ -40,7 +40,7 @@ const DRINK: FsFood = {
 
 describe('FatSecret client', () => {
   it('signs requests with OAuth 1.0 HMAC-SHA1 and the consumer secret alone', async () => {
-    const params = { method: 'foods.search.v3', search_expression: "cold brew (pistachio)! 50%", oauth_nonce: 'abc', oauth_timestamp: '1700000000' };
+    const params = { method: 'foods.search.v3', search_expression: 'cold brew (pistachio)! 50%', oauth_nonce: 'abc', oauth_timestamp: '1700000000' };
     const sig = await oauthSignature('GET', 'https://platform.fatsecret.com/rest/server.api', params, 's3cr3t');
     const normalized = Object.keys(params)
       .sort()
@@ -67,8 +67,20 @@ describe('FatSecret client', () => {
 
   it('reads "oz" as fluid ounces for drinks and as weight for food', () => {
     const oz = (name: string) =>
-      normaliseFatSecret({ food_id: '9', food_name: name, servings: { serving: { serving_description: '1 serving', metric_serving_amount: '16.000', metric_serving_unit: 'oz', number_of_units: '1', measurement_description: 'serving', calories: '250' } } })!
-        .portions[0]!.grams;
+      normaliseFatSecret({
+        food_id: '9',
+        food_name: name,
+        servings: {
+          serving: {
+            serving_description: '1 serving',
+            metric_serving_amount: '16.000',
+            metric_serving_unit: 'oz',
+            number_of_units: '1',
+            measurement_description: 'serving',
+            calories: '250',
+          },
+        },
+      })!.portions[0]!.grams;
     expect(oz('Pistachio Cream Cold Brew (Grande)')).toBeCloseTo(473.2, 1);
     expect(oz('Iced Brown Sugar Oatmilk Shaken Espresso (Grande)')).toBeCloseTo(473.2, 1);
     expect(oz('Bacon, Gouda & Egg Sandwich')).toBeCloseTo(453.6, 1);
@@ -116,7 +128,9 @@ describe('FatSecret in matching and search', () => {
       if (url.hostname === 'api.nal.usda.gov') {
         // USDA has nothing like it.
         return json({
-          foods: [{ fdcId: 1, description: 'Beverages, coffee, brewed', dataType: 'SR Legacy', foodNutrients: [{ nutrientId: 1008, unitName: 'KCAL', value: 1 }], foodMeasures: [] }],
+          foods: [
+            { fdcId: 1, description: 'Beverages, coffee, brewed', dataType: 'SR Legacy', foodNutrients: [{ nutrientId: 1008, unitName: 'KCAL', value: 1 }], foodMeasures: [] },
+          ],
         });
       }
       if (url.hostname === 'platform.fatsecret.com') {
@@ -133,7 +147,18 @@ describe('FatSecret in matching and search', () => {
   it('matches a Starbucks drink USDA lacks, and keeps it stored as a shared food', async () => {
     const E = { DEV_USER_EMAIL: 'fatsecret@example.test', ...FS };
     const out = {
-      items: [{ name: 'pistachio cream cold brew', brand: 'Starbucks', amount: 1, unit: 'grande', grams: 473, confidence: 0.8, search_terms: ['pistachio cream cold brew'], estimate_per_100g: { kcal: 55 } }],
+      items: [
+        {
+          name: 'pistachio cream cold brew',
+          brand: 'Starbucks',
+          amount: 1,
+          unit: 'grande',
+          grams: 473,
+          confidence: 0.8,
+          search_terms: ['pistachio cream cold brew'],
+          estimate_per_100g: { kcal: 55 },
+        },
+      ],
       questions: [],
     };
     const f = new FormData();
