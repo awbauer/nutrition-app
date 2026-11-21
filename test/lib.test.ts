@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { addDays, logDate, mealTypeForTime, localParts } from '../src/worker/lib/dates';
-import { fromUsda } from '../src/worker/lib/nutrients';
+import { fromUsda, implausiblePer100g } from '../src/worker/lib/nutrients';
 import { countUnit, EXACT_UNITS, foodKind, normaliseUnit, sizesFor, toGrams, ucum, withCounts, type Portion } from '../src/worker/lib/units';
 import { normaliseDetailFood, parsePortionText } from '../src/worker/lib/usda';
 import { normaliseOff } from '../src/worker/lib/off';
@@ -198,5 +198,19 @@ describe('slice weights by food', () => {
     expect(toGrams(1, 'slice', { name: 'Cheese, American' }).grams).toBe(21);
     expect(toGrams(1, 'slice', { name: 'Bread, white' }).grams).toBe(30);
     expect(toGrams(1, 'slice', { name: 'Bacon', portions: [{ label: '1 slice', unit: 'slice', amount: 1, grams: 9 }] as any }).grams).toBe(9);
+  });
+});
+
+describe('implausiblePer100g', () => {
+  const nv = (o: Record<string, number>) => Object.entries(o).map(([code, value]) => ({ code, usdaId: null, value, unit: code === 'ENERC_KCAL' ? 'kcal' : 'g' }));
+  it('accepts real foods, including pure fat', () => {
+    expect(implausiblePer100g(nv({ ENERC_KCAL: 350, CHOCDF: 80, PROCNT: 3, FAT: 1 }))).toBeNull();
+    expect(implausiblePer100g(nv({ ENERC_KCAL: 884, FAT: 100 }))).toBeNull();
+    expect(implausiblePer100g([])).toBeNull();
+  });
+  it('rejects per-serving numbers in per-100 g fields', () => {
+    expect(implausiblePer100g(nv({ ENERC_KCAL: 866, CHOCDF: 194, PROCNT: 7, FAT: 7 }))).toBe('CHOCDF 194 g per 100 g');
+    expect(implausiblePer100g(nv({ PROCNT: 40, FAT: 30, CHOCDF: 50 }))).toMatch(/more than 100 g/);
+    expect(implausiblePer100g(nv({ ENERC_KCAL: 1200 }))).toBe('1200 kcal per 100 g');
   });
 });
