@@ -5,6 +5,7 @@ import { chunks, HttpError, newId, nowIso } from './ids';
 import { round, sumNutrients } from './nutrients';
 import { getSettings } from './settings';
 import type { MatchInfo } from './matcher';
+import type { MergeSpec } from './merge';
 import { toGrams, ucum } from './units';
 
 export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
@@ -303,25 +304,28 @@ export async function loadIntakes(db: D1Database, rows: IntakeRow[]): Promise<In
       photo_count,
       items: its,
       totals,
-      ...(pending_json ? { pending: publicPending(pending_json) } : {}),
+      ...(pending_json ? { pending: publicPending(pending_json, r.meal_type) } : {}),
     };
   });
 }
 
+const joins = (m: MergeSpec | null | undefined, mealType: MealType) => !!m && (m.mode === 'into' || mealType !== 'snack');
+
 /** Clarifying questions as the client sees them (option effects stay server-side). */
-function publicPending(json: string) {
+function publicPending(json: string, mealType: MealType) {
   const p = JSON.parse(json) as {
     questions?: { id: string; item_index: number; text: string; options: string[]; default: string }[];
     error?: string;
-    merge?: unknown;
-    job?: { merge?: unknown; recipe?: { name: string } };
+    merge?: MergeSpec | null;
+    job?: { merge?: MergeSpec | null; recipe?: { name: string } };
     recipe_saved?: { id: string; name: string };
   };
   return {
     questions: (p.questions ?? []).map(({ id, item_index, text, options, default: d }) => ({ id, item_index, text, options, default: d })),
     ...(p.error ? { error: p.error } : {}),
     // This entry will join an existing meal once it's finished (see merge.ts).
-    ...(p.merge || p.job?.merge ? { adding_to_meal: true } : {}),
+    // A snack from the main button never joins another meal (findMergeTarget), so it isn't "adding" to one.
+    ...(joins(p.merge ?? p.job?.merge, mealType) ? { adding_to_meal: true } : {}),
     // A batch being saved as a recipe: its name while it's read, then the saved recipe.
     ...(p.job?.recipe ? { recipe: p.job.recipe.name } : {}),
     ...(p.recipe_saved ? { recipe_saved: p.recipe_saved } : {}),

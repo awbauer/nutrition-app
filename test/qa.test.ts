@@ -254,6 +254,22 @@ describe('outside food databases', () => {
   });
 });
 
+describe('drafts from the main button', () => {
+  it('say they will join a meal only when they can', async () => {
+    const E = U('qa-join@example.test');
+    const queue = { JOBS: { send: async () => {} } as unknown as Queue };
+    const post = async (meal_type: string) => {
+      const f = new FormData();
+      f.append('text', 'apple');
+      f.append('merge', '1');
+      f.append('meal_type', meal_type);
+      return (await api('/intake', { method: 'POST', body: f }, { ...E, ...queue })).data;
+    };
+    expect((await post('snack')).pending.adding_to_meal).toBeUndefined();
+    expect((await post('lunch')).pending.adding_to_meal).toBe(true);
+  });
+});
+
 describe('food cache', () => {
   it('caches the same new food twice at once without failing', async () => {
     const f = { source: 'estimate' as const, sourceId: `qa-race-${Date.now()}`, name: 'Race food', brand: null, dataType: null, category: null, defaultServingGrams: null, portions: [], nutrients: [{ code: 'ENERC_KCAL', usdaId: 1008, value: 100, unit: 'kcal' }] };
