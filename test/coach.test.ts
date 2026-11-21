@@ -117,7 +117,7 @@ describe('coach v2: macro split, streaks, changes, plans, no repeats', () => {
     expect(macroSplit({ PROCNT: 5 })).toBeNull();
     expect(macroReference({ ENERC_KCAL: 2000, PROCNT: 150 })).toMatchObject({ source: 'healthy ranges', fat_pct: [20, 35], protein_pct: [25, 35], fat_g: [44, 78] });
     expect(macroReference({ ENERC_KCAL: 2000, FAT: 60 })).toMatchObject({ source: 'your targets', fat_pct: [22, 32], fat_g: [54, 66] });
-    const days = [
+    const days: { date: string; meals: number; totals: Record<string, number> }[] = [
       { date: '2026-11-10', meals: 2, totals: { PROCNT: 50 } },
       { date: '2026-11-11', meals: 0, totals: {} },
       { date: '2026-11-12', meals: 3, totals: { PROCNT: 60 } },
