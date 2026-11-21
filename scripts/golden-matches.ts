@@ -167,7 +167,12 @@ const PUBLIC = new Set(['usda', 'fatsecret', 'off']);
 function openDb(path: string): DatabaseSync {
   if (path.endsWith('.sql')) {
     const db = new DatabaseSync(':memory:');
-    db.exec(readFileSync(path, 'utf8'));
+    // SQLite keeps sqlite_sequence itself; dumps that write to it can't be replayed.
+    const sql = readFileSync(path, 'utf8')
+      .split('\n')
+      .filter((l) => !l.includes('sqlite_sequence'))
+      .join('\n');
+    db.exec(sql);
     return db;
   }
   return new DatabaseSync(path, { readOnly: true });
