@@ -4,7 +4,7 @@ import { mcpApiHandler } from './mcp';
 import type { Env } from './env';
 import { consume, failStaleJobs, type JobMessage } from './lib/jobs';
 import { runDueReports } from './lib/coach';
-import { refreshHistory } from './lib/history';
+import { refreshAllHistory } from './lib/history';
 import { dispatchReminders } from './lib/reminders';
 
 /** Must match max_retries on the queue consumer in wrangler.jsonc. */
@@ -66,10 +66,11 @@ export default {
         (e) => console.error('coach reports failed', e),
       ),
     );
-    // Keeps the "foods you've eaten" index current, and backfills it the first time.
+    // Keeps the "foods you've eaten" index current (foods marked since the last refresh), backfills
+    // each user the first time and rebuilds each in full daily.
     ctx.waitUntil(
-      refreshHistory(env).then(
-        (r) => (r.embedded || r.removed) && console.log('history', r),
+      refreshAllHistory(env, new Date(controller.scheduledTime)).then(
+        (r) => (r.embedded || r.removed || r.failed) && console.log('history', r),
         (e) => console.warn('history refresh failed', (e as Error).message),
       ),
     );

@@ -7,11 +7,14 @@
  * user. Vectors only find candidates: embeddings put "turkey meatballs" right next to "chicken
  * meatballs", so the matcher still scores candidates on their words (scoring.ts) before using one.
  *
- * refreshHistory() diffs the log against history_entry and only re-embeds entries whose text
- * changed; it runs after meals change and on the cron, which also backfills.
+ * Triggers (migrations/0014) mark each (user, food) a write may have changed in history_dirty, in
+ * the same statement as the write. refreshHistory() recomputes only those foods, diffs them against
+ * history_entry and re-embeds only entries whose text changed. It runs after meals change and on the
+ * cron, which also rebuilds each user in full the first time (the backfill) and daily as a safety net.
  */
 import type { Env } from '../env';
 import { getFood, normName, type FoodRecord } from './foods';
+import { chunks, newId } from './ids';
 import { has, tokens } from './scoring';
 
 export const EMBED_MODEL = '@cf/baai/bge-m3';
@@ -123,23 +126,45 @@ interface Group {
   brand: string | null;
 }
 
-/** Foods each user has eaten (completed meals; AI estimates excluded: each is a one-off guess). */
-async function currentGroups(db: D1Database, userId?: string): Promise<Group[]> {
-  const { results } = await db
-    .prepare(
-      `SELECT ci.user_id, ci.food_id, ci.display_name, COUNT(*) AS n, MAX(i.occurrence_at) AS last_at, f.name, f.brand
-       FROM consumed_item ci
-       JOIN nutrition_intake i ON i.id = ci.intake_id
-       JOIN food f ON f.id = ci.food_id
-       WHERE i.status = 'completed' AND f.source != 'estimate' AND f.archived_at IS NULL
-         AND NOT EXISTS (SELECT 1 FROM recipe r WHERE r.food_id = f.id AND r.archived = 1)
-         ${userId ? 'AND ci.user_id = ?' : ''}
-       GROUP BY ci.user_id, ci.food_id, ci.display_name`,
-    )
-    .bind(...(userId ? [userId] : []))
-    .all<{ user_id: string; food_id: string; display_name: string; n: number; last_at: string; name: string; brand: string | null }>();
+interface EntryRow {
+  user_id: string;
+  food_id: string;
+  vector_id: string;
+  text: string;
+  times: number;
+  last_at: string;
+  names_json: string;
+  indexed_at: string | null;
+}
+
+/** `AND <col> IN (?, ...)` for one chunk of ids; nothing when there's no chunk (all foods). */
+const inIds = (col: string, ids: string[] | null) => (ids ? `AND ${col} IN (${ids.map(() => '?').join(',')})` : '');
+
+/**
+ * Foods the user has eaten (completed meals; AI estimates excluded: each is a one-off guess), all of
+ * them or only `foodIds` (queried in chunks under D1's bound-parameter limit).
+ */
+async function currentGroups(db: D1Database, userId: string, foodIds: string[] | null): Promise<Group[]> {
+  type Row = { user_id: string; food_id: string; display_name: string; n: number; last_at: string; name: string; brand: string | null };
+  const rows: Row[] = [];
+  for (const ids of foodIds ? chunks(foodIds) : [null]) {
+    const { results } = await db
+      .prepare(
+        `SELECT ci.user_id, ci.food_id, ci.display_name, COUNT(*) AS n, MAX(i.occurrence_at) AS last_at, f.name, f.brand
+         FROM consumed_item ci
+         JOIN nutrition_intake i ON i.id = ci.intake_id
+         JOIN food f ON f.id = ci.food_id
+         WHERE i.status = 'completed' AND f.source != 'estimate' AND f.archived_at IS NULL
+           AND NOT EXISTS (SELECT 1 FROM recipe r WHERE r.food_id = f.id AND r.archived = 1)
+           AND ci.user_id = ? ${inIds('ci.food_id', ids)}
+         GROUP BY ci.user_id, ci.food_id, ci.display_name`,
+      )
+      .bind(userId, ...(ids ?? []))
+      .all<Row>();
+    rows.push(...results);
+  }
   const byKey = new Map<string, Group & { counts: Map<string, number> }>();
-  for (const r of results) {
+  for (const r of rows) {
     const key = `${r.user_id}\u0000${r.food_id}`;
     let g = byKey.get(key);
     if (!g) {
@@ -160,17 +185,25 @@ async function currentGroups(db: D1Database, userId?: string): Promise<Group[]> 
   }));
 }
 
+/** The user's history entries, all of them or only `foodIds`. */
+async function storedEntries(db: D1Database, userId: string, foodIds: string[] | null): Promise<EntryRow[]> {
+  const out: EntryRow[] = [];
+  for (const ids of foodIds ? chunks(foodIds) : [null]) {
+    const { results } = await db
+      .prepare(`SELECT user_id, food_id, vector_id, text, times, last_at, names_json, indexed_at FROM history_entry WHERE user_id = ? ${inIds('food_id', ids)}`)
+      .bind(userId, ...(ids ?? []))
+      .all<EntryRow>();
+    out.push(...results);
+  }
+  return out;
+}
+
 /**
- * Bring history_entry and the vector index in line with the log, for one user or everyone.
- * Returns how many entries were embedded and removed.
+ * Bring `existing` entries in line with `groups` (both covering the same foods): embeds new and
+ * reworded entries, removes the vectors of foods no longer eaten, and returns the D1 writes to make.
  */
-export async function refreshHistory(env: Env, userId?: string): Promise<{ embedded: number; removed: number }> {
+async function syncEntries(env: Env, groups: Group[], existing: EntryRow[]): Promise<{ stmts: D1PreparedStatement[]; embedded: number; removed: number }> {
   const db = env.DB;
-  const groups = await currentGroups(db, userId);
-  const { results: existing } = await db
-    .prepare(`SELECT user_id, food_id, vector_id, text, times, last_at, names_json, indexed_at FROM history_entry ${userId ? 'WHERE user_id = ?' : ''}`)
-    .bind(...(userId ? [userId] : []))
-    .all<{ user_id: string; food_id: string; vector_id: string; text: string; times: number; last_at: string; names_json: string; indexed_at: string | null }>();
   const old = new Map(existing.map((e) => [`${e.user_id}\u0000${e.food_id}`, e]));
 
   const toEmbed: (Group & { vector_id: string; text: string })[] = [];
@@ -214,8 +247,115 @@ export async function refreshHistory(env: Env, userId?: string): Promise<{ embed
     for (let i = 0; i < gone.length; i += DELETE_BATCH) await env.HISTORY.deleteByIds(gone.slice(i, i + DELETE_BATCH).map((e) => e.vector_id));
   }
   for (const e of gone) stmts.push(db.prepare('DELETE FROM history_entry WHERE user_id = ? AND food_id = ?').bind(e.user_id, e.food_id));
+  return { stmts, embedded: env.HISTORY ? toEmbed.length : 0, removed: gone.length };
+}
+
+/** A refresh that died holding its claim (worker evicted) stops blocking others after this long. */
+const CLAIM_TTL_MS = 2 * 60_000;
+/** Rounds one refresh runs to pick up foods marked while it worked (including by refreshes it turned away). */
+const MAX_ROUNDS = 3;
+/** The cron rebuilds each user's history in full this often, as a safety net. */
+const FULL_REBUILD_MS = 24 * 3600_000;
+
+/**
+ * Claim the user's history for one refresh, unless another refresh holds it. Returns when it was
+ * last rebuilt in full (null: never), or undefined when it's taken.
+ */
+async function claimHistory(db: D1Database, userId: string, claim: string): Promise<{ rebuilt_at: string | null } | undefined> {
+  const now = Date.now();
+  const row = await db
+    .prepare(
+      `INSERT INTO history_state (user_id, claim, claimed_at) VALUES (?, ?, ?)
+       ON CONFLICT (user_id) DO UPDATE SET claim = excluded.claim, claimed_at = excluded.claimed_at
+         WHERE history_state.claim IS NULL OR history_state.claimed_at < ?
+       RETURNING rebuilt_at`,
+    )
+    .bind(userId, claim, new Date(now).toISOString(), new Date(now - CLAIM_TTL_MS).toISOString())
+    .first<{ rebuilt_at: string | null }>();
+  return row ?? undefined;
+}
+
+/** One claimed round: recompute the marked foods (or all of them), then drop the marks it read and the claim. */
+async function refreshClaimed(env: Env, userId: string, claim: string, full: boolean): Promise<{ embedded: number; removed: number }> {
+  const db = env.DB;
+  // Marks written from here on get higher ids and survive this round.
+  const upTo = (await db.prepare('SELECT MAX(id) AS id FROM history_dirty WHERE user_id = ?').bind(userId).first<{ id: number | null }>())?.id ?? 0;
+  let foodIds: string[] | null = null;
+  if (!full) {
+    const { results } = await db.prepare('SELECT DISTINCT food_id FROM history_dirty WHERE user_id = ? AND id <= ?').bind(userId, upTo).all<{ food_id: string }>();
+    foodIds = results.map((r) => r.food_id);
+  }
+  const { stmts, embedded, removed } =
+    foodIds?.length === 0
+      ? { stmts: [] as D1PreparedStatement[], embedded: 0, removed: 0 }
+      : await syncEntries(env, await currentGroups(db, userId, foodIds), await storedEntries(db, userId, foodIds));
+  stmts.push(db.prepare('DELETE FROM history_dirty WHERE user_id = ? AND id <= ?').bind(userId, upTo));
+  stmts.push(
+    db
+      .prepare('UPDATE history_state SET claim = NULL, claimed_at = NULL, rebuilt_at = COALESCE(?, rebuilt_at) WHERE user_id = ? AND claim = ?')
+      .bind(full ? new Date().toISOString() : null, userId, claim),
+  );
   for (let i = 0; i < stmts.length; i += 50) await db.batch(stmts.slice(i, i + 50));
-  return { embedded: env.HISTORY ? toEmbed.length : 0, removed: gone.length };
+  return { embedded, removed };
+}
+
+/**
+ * Bring one user's history_entry rows and vectors in line with the log. Only foods marked dirty
+ * since the last refresh are recomputed; the user's first refresh (and `full`) rebuilds all of them.
+ * Returns at once when another refresh for the user is running: that one picks up the new marks.
+ * Returns how many entries were embedded and removed.
+ */
+export async function refreshHistory(env: Env, userId: string, opts: { full?: boolean } = {}): Promise<{ embedded: number; removed: number }> {
+  const db = env.DB;
+  const total = { embedded: 0, removed: 0 };
+  for (let round = 0; round < MAX_ROUNDS; round++) {
+    const force = round === 0 && !!opts.full;
+    if (!force) {
+      const s = await db
+        .prepare('SELECT (SELECT rebuilt_at FROM history_state WHERE user_id = ?1) AS rebuilt_at, EXISTS (SELECT 1 FROM history_dirty WHERE user_id = ?1) AS dirty')
+        .bind(userId)
+        .first<{ rebuilt_at: string | null; dirty: number }>();
+      if (s?.rebuilt_at && !s.dirty) break;
+    }
+    const claim = newId();
+    const state = await claimHistory(db, userId, claim);
+    if (!state) break;
+    try {
+      const r = await refreshClaimed(env, userId, claim, force || !state.rebuilt_at);
+      total.embedded += r.embedded;
+      total.removed += r.removed;
+    } catch (e) {
+      await db.prepare('UPDATE history_state SET claim = NULL, claimed_at = NULL WHERE user_id = ? AND claim = ?').bind(userId, claim).run();
+      throw e;
+    }
+  }
+  return total;
+}
+
+/**
+ * The cron's pass: every user with marked foods, incrementally, and a full rebuild for users never
+ * rebuilt (the backfill) or not in the last day. One user's failure doesn't stop the rest.
+ */
+export async function refreshAllHistory(env: Env, now = new Date()): Promise<{ users: number; embedded: number; removed: number; failed: number }> {
+  const stale = new Date(now.getTime() - FULL_REBUILD_MS).toISOString();
+  const { results } = await env.DB.prepare(
+    `SELECT u.id, (s.rebuilt_at IS NULL OR s.rebuilt_at < ?1) AS full FROM users u LEFT JOIN history_state s ON s.user_id = u.id
+     WHERE s.rebuilt_at IS NULL OR s.rebuilt_at < ?1 OR EXISTS (SELECT 1 FROM history_dirty d WHERE d.user_id = u.id)`,
+  )
+    .bind(stale)
+    .all<{ id: string; full: number }>();
+  const total = { users: results.length, embedded: 0, removed: 0, failed: 0 };
+  for (const u of results) {
+    try {
+      const r = await refreshHistory(env, u.id, { full: !!u.full });
+      total.embedded += r.embedded;
+      total.removed += r.removed;
+    } catch (e) {
+      total.failed++;
+      console.warn('history refresh failed', (e as Error).message);
+    }
+  }
+  return total;
 }
 
 /** Refresh one user's history in the background; failures only log. */
