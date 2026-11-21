@@ -45,9 +45,12 @@ export default {
   },
   async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil(
-      dispatchReminders(env, new Date(controller.scheduledTime)).then((r) => {
-        if (r.sent || r.skipped || r.removed) console.log('reminders', r);
-      }),
+      dispatchReminders(env, new Date(controller.scheduledTime)).then(
+        (r) => {
+          if (r.sent || r.skipped || r.removed) console.log('reminders', r);
+        },
+        (e) => console.error('reminders failed', e),
+      ),
     );
     // Meals whose AI job died without recording an error get one, so the app offers "Try again".
     ctx.waitUntil(
