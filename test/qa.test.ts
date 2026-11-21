@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cacheFood } from '../src/worker/lib/foods';
 import { failStaleJobs } from '../src/worker/lib/jobs';
 import { finishDraft } from '../src/worker/lib/pipeline';
 import { api, json, mockFetch, testEnv } from './helpers';
@@ -149,6 +150,15 @@ describe('AI job and answers run once', () => {
     const again = await api(`/intake/${r.data.id}/retry`, { method: 'POST' }, { ...E, AI: fakeAi(questionOutput) });
     expect(again.status).toBe(202);
     expect(again.data.status).toBe('in-progress');
+  });
+});
+
+describe('food cache', () => {
+  it('caches the same new food twice at once without failing', async () => {
+    const f = { source: 'estimate' as const, sourceId: `qa-race-${Date.now()}`, name: 'Race food', brand: null, dataType: null, category: null, defaultServingGrams: null, portions: [], nutrients: [{ code: 'ENERC_KCAL', usdaId: 1008, value: 100, unit: 'kcal' }] };
+    const [a, b] = await Promise.all([cacheFood(testEnv.DB, f), cacheFood(testEnv.DB, f)]);
+    expect(a.id).toBe(b.id);
+    expect(a.nutrients).toHaveLength(1);
   });
 });
 

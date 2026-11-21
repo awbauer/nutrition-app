@@ -150,7 +150,13 @@ export async function cacheFood(db: D1Database, f: NormalisedFood | ExternalFood
         .bind(id, f.raw.kind, JSON.stringify(f.raw.data)),
     );
   }
-  await db.batch(stmts);
+  try {
+    await db.batch(stmts);
+  } catch (e) {
+    // Two items of one meal resolving to the same new food at once: the other insert won, so refresh that row.
+    if (!existing && /UNIQUE constraint failed/i.test((e as Error).message)) return cacheFood(db, f);
+    throw e;
+  }
   return (await getFood(db, '', id))!;
 }
 
