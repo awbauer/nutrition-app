@@ -212,6 +212,11 @@ export function buildServer(api: Api, appUrl = ''): McpServer {
   const server = new McpServer(
     { name: 'clem', version: '1.0.0' },
     {
+      // The tool and resource lists are fixed per deploy and every request gets a fresh server, so nothing
+      // ever changes under a client. Saying so matters: with listChanged on, the SDK answers a 2026-07-28
+      // client's subscriptions/listen with an SSE stream that stays open (15 s keepalives) until the client
+      // hangs up, minutes later. With it off, the listen is acknowledged with nothing to send and closed.
+      capabilities: { tools: { listChanged: false }, resources: { listChanged: false } },
       instructions: `Clem is the user's food and nutrition log. ${NUTRIENTS_NOTE} Dates are the user's log dates (their day ends at their day cutoff, 04:00 by default).`,
     },
   );

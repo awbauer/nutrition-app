@@ -202,6 +202,73 @@ describe('MCP server', () => {
     expect(await call(b, 'delete_meal', { meal_id: meal.data.id })).toMatchObject({ isError: true });
   });
 
+  it('answers every request with a response that ends (2026-07-28 clients like Claude, and 2025 ones)', async () => {
+    const uid = await userId('mcp-transport@example.test');
+    const c = { ...ctx(), props: { userId: uid } } as unknown as ExecutionContext;
+    const META = {
+      'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+      'io.modelcontextprotocol/clientCapabilities': {},
+      'io.modelcontextprotocol/clientInfo': { name: 'test', version: '1' },
+    };
+    const send = (method: string, params: Record<string, unknown>, headers: Record<string, string> = {}) =>
+      mcpApiHandler.fetch(
+        new Request(`${ORIGIN}/mcp`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', 'MCP-Protocol-Version': '2026-07-28', 'Mcp-Method': method, ...headers },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 7, method, params: { ...params, _meta: META } }),
+        }),
+        E,
+        c,
+      );
+    /** The whole body, or a failure if it is still open after a second (it used to stay open for minutes). */
+    const whole = async (res: Response) => {
+      const reader = res.body!.getReader();
+      let text = '';
+      for (;;) {
+        const r = await Promise.race([reader.read(), new Promise<null>((ok) => setTimeout(() => ok(null), 1000))]);
+        if (!r) {
+          await reader.cancel();
+          throw new Error(`response still open after 1 s: ${text}`);
+        }
+        if (r.done) return text;
+        text += new TextDecoder().decode(r.value);
+      }
+    };
+
+    const discover = await send('server/discover', {});
+    // Nothing is ever pushed: the lists are fixed and each request gets a fresh server.
+    expect((await discover.json<any>()).result.capabilities).toMatchObject({ tools: { listChanged: false }, resources: { listChanged: false } });
+
+    const tool = await send('tools/call', { name: 'get_day', arguments: {} }, { 'Mcp-Name': 'get_day' });
+    expect(tool.status).toBe(200);
+    expect(tool.headers.get('content-type')).toMatch(/^application\/json/);
+    expect(JSON.parse(await whole(tool)).result.structuredContent).toMatchObject({ card: 'day' });
+
+    // Claude opens subscriptions/listen after connecting; it is acknowledged with nothing to send and closed.
+    const listen = await send('subscriptions/listen', { notifications: { toolsListChanged: true, resourcesListChanged: true } });
+    expect(listen.headers.get('content-type')).toMatch(/^text\/event-stream/);
+    const events = (await whole(listen))
+      .split('\n')
+      .filter((l) => l.startsWith('data:'))
+      .map((l) => JSON.parse(l.slice(5)));
+    expect(events[0]).toMatchObject({ method: 'notifications/subscriptions/acknowledged', params: { notifications: {} } });
+    expect(events.at(-1)).toMatchObject({ id: 7, result: { resultType: 'complete' } });
+
+    // 2025-era clients: a POST's SSE stream ends with its response; there is no GET stream.
+    const old = await mcpApiHandler.fetch(
+      new Request(`${ORIGIN}/mcp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', 'MCP-Protocol-Version': '2025-06-18' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'get_day', arguments: {} } }),
+      }),
+      E,
+      c,
+    );
+    expect(await whole(old)).toMatch(/"card":"day"/);
+    const get = await mcpApiHandler.fetch(new Request(`${ORIGIN}/mcp`, { headers: { Accept: 'text/event-stream' } }), E, c);
+    expect(get.status).toBe(405);
+  });
+
   it('rejects an unknown user', async () => {
     const res = await mcpApiHandler.fetch(new Request(`${ORIGIN}/mcp`, { method: 'POST', body: '{}' }), E, {
       ...ctx(),
