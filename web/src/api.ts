@@ -136,7 +136,13 @@ export interface ItemDetail {
   item: Item;
   intake_id: string;
   food: (Food & { fdc_url: string | null; owner_user_id: string | null }) | null;
-  conversion: { method: 'mass' | 'portion' | 'default-serving' | 'volume' | 'generic' | 'ai-estimate'; grams_per_unit: number; stored_grams: number } | null;
+  conversion: {
+    method: 'mass' | 'portion' | 'default-serving' | 'volume' | 'density' | 'generic' | 'ai-estimate';
+    grams_per_unit: number;
+    stored_grams: number;
+    /** The typical cup a volume was weighed from, when the food has no cup portion of its own. */
+    per_cup?: { what: string; grams: number } | null;
+  } | null;
   match: MatchInfo | null;
 }
 export interface Question {

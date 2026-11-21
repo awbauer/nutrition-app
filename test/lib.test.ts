@@ -87,7 +87,8 @@ describe('serving to grams', () => {
     expect(countUnit([{ label: '1 medium', unit: 'medium', amount: 1, grams: 118 }])).toBeNull();
     expect(withCounts(oreo.portions)).toContainEqual({ label: 'cookie', unit: 'cookie', amount: 2, grams: 36 });
     // A measure in the label is a portion too; a weight in it adds nothing.
-    expect(toGrams(1, 'tbsp', { portions: [{ label: '1/4 cup', unit: 'serving', amount: 1, grams: 58 }] }).grams).toBe(15);
+    // ...and gives the food's density for the other measures: a tbsp is a sixteenth of its cup.
+    expect(toGrams(1, 'tbsp', { portions: [{ label: '1/4 cup', unit: 'serving', amount: 1, grams: 58 }] }).grams).toBe(14.5);
     expect(toGrams(1, 'cup', { portions: [{ label: '1/4 cup', unit: 'serving', amount: 1, grams: 58 }] }).grams).toBe(232);
     expect(withCounts([{ label: '28 g', unit: 'serving', amount: 1, grams: 28 }])).toHaveLength(1);
   });

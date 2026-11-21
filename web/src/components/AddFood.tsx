@@ -150,7 +150,12 @@ export function AddFood(props: {
   if (picked) {
     const kcal100 = per100(picked.nutrients, 'ENERC_KCAL');
     const prot100 = per100(picked.nutrients, 'PROCNT');
-    const g = toGrams(amount || 0, unit, { portions: picked.portions, default_serving_grams: picked.default_serving_grams }).grams;
+    const g = toGrams(amount || 0, unit, {
+      name: [label ?? '', picked.name],
+      category: picked.category,
+      portions: picked.portions,
+      default_serving_grams: picked.default_serving_grams,
+    }).grams;
     return (
       <div class="flex flex-col gap-4">
         {/* Opened on a quick pick there are no results to go back to (the sheet has its own Back). */}

@@ -77,9 +77,16 @@ export function assertItemsEditable(status: string): void {
 export const requireStatus = (db: D1Database, intakeId: string, status: Status) =>
   db.prepare('UPDATE nutrition_intake SET status = CASE WHEN status = ? THEN status END WHERE id = ?').bind(status, intakeId);
 
+/** Highest confidence for an item whose grams come from a typical cup weight (see toGrams). */
+export const DENSITY_CONFIDENCE_CAP = 0.7;
+
 /** Statements inserting one consumed_item and its nutrient totals. */
 export function itemStatements(db: D1Database, userId: string, intakeId: string, item: ResolvedItem, position: number, id = newId()) {
-  const grams = item.grams ?? toGrams(item.amount, item.unit, item.food).grams;
+  const conv = item.grams == null ? toGrams(item.amount, item.unit, { ...item.food, name: [item.display_name ?? '', item.food.name] }) : null;
+  const grams = item.grams ?? conv!.grams;
+  // A cup of a solid food weighed from a typical cup of that kind of food is an estimate, however sure
+  // the amount: it depends on how it was cut and packed.
+  const confidence = conv?.method === 'density' ? Math.min(item.confidence, DENSITY_CONFIDENCE_CAP) : item.confidence;
   const stmts = [
     db
       .prepare(
@@ -96,7 +103,7 @@ export function itemStatements(db: D1Database, userId: string, intakeId: string,
         item.amount,
         ucum(item.unit),
         round(grams, 1),
-        round(item.confidence, 2),
+        round(confidence, 2),
         item.method,
         item.estimated || item.food.source === 'estimate' ? 1 : 0,
         item.match ? JSON.stringify(item.match) : null,

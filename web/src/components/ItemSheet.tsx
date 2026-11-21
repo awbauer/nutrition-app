@@ -34,9 +34,17 @@ const CONVERSION_LABEL: Record<string, string> = {
   portion: "From the food's own portion sizes",
   'default-serving': "From the food's serving size",
   volume: 'Volume converted at water density',
+  density: 'Estimated from a typical cup of this kind of food',
   generic: 'Rough guess from a generic size table',
   'ai-estimate': "The AI's weight estimate (this food has no portion size for that unit)",
 };
+
+/** How the amount became grams, naming the typical cup it came from when there is one. */
+function conversionLabel(c: NonNullable<ItemDetail['conversion']>) {
+  if (c.per_cup && c.method === 'density') return `Estimated from a typical cup of ${c.per_cup.what} (about ${c.per_cup.grams} g); weigh it for an exact amount`;
+  if (c.per_cup && c.method === 'volume') return `Volume converted at the density of ${c.per_cup.what} (${c.per_cup.grams} g a cup)`;
+  return CONVERSION_LABEL[c.method];
+}
 
 const n1 = (v: number | null | undefined) => (v == null ? '–' : Math.round(v * 10) / 10);
 
@@ -234,7 +242,7 @@ export function ItemSheet(props: { itemId: string; onChange: (m: Intake) => void
         {/* How a household amount became grams; nothing to explain when it's already grams. */}
         {conversion && item.amount_unit !== 'g' && (
           <p class="text-xs text-faint">
-            Saved as {amountLabel(item.amount_value, item.amount_unit)} = {Math.round(item.grams)} g. {CONVERSION_LABEL[conversion.method]}.
+            Saved as {amountLabel(item.amount_value, item.amount_unit)} = {Math.round(item.grams)} g. {conversionLabel(conversion)}.
           </p>
         )}
         <button

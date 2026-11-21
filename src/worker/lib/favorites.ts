@@ -23,16 +23,32 @@ const norm = (s: string) => s.trim().toLowerCase();
 export async function listFavorites(db: D1Database, userId: string): Promise<Favorite[]> {
   const { results } = await db
     .prepare(
-      `SELECT fv.id, fv.name, fv.food_id, fv.amount, fv.unit, f.portions_json, f.default_serving_grams,
+      `SELECT fv.id, fv.name, fv.food_id, fv.amount, fv.unit, f.name AS food_name, f.category, f.portions_json, f.default_serving_grams,
          (SELECT value_per_100g FROM food_nutrient n WHERE n.food_id = f.id AND n.nutrient_code = 'ENERC_KCAL') AS kcal100
        FROM favorite_food fv JOIN food f ON f.id = fv.food_id
        WHERE fv.user_id = ? AND f.archived_at IS NULL
        ORDER BY fv.created_at`,
     )
     .bind(userId)
-    .all<{ id: string; name: string; food_id: string; amount: number; unit: string; portions_json: string; default_serving_grams: number | null; kcal100: number | null }>();
+    .all<{
+      id: string;
+      name: string;
+      food_id: string;
+      amount: number;
+      unit: string;
+      food_name: string;
+      category: string | null;
+      portions_json: string;
+      default_serving_grams: number | null;
+      kcal100: number | null;
+    }>();
   return results.map((r) => {
-    const grams = toGrams(r.amount, r.unit, { portions: JSON.parse(r.portions_json), default_serving_grams: r.default_serving_grams }).grams;
+    const grams = toGrams(r.amount, r.unit, {
+      name: [r.name, r.food_name],
+      category: r.category,
+      portions: JSON.parse(r.portions_json),
+      default_serving_grams: r.default_serving_grams,
+    }).grams;
     return {
       id: r.id,
       name: r.name,

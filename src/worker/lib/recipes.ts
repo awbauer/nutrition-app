@@ -96,7 +96,7 @@ async function resolveIngredients(env: Env, user: User, input: RecipeInput): Pro
   for (const ref of refs) {
     validAmount(ref);
     const food = await resolveRef(env, user, ref);
-    const grams = ref.grams ?? toGrams(ref.amount, ref.unit, food).grams;
+    const grams = ref.grams ?? toGrams(ref.amount, ref.unit, { ...food, name: [ref.display_name ?? '', food.name] }).grams;
     out.push({ food, display_name: ref.display_name || food.name, amount: ref.amount, unit: ucum(ref.unit), grams });
   }
   return out;
