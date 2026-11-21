@@ -43,6 +43,62 @@ describe('explicit grams', () => {
   });
 });
 
+const questionOutput = {
+  meal_type_guess: 'dinner',
+  items: [{ name: 'grilled chicken breast', amount: 150, unit: 'g', confidence: 0.5, search_terms: ['chicken breast'] }],
+  questions: [
+    {
+      id: 'q1',
+      item_index: 0,
+      text: 'How much?',
+      options: ['Small', 'Large'],
+      default: 'Small',
+      effects: { Small: {}, Large: { set_amount: { amount: 400, unit: 'g' } } },
+    },
+  ],
+};
+const fakeAi = (out: unknown) => ({ run: async () => ({ response: JSON.stringify(out) }) }) as unknown as Ai;
+
+async function draftWithQuestion(E: Record<string, string>) {
+  const f = new FormData();
+  f.append('text', 'chicken');
+  const r = await api('/intake', { method: 'POST', body: f }, { ...E, AI: fakeAi(questionOutput) });
+  expect(r.data.status).toBe('in-progress');
+  return r.data;
+}
+
+describe('a draft waiting on answers', () => {
+  it('refuses item edits that answering would throw away', async () => {
+    const E = U('qa-draft@example.test');
+    const fid = await food(E);
+    const draft = await draftWithQuestion(E);
+    const itemId = draft.items[0].id;
+    expect((await api(`/intake/${draft.id}/items`, { method: 'POST', json: { food_id: fid, amount: 1, unit: 'serving' } }, E)).status).toBe(409);
+    expect((await api(`/item/${itemId}`, { method: 'PATCH', json: { amount: 10 } }, E)).status).toBe(409);
+    expect((await api(`/item/${itemId}`, { method: 'DELETE' }, E)).status).toBe(409);
+    const done = await api(`/intake/${draft.id}/answers`, { method: 'POST', json: { answers: { q1: 'Large' } } }, E);
+    expect(done.data.status).toBe('completed');
+    expect(done.data.items).toHaveLength(1);
+    expect(done.data.items[0].grams).toBe(400);
+    // Once completed, items can be changed.
+    const add = await api(`/intake/${draft.id}/items`, { method: 'POST', json: { food_id: fid, amount: 1, unit: 'serving' } }, E);
+    expect(add.status).toBe(201);
+    expect((await api(`/item/${done.data.items[0].id}`, { method: 'PATCH', json: { amount: 100 } }, E)).status).toBe(200);
+  });
+
+  it('does not let a meal be pushed back into the AI states', async () => {
+    const E = U('qa-status@example.test');
+    const fid = await food(E);
+    const m = await api('/intake', { method: 'POST', json: { items: [{ food_id: fid, amount: 1, unit: 'serving' }] } }, E);
+    for (const status of ['preparation', 'in-progress', 'bogus']) expect((await api(`/intake/${m.data.id}`, { method: 'PATCH', json: { status } }, E)).status).toBe(400);
+    expect((await api(`/intake/${m.data.id}/retry`, { method: 'POST' }, E)).status).toBe(409);
+    expect((await api(`/intake/${m.data.id}`, {}, E)).data.items).toHaveLength(1);
+    // Marking it as an error and back is still allowed.
+    expect((await api(`/intake/${m.data.id}`, { method: 'PATCH', json: { status: 'entered-in-error' } }, E)).status).toBe(200);
+    expect((await api(`/intake/${m.data.id}`, { method: 'PATCH', json: { status: 'completed' } }, E)).status).toBe(200);
+  });
+});
+
 describe('many meals', () => {
   it('reads and exports more meals than D1 allows bound parameters in one query', async () => {
     const E = U('qa-many@example.test');

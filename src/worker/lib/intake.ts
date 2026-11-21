@@ -60,6 +60,14 @@ export function validAmount(ref: { amount: unknown; unit: unknown; grams?: unkno
   if (ref.grams != null && (typeof ref.grams !== 'number' || !(ref.grams > 0) || ref.grams > 100000)) throw new HttpError(400, 'grams must be a positive number');
 }
 
+/**
+ * A meal the AI is still reading, or one waiting on answers, gets its items rebuilt when the job or the
+ * answers finish (pipeline.ts): an item added, changed or removed before then would be silently undone.
+ */
+export function assertItemsEditable(status: string): void {
+  if (status === 'preparation' || status === 'in-progress') throw new HttpError(409, 'finish this meal (answer its questions) before changing its items');
+}
+
 /** Statements inserting one consumed_item and its nutrient totals. */
 export function itemStatements(db: D1Database, userId: string, intakeId: string, item: ResolvedItem, position: number, id = newId()) {
   const grams = item.grams ?? toGrams(item.amount, item.unit, item.food).grams;
