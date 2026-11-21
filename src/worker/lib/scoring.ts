@@ -86,13 +86,26 @@ export function popularity(c: Candidate, cfg: MatchConfig = MATCH_CONFIG): { bon
 }
 
 /**
- * The query's words that name a brand rather than the item: those found in a candidate's brand
+ * The words of a candidate's brand that the query mentions. A food word that the brand happens to
+ * share with the name doesn't count unless the whole brand is there: "chicken meatballs" doesn't
+ * mention "Meatballs by Amylu" (whose product is "Chicken Meatballs with Basil"), but "Heinz ketchup"
+ * mentions HEINZ on "HEINZ, TOMATO KETCHUP".
+ */
+function mentionedBrand(qset: Set<string>, brand: string[], name: Set<string>): string[] {
+  const hit = brand.filter((t) => qset.has(t));
+  if (!hit.length || hit.length === brand.length) return hit;
+  return hit.filter((t) => !name.has(t));
+}
+
+/**
+ * The query's words that name a brand rather than the item: those mentioning a candidate's brand
  * ("chick", "fil" in "Chick-fil-A Polynesian Sauce" when any candidate's brand is Chick-fil-A).
  */
-export function brandWords(query: string, cs: Pick<Candidate, 'brand'>[], extraBrand?: string | null, cfg: MatchConfig = MATCH_CONFIG): Set<string> {
+export function brandWords(query: string, cs: Pick<Candidate, 'brand' | 'name'>[], extraBrand?: string | null, cfg: MatchConfig = MATCH_CONFIG): Set<string> {
   const q = new Set(tokens(query, cfg));
   const out = new Set<string>();
-  for (const b of [extraBrand, ...cs.map((c) => c.brand)]) if (b) for (const t of tokens(b, cfg)) if (q.has(t)) out.add(t);
+  if (extraBrand) for (const t of mentionedBrand(q, tokens(extraBrand, cfg), new Set())) out.add(t);
+  for (const c of cs) if (c.brand) for (const t of mentionedBrand(q, tokens(c.brand, cfg), new Set(tokens(c.name, cfg)))) out.add(t);
   return out;
 }
 
@@ -120,8 +133,10 @@ export function scoreCandidate<T extends Candidate>(
   const qset = new Set(q);
   const nameTokens = tokens(c.name, cfg);
   const nset = new Set(nameTokens);
-  const bset = new Set(c.brand ? tokens(c.brand, cfg) : []);
-  const bw = brand ?? new Set([...bset].filter((t) => qset.has(t)));
+  const brandTokens = c.brand ? tokens(c.brand, cfg) : [];
+  const bset = new Set(brandTokens);
+  const mentioned = mentionedBrand(qset, brandTokens, nset);
+  const bw = brand ?? new Set(mentioned);
   // The main segment is the first that isn't only the brand: "McDONALD'S, BIG MAC" is about a Big Mac.
   const segments = c.name.split(',').map((s) => tokens(s, cfg));
   const head = new Set(segments.find((seg) => seg.some((t) => !bw.has(t))) ?? segments[0] ?? []);
@@ -159,8 +174,7 @@ export function scoreCandidate<T extends Candidate>(
   }
 
   // Branded products only when a brand was mentioned.
-  const brandMentioned = !!c.brand && [...bset].some((t) => qset.has(t));
-  if (brandMentioned) add('brand', cfg.brand.mentioned);
+  if (mentioned.length) add('brand', cfg.brand.mentioned);
   else add('prior', cfg.dataTypePrior[c.dataType ?? ''] ?? 0);
 
   // How commonly it's eaten.

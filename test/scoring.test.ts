@@ -120,6 +120,26 @@ describe('candidate ranking (real mismatches from production)', () => {
     expect(r.find((x) => x.candidate.name === 'CHICK-FIL-A, hash browns')!.reasons).toContain('main word differs');
   });
 
+  it("a food word in a brand's name doesn't mention the brand", () => {
+    // "Meatballs by Amylu" isn't named by "chicken meatballs", nor ORIGINAL HERKIMER CHEESE by "cheddar cheese".
+    const meatballs = [
+      { name: 'Chicken Meatballs with Basil and Parmesan', brand: 'Meatballs by Amylu', dataType: 'FatSecret Brand', kcal100: 183.9, sourceRank: 2 },
+      { name: 'Chicken Meatballs', dataType: 'FatSecret', kcal100: 160.7, sourceRank: 0 },
+    ];
+    expect(top('chicken meatballs', meatballs, 220)).toBe('Chicken Meatballs');
+    const cheddar = [
+      { name: 'CHEDDAR CHEESE', brand: 'ORIGINAL HERKIMER CHEESE', dataType: 'Branded', kcal100: 357 },
+      { name: 'Cheddar Cheese', dataType: 'FatSecret', kcal100: 403.6, sourceRank: 0 },
+    ];
+    expect(top('cheddar cheese', cheddar)).toBe('Cheddar Cheese');
+    // The whole brand still counts, even when the name spells it too.
+    const ketchup = [
+      { name: 'HEINZ, TOMATO KETCHUP', brand: 'HEINZ', dataType: 'Branded', kcal100: 118 },
+      { name: 'Ketchup', dataType: 'Survey (FNDDS)', kcal100: 109 },
+    ];
+    expect(top('heinz ketchup', ketchup, 110)).toBe('HEINZ, TOMATO KETCHUP');
+  });
+
   it("uses FatSecret's own order only as a light tiebreak", async () => {
     const { popularity } = await import('../src/worker/lib/scoring');
     expect(popularity({ name: 'Bacon', dataType: 'FatSecret', sourceRank: 0 }).bonus).toBeCloseTo(0.06);
