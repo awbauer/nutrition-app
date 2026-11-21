@@ -106,7 +106,7 @@ function mealCard(p: Payload): string {
   const qs: Rec[] = p.pending?.questions ?? [];
   const head = `<header><p class="eyebrow">${esc(day(p.log_date, { weekday: 'short', month: 'short', day: 'numeric' }))} · ${esc(time(p.occurrence_at, p.occurrence_tz))}</p>
     <h1><span class="dot big" style="background:${MEAL_COLOR[p.meal_type] ?? 'var(--clem-accent)'}"></span>${esc(MEAL[p.meal_type] ?? p.meal_type)}</h1></header>`;
-  if (p.status === 'preparation')
+  if (p.status === 'preparation' || p.status === 'still reading')
     return `${head}<p class="muted">Clem is still reading this meal.</p><footer><button class="btn" data-refresh="${esc(p.id)}">Check again</button></footer>`;
   const totals = p.totals ?? {};
   return `${head}

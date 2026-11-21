@@ -20,7 +20,14 @@ export interface McpProps {
 
 type Api = (method: string, path: string, body?: unknown) => Promise<unknown>;
 
-class ApiError extends Error {}
+class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
 
 /** Call /api/<path> as `user`. */
 function apiFor(env: Env, ctx: ExecutionContext, user: User): Api {
@@ -35,7 +42,7 @@ function apiFor(env: Env, ctx: ExecutionContext, user: User): Api {
     const res = await app.fetch(new Request(`https://clem.internal/api${path}`, init), internal, ctx);
     if (res.status === 204) return { ok: true };
     const data = await res.json().catch(() => null);
-    if (!res.ok) throw new ApiError((data as { error?: string } | null)?.error ?? `HTTP ${res.status}`);
+    if (!res.ok) throw new ApiError((data as { error?: string } | null)?.error ?? `HTTP ${res.status}`, res.status);
     return data;
   };
 }
@@ -43,17 +50,45 @@ function apiFor(env: Env, ctx: ExecutionContext, user: User): Api {
 interface Meal {
   id: string;
   status: string;
+  log_date?: string;
+  meal_type?: string;
+  occurrence_at?: string;
+  occurrence_tz?: string;
+  pending?: { error?: string };
 }
 
-/** The AI reads a meal in the background (usually a few seconds): wait for it, up to 45 s. */
-async function finished(api: Api, meal: Meal): Promise<Meal> {
-  const deadline = Date.now() + 45_000;
+/** How long log_meal waits for the AI, and the gaps between looks: quick at first (most meals take a few seconds), then every 5 s. */
+export const MEAL_WAIT = { totalMs: 45_000, delaysMs: [1000, 1000, 1500, 2000, 3000, 4000, 5000] };
+
+/**
+ * The AI reads a meal in the background (usually a few seconds): wait for it, backing off, up to
+ * MEAL_WAIT.totalMs. Stops early if the job recorded an error. Still unread by then: say so, with the id
+ * to look it up later (the card shows "still reading" with a Check again button).
+ */
+async function finished(api: Api, meal: Meal): Promise<Meal | Rec> {
+  const start = Date.now();
+  const reading = (m: Meal) => m.status === 'preparation' && !m.pending?.error;
   let m = meal;
-  while (m.status === 'preparation' && Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, 1000));
+  for (let i = 0; reading(m); i++) {
+    const delay = MEAL_WAIT.delaysMs[Math.min(i, MEAL_WAIT.delaysMs.length - 1)] ?? 5000;
+    if (Date.now() - start + delay > MEAL_WAIT.totalMs) break;
+    await new Promise((r) => setTimeout(r, delay));
     m = (await api('GET', `/intake/${encodeURIComponent(m.id)}`)) as Meal;
   }
-  return m;
+  if (!reading(m)) return m;
+  // The id and how long, not the meal's text.
+  console.warn('mcp log_meal still reading', { meal_id: m.id, waited_ms: Date.now() - start });
+  return {
+    meal_id: m.id,
+    status: 'still reading',
+    note: `Clem's AI is still reading this meal; it is saved and will finish on its own. Call get_meal with meal_id "${m.id}" in a minute to see what was logged (and answer any questions with answer_meal_questions). Don't log it again.`,
+    // For the card's header.
+    id: m.id,
+    log_date: m.log_date,
+    meal_type: m.meal_type,
+    occurrence_at: m.occurrence_at,
+    occurrence_tz: m.occurrence_tz,
+  };
 }
 
 type Rec = Record<string, any>;
@@ -149,44 +184,22 @@ async function searchFoods(api: Api, query: string, limit: number) {
   };
 }
 
-const ok = (data: unknown) => ({
-  content: [{ type: 'text' as const, text: JSON.stringify(data, null, 1) }],
-});
-
 /** Clem's MCP App card (web/cards): one view; `card` in the structured result picks what it draws. */
 export const CARD_URI = 'ui://clem/card.html';
 type CardKind = 'day' | 'meal' | 'range' | 'coach';
 const CARD_META = { ui: { resourceUri: CARD_URI } };
-const fail = (e: unknown) => {
-  // Tool errors went only to the client; log them (the message, not the meal text) so they show up in the Worker's logs.
-  console.warn('mcp tool failed', (e as Error).message);
+
+const ok = (data: unknown) => ({
+  content: [{ type: 'text' as const, text: JSON.stringify(data, null, 1) }],
+});
+/** A tool error goes back to the client, and to the Worker's logs with the tool's name (the message, not the meal text). */
+const fail = (tool: string, e: unknown) => {
+  const message = (e as Error).message;
+  console.warn('mcp tool failed', { tool, status: e instanceof ApiError ? e.status : null, message });
   return {
-    content: [{ type: 'text' as const, text: `Error: ${(e as Error).message}` }],
+    content: [{ type: 'text' as const, text: `Error: ${message}` }],
     isError: true,
   };
-};
-/** Like run(), and hands the card its data as structuredContent. */
-const runCard = (card: CardKind, appUrl: string) => async (f: () => Promise<unknown>) => {
-  try {
-    const data = await f();
-    return {
-      ...ok(data),
-      structuredContent: {
-        card,
-        app_url: appUrl,
-        ...(data as Record<string, unknown>),
-      },
-    };
-  } catch (e) {
-    return fail(e);
-  }
-};
-const run = async (f: () => Promise<unknown>) => {
-  try {
-    return ok(await f());
-  } catch (e) {
-    return fail(e);
-  }
 };
 
 const date = z
@@ -194,6 +207,13 @@ const date = z
   .regex(/^(\d{4}-\d{2}-\d{2}|today)$/)
   .describe('YYYY-MM-DD, or "today"');
 const mealType = z.enum(['breakfast', 'lunch', 'dinner', 'snack']);
+const occurrenceAt = z.string().describe('ISO 8601 time it was eaten, with the user’s UTC offset (e.g. 2026-05-04T08:15:00-04:00)');
+const merge = z
+  .boolean()
+  .default(true)
+  .describe(
+    'As the app’s log button does: breakfast, lunch or dinner joins that day’s existing meal of the same type, if there is one (the result is then that whole meal, with merged_from set). Snacks always stay separate. false logs a separate entry.',
+  );
 const read = { readOnlyHint: true, openWorldHint: false };
 const write = {
   readOnlyHint: false,
@@ -205,6 +225,39 @@ const destroy = {
   destructiveHint: true,
   openWorldHint: false,
 };
+
+interface ToolSpec<S> {
+  title: string;
+  description: string;
+  inputSchema?: S;
+  annotations: typeof read;
+  /** Draw the result in Clem's card (an MCP App), and which view of it. */
+  card?: CardKind;
+}
+type ArgsOf<S> = S extends z.ZodType ? z.output<S> : Record<string, never>;
+
+/**
+ * `tool(name, spec, handler)`: registers a tool whose handler returns its data or throws. The data goes
+ * back as JSON text (plus structuredContent for the card, when the spec names one); a throw becomes a
+ * tool error, logged with the tool's name.
+ */
+function toolRegistrar(server: McpServer, appUrl: string) {
+  return function tool<S extends z.ZodType | undefined = undefined>(name: string, spec: ToolSpec<S>, handler: (args: ArgsOf<S>) => Promise<unknown>) {
+    const { card, ...config } = spec;
+    const run = async (args: ArgsOf<S>) => {
+      try {
+        const data = await handler(args);
+        return card ? { ...ok(data), structuredContent: { card, app_url: appUrl, ...(data as Rec) } } : ok(data);
+      } catch (e) {
+        return fail(name, e);
+      }
+    };
+    // Without an input schema the SDK passes only its request context, no arguments.
+    const cb = config.inputSchema ? (args: ArgsOf<S>) => run(args) : () => run({} as ArgsOf<S>);
+    if (card) registerAppTool(server, name, { ...config, _meta: CARD_META } as never, cb as never);
+    else server.registerTool(name, config as never, cb as never);
+  };
+}
 
 const NUTRIENTS_NOTE = 'Nutrients use INFOODS codes: ENERC_KCAL kcal, PROCNT protein g, CHOCDF carbs g, FAT fat g, FIBTG fiber g, SUGAR sugars g, NA sodium mg.';
 
@@ -224,26 +277,22 @@ export function buildServer(api: Api, appUrl = ''): McpServer {
   registerAppResource(server, 'Clem card', CARD_URI, { description: 'Clem’s card for days, meals, weeks and coach reports' }, async () => ({
     contents: [{ uri: CARD_URI, mimeType: RESOURCE_MIME_TYPE, text: CARD_HTML }],
   }));
-  const day = runCard('day', appUrl);
-  const meal = runCard('meal', appUrl);
-  const range = runCard('range', appUrl);
-  const coach = runCard('coach', appUrl);
+  const tool = toolRegistrar(server, appUrl);
+  const mealPath = (id: string) => `/intake/${encodeURIComponent(id)}`;
 
   // ---- reading the log ----
-  registerAppTool(
-    server,
+  tool(
     'get_day',
     {
       title: 'Get a day',
       description: `Meals, items and totals for one log date, with targets and what's left. ${NUTRIENTS_NOTE}`,
       inputSchema: z.object({ date: date.default('today') }),
       annotations: read,
-      _meta: CARD_META,
+      card: 'day',
     },
-    async ({ date }) => day(() => api('GET', `/day/${date}`)),
+    ({ date }) => api('GET', `/day/${date}`),
   );
-  registerAppTool(
-    server,
+  tool(
     'get_range',
     {
       title: 'Daily totals for a range',
@@ -253,23 +302,22 @@ export function buildServer(api: Api, appUrl = ''): McpServer {
         to: z.string().optional().describe('YYYY-MM-DD'),
       }),
       annotations: read,
-      _meta: CARD_META,
+      card: 'range',
     },
-    async ({ from, to }) => range(() => api('GET', `/range?${new URLSearchParams({ ...(from ? { from } : {}), ...(to ? { to } : {}) })}`)),
+    ({ from, to }) => api('GET', `/range?${new URLSearchParams({ ...(from ? { from } : {}), ...(to ? { to } : {}) })}`),
   );
-  registerAppTool(
-    server,
+  tool(
     'get_meal',
     {
       title: 'Get a meal',
       description: 'One meal with its items, nutrients and any open questions.',
       inputSchema: z.object({ meal_id: z.string() }),
       annotations: read,
-      _meta: CARD_META,
+      card: 'meal',
     },
-    async ({ meal_id }) => meal(() => api('GET', `/intake/${encodeURIComponent(meal_id)}`)),
+    ({ meal_id }) => api('GET', mealPath(meal_id)),
   );
-  server.registerTool(
+  tool(
     'get_item',
     {
       title: 'Get an item’s details',
@@ -277,10 +325,10 @@ export function buildServer(api: Api, appUrl = ''): McpServer {
       inputSchema: z.object({ item_id: z.string() }),
       annotations: read,
     },
-    async ({ item_id }) => run(() => api('GET', `/item/${encodeURIComponent(item_id)}`)),
+    ({ item_id }) => api('GET', `/item/${encodeURIComponent(item_id)}`),
   );
 
-  server.registerTool(
+  tool(
     'get_meal_history',
     {
       title: 'Get a meal’s change log',
@@ -289,16 +337,15 @@ export function buildServer(api: Api, appUrl = ''): McpServer {
       inputSchema: z.object({ meal_id: z.string() }),
       annotations: read,
     },
-    async ({ meal_id }) =>
-      run(async () => {
-        const h = (await api('GET', `/intake/${encodeURIComponent(meal_id)}/history`)) as {
-          meal_id: string;
-          events: { at: string; actor: string; kind: string; item_id: string | null; summary: string }[];
-        };
-        return { meal_id: h.meal_id, events: h.events.map(({ at, actor, kind, item_id, summary }) => ({ at, actor, kind, item_id, summary })) };
-      }),
+    async ({ meal_id }) => {
+      const h = (await api('GET', `${mealPath(meal_id)}/history`)) as {
+        meal_id: string;
+        events: { at: string; actor: string; kind: string; item_id: string | null; summary: string }[];
+      };
+      return { meal_id: h.meal_id, events: h.events.map(({ at, actor, kind, item_id, summary }) => ({ at, actor, kind, item_id, summary })) };
+    },
   );
-  server.registerTool(
+  tool(
     'get_logging_quality',
     {
       title: 'How accurate the AI logging is',
@@ -307,38 +354,40 @@ export function buildServer(api: Api, appUrl = ''): McpServer {
       inputSchema: z.object({ days: z.number().int().min(1).max(365).optional().describe('Defaults to 30') }),
       annotations: read,
     },
-    async ({ days }) => run(() => api('GET', `/coach/quality?days=${days ?? 30}`)),
+    ({ days }) => api('GET', `/coach/quality?days=${days ?? 30}`),
   );
 
   // ---- logging ----
-  registerAppTool(
-    server,
+  tool(
     'log_meal',
     {
       title: 'Log a meal from a description',
       description:
-        'Log food described in plain words ("2 eggs and toast with butter", "grande pistachio cream cold brew"). The app’s AI splits it into items and matches each to a food database (USDA, FatSecret, the user’s own foods and history); this takes a few seconds. Returns the meal. If status is "in-progress" it has questions: answer them with answer_meal_questions. If it is still "preparation", check again later with get_meal.',
+        'Log food described in plain words ("2 eggs and toast with butter", "grande pistachio cream cold brew"). The app’s AI splits it into items and matches each to a food database (USDA, FatSecret, the user’s own foods and history); this usually takes a few seconds and the tool waits for it. Returns the meal. If status is "in-progress" it has questions: answer them with answer_meal_questions. If status is "still reading", the meal is saved but not read yet: call get_meal with its meal_id a minute later instead of logging it again. Photos can’t be logged here; use the app.',
       inputSchema: z.object({
         description: z.string().min(2),
         meal_type: mealType.optional().describe('Defaults from the time of day'),
-        occurrence_at: z.string().optional().describe('ISO time eaten; defaults to now'),
-        add_to_meal_id: z.string().optional().describe('Append to this existing meal instead of creating one'),
+        occurrence_at: occurrenceAt.optional().describe('ISO 8601 time eaten, with the user’s UTC offset; defaults to now'),
+        merge,
+        add_to_meal_id: z.string().optional().describe('Append to this existing meal instead (its "Add item"); merge is then ignored'),
       }),
       annotations: write,
-      _meta: CARD_META,
+      card: 'meal',
     },
-    async ({ description, meal_type, occurrence_at, add_to_meal_id }) =>
-      meal(async () => {
-        const f = new FormData();
-        f.append('text', description);
+    async ({ description, meal_type, occurrence_at, merge, add_to_meal_id }) => {
+      // The same form the app's log sheet sends.
+      const f = new FormData();
+      f.append('text', description);
+      if (add_to_meal_id) f.append('append_to', add_to_meal_id);
+      else {
         if (meal_type) f.append('meal_type', meal_type);
+        if (merge) f.append('merge', '1');
         if (occurrence_at) f.append('occurrence_at', occurrence_at);
-        if (add_to_meal_id) f.append('append_to', add_to_meal_id);
-        return finished(api, (await api('POST', '/intake', f)) as Meal);
-      }),
+      }
+      return finished(api, (await api('POST', '/intake', f)) as Meal);
+    },
   );
-  registerAppTool(
-    server,
+  tool(
     'answer_meal_questions',
     {
       title: 'Answer a meal’s questions',
@@ -349,17 +398,25 @@ export function buildServer(api: Api, appUrl = ''): McpServer {
         answers: z.record(z.string(), z.string()).default({}),
       }),
       annotations: write,
-      _meta: CARD_META,
+      card: 'meal',
     },
-    async ({ meal_id, answers }) =>
-      meal(() =>
-        api('POST', `/intake/${encodeURIComponent(meal_id)}/answers`, {
-          answers,
-        }),
-      ),
+    ({ meal_id, answers }) => api('POST', `${mealPath(meal_id)}/answers`, { answers }),
   );
-  registerAppTool(
-    server,
+  /** Manual entry of resolved items: into a given meal, or a new one (joining the day's meal of its type when `merge`). */
+  const logItems = (item: Rec, a: { meal_type?: string; occurrence_at?: string; merge: boolean; add_to_meal_id?: string }) =>
+    api(
+      'POST',
+      '/intake',
+      a.add_to_meal_id
+        ? { append_to: a.add_to_meal_id, items: [item] }
+        : {
+            meal_type: a.meal_type,
+            merge: a.merge,
+            ...(a.occurrence_at ? { occurrence_at: a.occurrence_at } : {}),
+            items: [item],
+          },
+    );
+  tool(
     'log_food',
     {
       title: 'Log a specific food',
@@ -373,36 +430,25 @@ export function buildServer(api: Api, appUrl = ''): McpServer {
         unit: z.string(),
         display_name: z.string().optional().describe('What to call it in the log'),
         meal_type: mealType.optional(),
-        occurrence_at: z.string().optional(),
+        occurrence_at: occurrenceAt.optional(),
+        merge,
         add_to_meal_id: z.string().optional(),
       }),
       annotations: write,
-      _meta: CARD_META,
+      card: 'meal',
     },
-    async (a) =>
-      meal(() => {
-        if (!a.food_id && !a.fdc_id && !a.fatsecret_id) throw new Error('give food_id, fdc_id or fatsecret_id');
-        const item = {
-          ...(a.food_id ? { food_id: a.food_id } : a.fdc_id ? { fdc_id: a.fdc_id } : { fatsecret_id: a.fatsecret_id }),
-          amount: a.amount,
-          unit: a.unit,
-          ...(a.display_name ? { display_name: a.display_name } : {}),
-        };
-        return api(
-          'POST',
-          '/intake',
-          a.add_to_meal_id
-            ? { append_to: a.add_to_meal_id, items: [item] }
-            : {
-                meal_type: a.meal_type,
-                merge: true,
-                ...(a.occurrence_at ? { occurrence_at: a.occurrence_at } : {}),
-                items: [item],
-              },
-        );
-      }),
+    async (a) => {
+      if (!a.food_id && !a.fdc_id && !a.fatsecret_id) throw new Error('give food_id, fdc_id or fatsecret_id');
+      const item = {
+        ...(a.food_id ? { food_id: a.food_id } : a.fdc_id ? { fdc_id: a.fdc_id } : { fatsecret_id: a.fatsecret_id }),
+        amount: a.amount,
+        unit: a.unit,
+        ...(a.display_name ? { display_name: a.display_name } : {}),
+      };
+      return logItems(item, a);
+    },
   );
-  server.registerTool(
+  tool(
     'search_foods',
     {
       title: 'Search foods',
@@ -414,20 +460,20 @@ export function buildServer(api: Api, appUrl = ''): McpServer {
       }),
       annotations: read,
     },
-    async ({ query, limit }) => run(() => searchFoods(api, query, limit)),
+    ({ query, limit }) => searchFoods(api, query, limit),
   );
 
   // ---- favorites: saved portions, one call to log ----
-  server.registerTool(
+  tool(
     'list_favorites',
     {
       title: 'Favorites',
       description: 'The user\'s favorites: foods saved with the amount they eat ("usual nuts" = 1 oz almonds), with grams and kcal for that amount. Log one with log_favorite.',
       annotations: read,
     },
-    async () => run(() => api('GET', '/foods/favorites')),
+    () => api('GET', '/foods/favorites'),
   );
-  server.registerTool(
+  tool(
     'save_favorite',
     {
       title: 'Save a favorite portion',
@@ -443,22 +489,20 @@ export function buildServer(api: Api, appUrl = ''): McpServer {
       }),
       annotations: write,
     },
-    async (a) =>
-      run(async () => {
-        let foodId = a.food_id;
-        if (!foodId && a.fdc_id) foodId = ((await api('GET', `/foods/fdc/${encodeURIComponent(a.fdc_id)}`)) as Rec).id;
-        if (!foodId && a.fatsecret_id) foodId = ((await api('GET', `/foods/fatsecret/${encodeURIComponent(a.fatsecret_id)}`)) as Rec).id;
-        if (!foodId) throw new Error('give food_id, fdc_id or fatsecret_id');
-        return api('POST', '/foods/favorites', {
-          name: a.name,
-          food_id: foodId,
-          amount: a.amount,
-          unit: a.unit,
-        });
-      }),
+    async (a) => {
+      let foodId = a.food_id;
+      if (!foodId && a.fdc_id) foodId = ((await api('GET', `/foods/fdc/${encodeURIComponent(a.fdc_id)}`)) as Rec).id;
+      if (!foodId && a.fatsecret_id) foodId = ((await api('GET', `/foods/fatsecret/${encodeURIComponent(a.fatsecret_id)}`)) as Rec).id;
+      if (!foodId) throw new Error('give food_id, fdc_id or fatsecret_id');
+      return api('POST', '/foods/favorites', {
+        name: a.name,
+        food_id: foodId,
+        amount: a.amount,
+        unit: a.unit,
+      });
+    },
   );
-  registerAppTool(
-    server,
+  tool(
     'log_favorite',
     {
       title: 'Log a favorite',
@@ -468,41 +512,29 @@ export function buildServer(api: Api, appUrl = ''): McpServer {
         favorite_id: z.string().optional(),
         times: z.number().positive().default(1),
         meal_type: mealType.optional(),
-        occurrence_at: z.string().optional(),
+        occurrence_at: occurrenceAt.optional(),
+        merge,
         add_to_meal_id: z.string().optional(),
       }),
       annotations: write,
-      _meta: CARD_META,
+      card: 'meal',
     },
-    async (a) =>
-      meal(async () => {
-        const favs = (await api('GET', '/foods/favorites')) as Rec[];
-        const want = a.name?.trim().toLowerCase();
-        const fav =
-          favs.find((f) => f.id === a.favorite_id) ??
-          (want ? (favs.find((f) => f.name.toLowerCase() === want) ?? favs.find((f) => f.name.toLowerCase().includes(want))) : undefined);
-        if (!fav) throw new Error(`no favorite ${a.name ? `named "${a.name}"` : a.favorite_id}; saved: ${favs.map((f) => f.name).join(', ') || 'none'}`);
-        const item = {
-          food_id: fav.food_id,
-          amount: Math.round(fav.amount * a.times * 1000) / 1000,
-          unit: fav.unit,
-          display_name: fav.name,
-        };
-        return api(
-          'POST',
-          '/intake',
-          a.add_to_meal_id
-            ? { append_to: a.add_to_meal_id, items: [item] }
-            : {
-                meal_type: a.meal_type,
-                merge: true,
-                ...(a.occurrence_at ? { occurrence_at: a.occurrence_at } : {}),
-                items: [item],
-              },
-        );
-      }),
+    async (a) => {
+      const favs = (await api('GET', '/foods/favorites')) as Rec[];
+      const want = a.name?.trim().toLowerCase();
+      const fav =
+        favs.find((f) => f.id === a.favorite_id) ?? (want ? (favs.find((f) => f.name.toLowerCase() === want) ?? favs.find((f) => f.name.toLowerCase().includes(want))) : undefined);
+      if (!fav) throw new Error(`no favorite ${a.name ? `named "${a.name}"` : a.favorite_id}; saved: ${favs.map((f) => f.name).join(', ') || 'none'}`);
+      const item = {
+        food_id: fav.food_id,
+        amount: Math.round(fav.amount * a.times * 1000) / 1000,
+        unit: fav.unit,
+        display_name: fav.name,
+      };
+      return logItems(item, a);
+    },
   );
-  server.registerTool(
+  tool(
     'remove_favorite',
     {
       title: 'Remove a favorite',
@@ -510,9 +542,11 @@ export function buildServer(api: Api, appUrl = ''): McpServer {
       inputSchema: z.object({ favorite_id: z.string() }),
       annotations: destroy,
     },
-    async ({ favorite_id }) => run(() => api('DELETE', `/foods/favorites/${encodeURIComponent(favorite_id)}`)),
+    ({ favorite_id }) => api('DELETE', `/foods/favorites/${encodeURIComponent(favorite_id)}`),
   );
-  server.registerTool(
+
+  // ---- changing what's logged ----
+  tool(
     'edit_item',
     {
       title: 'Change an item',
@@ -527,9 +561,9 @@ export function buildServer(api: Api, appUrl = ''): McpServer {
       }),
       annotations: write,
     },
-    async ({ item_id, ...patch }) => run(() => api('PATCH', `/item/${encodeURIComponent(item_id)}`, patch)),
+    ({ item_id, ...patch }) => api('PATCH', `/item/${encodeURIComponent(item_id)}`, patch),
   );
-  server.registerTool(
+  tool(
     'delete_item',
     {
       title: 'Remove an item',
@@ -537,9 +571,50 @@ export function buildServer(api: Api, appUrl = ''): McpServer {
       inputSchema: z.object({ item_id: z.string() }),
       annotations: destroy,
     },
-    async ({ item_id }) => run(() => api('DELETE', `/item/${encodeURIComponent(item_id)}`)),
+    ({ item_id }) => api('DELETE', `/item/${encodeURIComponent(item_id)}`),
   );
-  server.registerTool(
+  tool(
+    'edit_meal',
+    {
+      title: 'Change a meal’s time, type or note',
+      description:
+        'Change when a meal was eaten, which meal it is (breakfast, lunch, dinner, snack) and/or its note. Pass only what changes. A new time can move the meal to another log date (times before the user’s day cutoff, 04:00 by default, count toward the day before); its meal type stays unless you pass meal_type. Items are changed with edit_item, added with log_food/log_meal (add_to_meal_id), removed with delete_item.',
+      inputSchema: z.object({
+        meal_id: z.string(),
+        occurrence_at: occurrenceAt.optional(),
+        meal_type: mealType.optional(),
+        note: z.string().max(2000).nullable().optional().describe('null clears it'),
+      }),
+      annotations: write,
+      card: 'meal',
+    },
+    ({ meal_id, ...patch }) => {
+      if (patch.occurrence_at === undefined && patch.meal_type === undefined && patch.note === undefined) throw new Error('give occurrence_at, meal_type or note');
+      return api('PATCH', mealPath(meal_id), patch);
+    },
+  );
+  tool(
+    'copy_meal',
+    {
+      title: 'Repeat a meal',
+      description:
+        'Log a past meal again as a new meal, with the same foods and amounts ("same breakfast as yesterday"). Goes to now by default; pass date to put it on another log date (at noon there) or occurrence_at for an exact time. Keeps the meal type unless you pass meal_type. It is always a separate entry, even if that day already has the same meal.',
+      inputSchema: z.object({
+        meal_id: z.string().describe('The meal to repeat (from get_day)'),
+        date: date.optional().describe('Log date to put the copy on: YYYY-MM-DD, or "today" (now)'),
+        occurrence_at: occurrenceAt.optional().describe('Exact time for the copy, instead of date'),
+        meal_type: mealType.optional(),
+      }),
+      annotations: write,
+      card: 'meal',
+    },
+    ({ meal_id, date, occurrence_at, meal_type }) =>
+      api('POST', `${mealPath(meal_id)}/copy`, {
+        ...(occurrence_at ? { occurrence_at } : date ? { date } : {}),
+        ...(meal_type ? { meal_type } : {}),
+      }),
+  );
+  tool(
     'delete_meal',
     {
       title: 'Delete a meal',
@@ -547,20 +622,20 @@ export function buildServer(api: Api, appUrl = ''): McpServer {
       inputSchema: z.object({ meal_id: z.string() }),
       annotations: destroy,
     },
-    async ({ meal_id }) => run(() => api('DELETE', `/intake/${encodeURIComponent(meal_id)}`)),
+    ({ meal_id }) => api('DELETE', mealPath(meal_id)),
   );
 
   // ---- foods and recipes ----
-  server.registerTool(
+  tool(
     'list_my_foods',
     {
       title: 'My foods',
       description: 'The user’s own custom foods (from labels or entered by hand), with times logged.',
       annotations: read,
     },
-    async () => run(() => api('GET', '/foods/mine')),
+    () => api('GET', '/foods/mine'),
   );
-  server.registerTool(
+  tool(
     'create_food',
     {
       title: 'Create a custom food',
@@ -574,29 +649,29 @@ export function buildServer(api: Api, appUrl = ''): McpServer {
       }),
       annotations: write,
     },
-    async (body) => run(() => api('POST', '/foods', body)),
+    (body) => api('POST', '/foods', body),
   );
-  server.registerTool(
+  tool(
     'list_recipes',
     {
       title: 'Recipes',
       description: 'The user’s recipes (batches cooked once and eaten in servings), with per-serving nutrients and ingredients.',
       annotations: read,
     },
-    async () => run(() => api('GET', '/recipes')),
+    () => api('GET', '/recipes'),
   );
 
   // ---- goals, weight, coaching ----
-  server.registerTool(
+  tool(
     'get_targets',
     {
       title: 'Targets',
       description: 'Current daily targets (energy kcal, protein, fat, carbs, fiber g) and body profile.',
       annotations: read,
     },
-    async () => run(() => api('GET', '/goals')),
+    () => api('GET', '/goals'),
   );
-  server.registerTool(
+  tool(
     'set_targets',
     {
       title: 'Set targets',
@@ -610,9 +685,9 @@ export function buildServer(api: Api, appUrl = ''): McpServer {
       }),
       annotations: write,
     },
-    async (body) => run(() => api('PUT', '/goals', body)),
+    (body) => api('PUT', '/goals', body),
   );
-  server.registerTool(
+  tool(
     'get_weight',
     {
       title: 'Weight',
@@ -623,9 +698,9 @@ export function buildServer(api: Api, appUrl = ''): McpServer {
       }),
       annotations: read,
     },
-    async ({ from, to }) => run(() => api('GET', `/weight?${new URLSearchParams({ ...(from ? { from } : {}), ...(to ? { to } : {}) })}`)),
+    ({ from, to }) => api('GET', `/weight?${new URLSearchParams({ ...(from ? { from } : {}), ...(to ? { to } : {}) })}`),
   );
-  server.registerTool(
+  tool(
     'log_weight',
     {
       title: 'Log weight',
@@ -637,10 +712,9 @@ export function buildServer(api: Api, appUrl = ''): McpServer {
       }),
       annotations: write,
     },
-    async (body) => run(() => api('POST', '/weight', body)),
+    (body) => api('POST', '/weight', body),
   );
-  registerAppTool(
-    server,
+  tool(
     'get_coach_report',
     {
       title: 'Coach report',
@@ -650,20 +724,19 @@ export function buildServer(api: Api, appUrl = ''): McpServer {
         date: z.string().optional().describe('YYYY-MM-DD'),
       }),
       annotations: read,
-      _meta: CARD_META,
+      card: 'coach',
     },
-    async ({ date }) => coach(() => api('GET', date ? `/coach/${date}` : '/coach')),
+    ({ date }) => api('GET', date ? `/coach/${date}` : '/coach'),
   );
-  registerAppTool(
-    server,
+  tool(
     'run_coach',
     {
       title: 'Update coach report',
       description: 'Write a fresh coach report for today so far (takes ~10 s).',
       annotations: write,
-      _meta: CARD_META,
+      card: 'coach',
     },
-    async () => coach(() => api('POST', '/coach/run')),
+    () => api('POST', '/coach/run'),
   );
 
   return server;

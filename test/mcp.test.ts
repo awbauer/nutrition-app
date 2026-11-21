@@ -2,7 +2,7 @@ import { env } from 'cloudflare:workers';
 import { describe, expect, it } from 'vitest';
 import worker from '../src/worker/index';
 import type { Env } from '../src/worker/env';
-import { mcpApiHandler } from '../src/worker/mcp';
+import { MEAL_WAIT, mcpApiHandler } from '../src/worker/mcp';
 import { afterEach, vi } from 'vitest';
 import { api, json, mockFetch } from './helpers';
 
@@ -174,7 +174,7 @@ describe('MCP server', () => {
     const r = await call(
       uid,
       'log_meal',
-      { description: '2 usual nuts' },
+      { description: '2 usual nuts', merge: false },
       { JOBS: undefined, AI: say([{ name: 'usual nuts', amount: 2, unit: 'favorite', grams: 90, confidence: 0.6, search_terms: ['nuts'] }]) },
     );
     expect(r.data.items[0]).toMatchObject({ food_id: almonds.data.id, grams: 56.7 });
@@ -183,7 +183,7 @@ describe('MCP server', () => {
     const g = await call(
       uid,
       'log_meal',
-      { description: '40 g of usual nuts' },
+      { description: '40 g of usual nuts', merge: false },
       { JOBS: undefined, AI: say([{ name: 'Usual nuts', amount: 40, unit: 'g', confidence: 0.9, search_terms: ['nuts'] }]) },
     );
     expect(g.data.items[0]).toMatchObject({ food_id: almonds.data.id, grams: 40 });
@@ -275,5 +275,124 @@ describe('MCP server', () => {
       props: { userId: 'nobody' },
     } as unknown as ExecutionContext);
     expect(res.status).toBe(401);
+  });
+});
+
+describe('MCP tools for changing meals', () => {
+  const banana = { items: [{ name: 'banana', amount: 1, unit: 'serving', grams: 118, confidence: 0.9, search_terms: ['banana'], estimate_per_100g: { kcal: 89 } }], questions: [] };
+  const fakeAi = (out: unknown) => ({ run: async () => ({ response: out }) }) as unknown as Ai;
+  const setup = async (email: string, timezone = 'UTC') => {
+    const uid = await userId(email);
+    await E.DB.prepare('UPDATE users SET timezone = ? WHERE id = ?').bind(timezone, uid).run();
+    const food = await call(uid, 'create_food', { name: 'banana', serving_grams: 118, per_serving: { ENERC_KCAL: 105 } });
+    const oats = await call(uid, 'create_food', { name: 'Rolled oats', serving_grams: 40, per_serving: { ENERC_KCAL: 150 } });
+    return { uid, banana: food.data.id as string, oats: oats.data.id as string };
+  };
+
+  it('lists the new tools with their schemas', async () => {
+    const uid = await userId('mcp-list-new@example.test');
+    const tools = Object.fromEntries((await rpc(uid, 'tools/list')).result.tools.map((t: any) => [t.name, t]));
+    expect(Object.keys(tools.edit_meal.inputSchema.properties).sort()).toEqual(['meal_id', 'meal_type', 'note', 'occurrence_at']);
+    expect(Object.keys(tools.copy_meal.inputSchema.properties).sort()).toEqual(['date', 'meal_id', 'meal_type', 'occurrence_at']);
+    for (const n of ['log_meal', 'log_food', 'log_favorite']) expect(tools[n].inputSchema.properties.merge).toMatchObject({ type: 'boolean', default: true });
+    expect(tools.edit_meal._meta.ui.resourceUri).toBe('ui://clem/card.html');
+    expect(tools.copy_meal._meta.ui.resourceUri).toBe('ui://clem/card.html');
+    expect(tools.copy_meal.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: false });
+  });
+
+  it('log_meal joins the day’s meal of that type, as the app’s log button does', async () => {
+    const { uid, oats } = await setup('mcp-merge@example.test');
+    const at = '2026-03-02T08:00:00Z';
+    const first = await call(uid, 'log_food', { food_id: oats, amount: 1, unit: 'serving', meal_type: 'breakfast', occurrence_at: at });
+    const joined = await call(uid, 'log_meal', { description: 'a banana', meal_type: 'breakfast', occurrence_at: '2026-03-02T08:30:00Z' }, { AI: fakeAi(banana), JOBS: undefined });
+    expect(joined.data).toMatchObject({ id: first.data.id, status: 'completed', merged_from: expect.any(String) });
+    expect(joined.data.items).toHaveLength(2);
+    // merge: false keeps it a separate entry.
+    const apart = await call(uid, 'log_meal', { description: 'a banana', meal_type: 'breakfast', occurrence_at: at, merge: false }, { AI: fakeAi(banana), JOBS: undefined });
+    expect(apart.data.id).not.toBe(first.data.id);
+    expect(apart.data.merged_from).toBeUndefined();
+    expect((await call(uid, 'get_day', { date: '2026-03-02' })).data.meals).toHaveLength(2);
+  });
+
+  it('log_meal waits with backoff, then says the meal is still being read', async () => {
+    const { uid } = await setup('mcp-slow@example.test');
+    const saved = { ...MEAL_WAIT };
+    Object.assign(MEAL_WAIT, { totalMs: 400, delaysMs: [100, 200] });
+    const warn = vi.spyOn(console, 'warn');
+    // A queue that never runs the job: the meal stays in preparation.
+    const JOBS = { send: async () => {} } as unknown as Queue;
+    try {
+      const r = await rpc(uid, 'tools/call', { name: 'log_meal', arguments: { description: 'secret soup', meal_type: 'lunch' } }, { JOBS });
+      const data = JSON.parse(r.result.content[0].text);
+      expect(data).toMatchObject({ meal_id: expect.any(String), status: 'still reading', meal_type: 'lunch' });
+      expect(data.note).toContain(`get_meal with meal_id "${data.meal_id}"`);
+      expect(r.result.structuredContent).toMatchObject({ card: 'meal', status: 'still reading', id: data.meal_id });
+      const logged = warn.mock.calls.find((c) => c[0] === 'mcp log_meal still reading');
+      expect(logged?.[1]).toMatchObject({ meal_id: data.meal_id, waited_ms: expect.any(Number) });
+      expect(JSON.stringify(warn.mock.calls)).not.toContain('secret soup');
+      // The meal is there to look up later.
+      expect((await call(uid, 'get_meal', { meal_id: data.meal_id })).data.status).toBe('preparation');
+    } finally {
+      Object.assign(MEAL_WAIT, saved);
+      warn.mockRestore();
+    }
+  });
+
+  it('log_meal stops waiting when the AI job fails', async () => {
+    const { uid } = await setup('mcp-ai-fail@example.test');
+    const AI = { run: async () => Promise.reject(new Error('model down')) } as unknown as Ai;
+    const t0 = Date.now();
+    const r = await call(uid, 'log_meal', { description: 'toast', meal_type: 'snack' }, { AI, JOBS: undefined });
+    expect(Date.now() - t0).toBeLessThan(10_000);
+    expect(r.data.status).toBe('preparation');
+    expect(r.data.pending.error).toBeTruthy();
+  });
+
+  it('edit_meal changes the time, meal type and note', async () => {
+    const { uid, oats } = await setup('mcp-edit-meal@example.test');
+    const m = await call(uid, 'log_food', { food_id: oats, amount: 1, unit: 'serving', meal_type: 'breakfast', occurrence_at: '2026-03-05T09:00:00Z' });
+    expect(m.data.log_date).toBe('2026-03-05');
+    const moved = await call(uid, 'edit_meal', { meal_id: m.data.id, occurrence_at: '2026-03-04T19:30:00Z', meal_type: 'dinner', note: 'at the lake' });
+    expect(moved.data).toMatchObject({ id: m.data.id, log_date: '2026-03-04', meal_type: 'dinner', note: 'at the lake', occurrence_at: '2026-03-04T19:30:00.000Z' });
+    expect((await call(uid, 'edit_meal', { meal_id: m.data.id, note: null })).data.note).toBeNull();
+    expect(await call(uid, 'edit_meal', { meal_id: m.data.id })).toMatchObject({ isError: true });
+    expect(await call(uid, 'edit_meal', { meal_id: 'nope', note: 'x' })).toMatchObject({ isError: true });
+  });
+
+  it('copy_meal repeats a meal on a date, at noon in the user’s zone', async () => {
+    const { uid, oats, banana: b } = await setup('mcp-copy@example.test', 'America/New_York');
+    const src = await call(uid, 'log_food', { food_id: oats, amount: 2, unit: 'serving', meal_type: 'breakfast', occurrence_at: '2026-03-05T12:00:00Z' });
+    await call(uid, 'log_food', { food_id: b, amount: 1, unit: 'serving', add_to_meal_id: src.data.id });
+    const copy = await call(uid, 'copy_meal', { meal_id: src.data.id, date: '2026-01-10' });
+    expect(copy.data).toMatchObject({ meal_type: 'breakfast', log_date: '2026-01-10', occurrence_at: '2026-01-10T17:00:00.000Z' });
+    expect(copy.data.id).not.toBe(src.data.id);
+    expect(copy.data.items.map((i: any) => [i.food_id, i.amount_value])).toEqual([
+      [oats, 2],
+      [b, 1],
+    ]);
+    expect(copy.data.totals.ENERC_KCAL).toBe(405);
+    // In summer (EDT) noon is 16:00 UTC; the meal type can change.
+    const lunch = await call(uid, 'copy_meal', { meal_id: src.data.id, date: '2026-07-01', meal_type: 'lunch' });
+    expect(lunch.data).toMatchObject({ meal_type: 'lunch', log_date: '2026-07-01', occurrence_at: '2026-07-01T16:00:00.000Z' });
+    const exact = await call(uid, 'copy_meal', { meal_id: src.data.id, occurrence_at: '2026-02-01T13:15:00Z' });
+    expect(exact.data.occurrence_at).toBe('2026-02-01T13:15:00.000Z');
+    const now = await call(uid, 'copy_meal', { meal_id: src.data.id, date: 'today' });
+    expect(Math.abs(Date.parse(now.data.occurrence_at) - Date.now())).toBeLessThan(60_000);
+    expect(await call(uid, 'copy_meal', { meal_id: src.data.id, date: '2026-13-40' })).toMatchObject({ isError: true });
+  });
+
+  it('logs failed tools with their name and HTTP status, without the arguments', async () => {
+    const uid = await userId('mcp-fail-log@example.test');
+    const warn = vi.spyOn(console, 'warn');
+    try {
+      expect(await call(uid, 'get_meal', { meal_id: 'nope' })).toMatchObject({ isError: true, text: 'Error: intake not found' });
+      expect(warn).toHaveBeenCalledWith('mcp tool failed', { tool: 'get_meal', status: 404, message: 'intake not found' });
+      // An error raised by the tool itself has no HTTP status.
+      await call(uid, 'log_food', { amount: 1, unit: 'g', display_name: 'private snack' });
+      expect(warn).toHaveBeenCalledWith('mcp tool failed', { tool: 'log_food', status: null, message: 'give food_id, fdc_id or fatsecret_id' });
+      expect(JSON.stringify(warn.mock.calls)).not.toContain('private snack');
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
