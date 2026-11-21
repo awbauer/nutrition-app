@@ -18,6 +18,8 @@ import {
   type Status,
 } from '../lib/intake';
 import { getFood } from '../lib/foods';
+import { isDate, zonedTime } from '../lib/dates';
+import { today } from './day';
 import { mealHistory } from '../lib/events';
 import { assertAppendable, findMergeTarget, mergedInto, parseMergeSpec } from '../lib/merge';
 import { answer, createFromMedia, media, photo, retry } from './log';
@@ -192,12 +194,20 @@ intake.post('/:id/items', async (c) => {
   return c.json(await getIntake(c.env.DB, user.id, id), 201);
 });
 
-/** POST /api/intake/:id/copy -> copy a meal to now (or a given time / meal type). */
+/**
+ * POST /api/intake/:id/copy -> copy a meal to now, or to a given time, or to a log date (noon there, in
+ * the user's zone; today means now), optionally as another meal type.
+ */
 intake.post('/:id/copy', async (c) => {
   const user = c.get('user');
   const src = await getIntake(c.env.DB, user.id, c.req.param('id'));
   if (!src) throw new HttpError(404, 'intake not found');
-  const body = await c.req.json<{ occurrence_at?: string; meal_type?: MealType }>().catch(() => ({}) as Record<string, never>);
+  const body = await c.req.json<{ occurrence_at?: string; meal_type?: MealType; date?: string }>().catch(() => ({}) as Record<string, never>);
+  let occurrence_at = body.occurrence_at;
+  if (!occurrence_at && body.date !== undefined && body.date !== 'today') {
+    if (!isDate(body.date)) throw new HttpError(400, 'date must be YYYY-MM-DD');
+    if (body.date !== (await today(c.env.DB, user.id, user.timezone))) occurrence_at = zonedTime(body.date, '12:00', user.timezone);
+  }
   const items: ResolvedItem[] = [];
   for (const it of src.items) {
     if (!it.food_id) continue;
@@ -215,6 +225,6 @@ intake.post('/:id/copy', async (c) => {
     });
   }
   if (!items.length) throw new HttpError(400, 'meal has no items to copy');
-  const newId = await createIntake(c.env, user, { source: 'copy', meal_type: body.meal_type ?? src.meal_type, occurrence_at: body.occurrence_at, note: src.note }, items);
+  const newId = await createIntake(c.env, user, { source: 'copy', meal_type: body.meal_type ?? src.meal_type, occurrence_at, note: src.note }, items);
   return c.json(await getIntake(c.env.DB, user.id, newId), 201);
 });

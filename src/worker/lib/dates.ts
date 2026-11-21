@@ -82,3 +82,10 @@ export function mealTypeForTime(minutes: number): 'breakfast' | 'lunch' | 'dinne
   if (minutes >= 17 * 60 && minutes < 21 * 60 + 30) return 'dinner';
   return 'snack';
 }
+
+/** The instant a local wall-clock time on a date happens in `tz` (for times clear of a clock change, like noon). */
+export function zonedTime(date: string, hhmm: string, tz: string): string {
+  const guess = Date.parse(`${date}T${hhmm}:00Z`);
+  const lp = localParts(new Date(guess), tz);
+  return new Date(guess - (Date.parse(`${lp.date}T${lp.time}:00Z`) - guess)).toISOString();
+}
