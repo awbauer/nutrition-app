@@ -153,3 +153,14 @@ describe('amount chips by food', () => {
     expect(toGrams(1, 'shot').grams).toBe(44);
   });
 });
+
+describe('slice weights by food', () => {
+  it('weighs a slice of bacon, cheese or bread differently when the food has no slice portion', async () => {
+    const { toGrams } = await import('../src/worker/lib/units');
+    const guideline = [{ label: '1 guideline amount per slice of bread', unit: 'guideline', amount: 1, grams: 16 }];
+    expect(toGrams(2, 'slices', { name: 'Bacon, for use on a sandwich', portions: guideline as any }).grams).toBe(16);
+    expect(toGrams(1, 'slice', { name: 'Cheese, American' }).grams).toBe(21);
+    expect(toGrams(1, 'slice', { name: 'Bread, white' }).grams).toBe(30);
+    expect(toGrams(1, 'slice', { name: 'Bacon', portions: [{ label: '1 slice', unit: 'slice', amount: 1, grams: 9 }] as any }).grams).toBe(9);
+  });
+});

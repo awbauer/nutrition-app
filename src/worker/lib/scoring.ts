@@ -34,7 +34,15 @@ const DISTINCT = [
   'oil', 'powder', 'powdered', 'dry', 'dried', 'dehydrated', 'concentrate', 'mix', 'flour',
   'shake', 'shakes', 'syrup', 'candy', 'candies', 'pie', 'filling', 'sauce', 'soup', 'juice',
   'canned', 'frozen', 'imitation', 'substitute', 'flavored', 'flavor', 'supplement', 'bar',
+  // Preparations and products that aren't the plain food ("Egg, deviled" for "egg", "Bacon bits" for "bacon").
+  'creamed', 'deviled', 'omelet', 'souffle', 'salad', 'bits', 'sticks', 'jerky', 'spread', 'dip',
+  'meatless', 'vegetarian', 'vegan', 'meatfree',
+  // FNDDS "for use on a sandwich" / "for use with vegetables": an ingredient in a recipe, not the food.
+  'use',
 ];
+
+/** Descriptors that say which version of the plain food it is; they don't count as extra words. */
+const NEUTRAL = new Set(['whole', 'large', 'medium', 'small', 'grade', 'fresh', 'raw', 'cooked', 'ns', 'as', 'type', 'unprepared', 'prepared']);
 
 export const stem = (t: string) => t.replace(/(ies)$/, 'y').replace(/(es|s)$/, '');
 
@@ -80,7 +88,7 @@ export function scoreCandidate<T extends Candidate>(query: string, c: T, estimat
   }
 
   // Extra qualifiers dilute the match a little.
-  const extras = nameTokens.filter((t) => !has(qset, t)).length;
+  const extras = nameTokens.filter((t) => !has(qset, t) && !NEUTRAL.has(t)).length;
   score -= Math.min(extras, 8) * 0.03;
 
   // Product types the user didn't ask for.
@@ -111,6 +119,9 @@ export function scoreCandidate<T extends Candidate>(query: string, c: T, estimat
 export function rankCandidates<T extends Candidate>(query: string, cs: T[], estimateKcal100?: number | null): ScoredCandidate<T>[] {
   return cs.map((c) => scoreCandidate(query, c, estimateKcal100)).sort((a, b) => b.score - a.score);
 }
+
+/** Bumped when ranking changes, so the change log can compare how often each version's picks were fixed. */
+export const MATCHER_VERSION = 'match-v2';
 
 /** Minimum score to accept a candidate automatically; below it we fall back to the estimate. */
 export const ACCEPT_SCORE = 0.6;
