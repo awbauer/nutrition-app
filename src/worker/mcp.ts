@@ -667,7 +667,8 @@ export function buildServer(api: Api, appUrl = ''): McpServer {
     'get_targets',
     {
       title: 'Targets',
-      description: 'Current daily targets (energy kcal, protein, fat, carbs, fiber g) and body profile.',
+      description:
+        "Current daily targets (energy kcal, protein, fat, carbs, fiber g) and body profile. Fat, carbs and fiber the user hasn't set follow from the energy target (fat 30% of kcal, carbs the rest after protein, fiber 14 g per 1,000 kcal); `default_targets` lists those.",
       annotations: read,
     },
     () => api('GET', '/goals'),
