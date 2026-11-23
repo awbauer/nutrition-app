@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { suggestTargets, weightTrend } from '../src/worker/lib/energy';
+import { defaultMacros } from '../src/worker/lib/goals';
 import { addDays } from '../src/worker/lib/dates';
 import { api } from './helpers';
 
@@ -35,6 +36,13 @@ describe('energy and trend maths', () => {
 });
 
 describe('goals', () => {
+  it('derives default fat, carb and fiber targets from energy and protein', () => {
+    // 1,800 kcal with 150 g protein: fat 60 g (30%), carbs (1800 - 600 - 540) / 4 = 165 g, fiber 25 g.
+    expect(defaultMacros(1800, 150)).toEqual({ FAT: 60, CHOCDF: 165, FIBTG: 25 });
+    // Very high protein never makes carbs negative.
+    expect(defaultMacros(1500, 300).CHOCDF).toBe(0);
+  });
+
   it('suggests, applies, and replaces targets', async () => {
     const profile = { height_cm: 170, weight_kg: 70, age: 35, sex: 'female', activity: 'light', goal_rate_kg_per_week: 0 };
     const sug = await api('/goals/suggest', { method: 'POST', json: { profile } }, USER);
@@ -45,14 +53,28 @@ describe('goals', () => {
     await api('/goals/suggest', { method: 'POST', json: { profile, apply: true } }, USER);
     const g = await api('/goals', {}, USER);
     expect(g.data.profile).toEqual(profile);
-    expect(g.data.targets).toEqual({ ENERC_KCAL: sug.data.energy, PROCNT: 112 });
+    // Fat, carbs and fiber weren't set: they follow from energy and protein.
+    const e = sug.data.energy as number;
+    expect(g.data.targets).toEqual({
+      ENERC_KCAL: e,
+      PROCNT: 112,
+      FAT: Math.round((e * 0.3) / 9),
+      CHOCDF: Math.round((e - 112 * 4 - e * 0.3) / 4),
+      FIBTG: Math.round((e / 1000) * 14),
+    });
+    expect(g.data.default_targets).toEqual(['FAT', 'CHOCDF', 'FIBTG']);
 
+    // A set fiber target replaces its default; without protein, carbs assume 20% of energy from it.
     const upd = await api('/goals', { method: 'PUT', json: { energy: 1900, fiber: 30, protein: null } }, USER);
-    expect(upd.data.targets).toEqual({ ENERC_KCAL: 1900, FIBTG: 30 });
+    expect(upd.data.targets).toEqual({ ENERC_KCAL: 1900, FIBTG: 30, FAT: 63, CHOCDF: 238 });
+    expect(upd.data.default_targets).toEqual(['FAT', 'CHOCDF']);
 
     const day = await api(`/day/${g.data.date}`, {}, USER);
     expect(day.data.targets.ENERC_KCAL).toBe(1900);
     expect(day.data.remaining.ENERC_KCAL).toBe(1900);
+    expect(day.data.targets).toMatchObject({ FAT: 63, CHOCDF: 238, FIBTG: 30 });
+    expect(day.data.default_targets).toEqual(['FAT', 'CHOCDF']);
+    expect(day.data.remaining.FAT).toBe(63);
 
     expect((await api('/goals', { method: 'PUT', json: { calories: 2000 } }, USER)).status).toBe(400);
     expect((await api('/goals/suggest', { method: 'POST', json: { profile: { height_cm: 170 } } }, USER)).status).toBe(400);

@@ -14,7 +14,7 @@ import type { Env, User } from '../env';
 import { extractJson, gatewayOpts, isCapacityError, modelOptions, responseText } from './ai';
 import { addDays, localParts, logDate } from './dates';
 import { weightTrend } from './energy';
-import { goalsOn, targetsFromGoals } from './goals';
+import { goalsOn, ownTargets } from './goals';
 import { HttpError, newId } from './ids';
 import { COUNTED_STATUSES, dailyTotals, type MealType } from './intake';
 import { getSettings } from './settings';
@@ -310,7 +310,9 @@ export async function coachDigest(db: D1Database, user: User, reviewed: string, 
       .all<{ display_name: string }>(),
   ]);
   const rows = rowsRes.results;
-  const targets = targetsFromGoals(goals);
+  // The user's own targets only: default fat/carb targets would narrow the healthy fat range the split is
+  // judged by and make carbs, the flexible remainder, look like a target to hit.
+  const targets = ownTargets(goals);
   const stats = (back: number, len: number) => periodStats(addDays(reviewed, -(back + len - 1)), addDays(reviewed, -back), days, rows, targets);
 
   const day = stats(0, 1);

@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../env';
 import { addDays, isDate, logDate } from '../lib/dates';
 import { suggestTargets, validProfile, weightTrend, type Profile } from '../lib/energy';
-import { goalsOn, targetsFromGoals, type GoalRow } from '../lib/goals';
+import { defaultedTargets, goalsOn, targetsFromGoals, type GoalRow } from '../lib/goals';
 import { HttpError, newId } from '../lib/ids';
 import { COUNTED_STATUSES, dailyTotals } from '../lib/intake';
 import { round } from '../lib/nutrients';
@@ -27,7 +27,7 @@ progress.get('/goals', async (c) => {
   const user = c.get('user');
   const date = await today(c.env.DB, user.id, user.timezone);
   const [goals, profile] = await Promise.all([goalsOn(c.env.DB, user.id, date), getProfile(c.env.DB, user.id)]);
-  return c.json({ date, goals, targets: targetsFromGoals(goals), profile });
+  return c.json({ date, goals, targets: targetsFromGoals(goals), default_targets: defaultedTargets(goals), profile });
 });
 
 /**
@@ -39,7 +39,7 @@ progress.put('/goals', async (c) => {
   const date = await today(c.env.DB, user.id, user.timezone);
   await setGoals(c.env.DB, user.id, date, await c.req.json<Record<string, number | null>>());
   const goals = await goalsOn(c.env.DB, user.id, date);
-  return c.json({ date, goals, targets: targetsFromGoals(goals) });
+  return c.json({ date, goals, targets: targetsFromGoals(goals), default_targets: defaultedTargets(goals) });
 });
 
 async function setGoals(db: D1Database, userId: string, date: string, body: Record<string, number | null>): Promise<void> {

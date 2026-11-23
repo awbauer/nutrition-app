@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../env';
 import { addDays, isDate, logDate } from '../lib/dates';
 import { HttpError } from '../lib/ids';
-import { goalsOn, targetsFromGoals } from '../lib/goals';
+import { defaultedTargets, goalsOn, targetsFromGoals } from '../lib/goals';
 import { dailyTotals, intakesForDates } from '../lib/intake';
 import { round } from '../lib/nutrients';
 import { getSettings } from '../lib/settings';
@@ -30,7 +30,7 @@ day.get('/day/:date', async (c) => {
   const targets = targetsFromGoals(goals);
   const remaining: Record<string, number> = {};
   for (const [k, t] of Object.entries(targets)) remaining[k] = round(t - (totals[k] ?? 0));
-  return c.json({ date, meals, totals, unconfirmed, targets, remaining });
+  return c.json({ date, meals, totals, unconfirmed, targets, default_targets: defaultedTargets(goals), remaining });
 });
 
 /** GET /api/range?from=&to= -> daily totals for a range (max 366 days). */

@@ -12,6 +12,8 @@ interface Profile {
 }
 interface Goals {
   targets: Record<string, number>;
+  /** Fat, carbs and fiber following from the calorie target because none was set. */
+  default_targets?: string[];
   profile: Profile | null;
 }
 
@@ -41,7 +43,8 @@ export function Targets(props: { weightUnit: 'kg' | 'lb' }) {
   const load = () =>
     api.get<Goals>('/goals').then((r) => {
       setG(r);
-      setEdit(Object.fromEntries(FIELDS.map(([, code]) => [code, r.targets[code] != null ? String(r.targets[code]) : ''])));
+      // A default isn't the user's own value: leave its field empty and show the default as the placeholder.
+      setEdit(Object.fromEntries(FIELDS.map(([, code]) => [code, r.targets[code] != null && !r.default_targets?.includes(code) ? String(r.targets[code]) : ''])));
       if (r.profile) setP(r.profile);
     });
   useEffect(() => {
@@ -52,7 +55,7 @@ export function Targets(props: { weightUnit: 'kg' | 'lb' }) {
     const body: Record<string, number | null> = {};
     for (const [type, code] of FIELDS) {
       const raw = edit[code]?.trim() ?? '';
-      const cur = g?.targets[code];
+      const cur = g?.default_targets?.includes(code) ? undefined : g?.targets[code];
       const next = raw === '' ? null : Number(raw);
       if ((next ?? null) !== (cur ?? null)) body[type] = next;
     }
@@ -93,13 +96,18 @@ export function Targets(props: { weightUnit: 'kg' | 'lb' }) {
                 class="input tabular-nums"
                 type="number"
                 inputMode="numeric"
-                placeholder="—"
+                placeholder={g.default_targets?.includes(code) ? `${Math.round(g.targets[code]!)} (default)` : '—'}
                 value={edit[code] ?? ''}
                 onInput={(e) => setEdit({ ...edit, [code]: (e.target as HTMLInputElement).value })}
               />
             </label>
           ))}
         </div>
+        {!!g.default_targets?.length && (
+          <p class="text-xs text-ink-2">
+            Fat, carbs and fiber you leave empty follow your calorie target: fat 30% of calories, carbs the rest after protein, fiber 14 g per 1,000 kcal.
+          </p>
+        )}
         <button class="btn-primary" onClick={saveTargets}>
           Save targets
         </button>

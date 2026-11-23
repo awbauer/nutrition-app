@@ -213,6 +213,8 @@ export interface Day {
   /** How many of those meals the totals include. */
   unconfirmed: number;
   targets: Record<string, number>;
+  /** Targets that are defaults following from the calorie target, not set by the user. */
+  default_targets?: string[];
   remaining: Record<string, number>;
 }
 export interface Settings {

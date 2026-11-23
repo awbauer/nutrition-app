@@ -72,9 +72,9 @@ export function Summary(props: { day: Day; isToday?: boolean }) {
       </div>
 
       <div class="mt-5 grid grid-cols-3 gap-3 border-t border-line pt-4">
-        <Macro label="Carbs" value={totals.CHOCDF} target={targets.CHOCDF} />
-        <Macro label="Fat" value={totals.FAT} target={targets.FAT} />
-        <Macro label="Fiber" value={totals.FIBTG} target={targets.FIBTG} />
+        <Macro label="Carbs" value={totals.CHOCDF} target={targets.CHOCDF} kind="limit" />
+        <Macro label="Fat" value={totals.FAT} target={targets.FAT} kind="limit" />
+        <Macro label="Fiber" value={totals.FIBTG} target={targets.FIBTG} kind="floor" />
       </div>
     </section>
   );
@@ -103,20 +103,41 @@ function ProteinBadge(props: { eaten: number; target?: number }) {
   );
 }
 
-function Macro(props: { label: string; value?: number; target?: number }) {
+/**
+ * A macro against its target. Carbs and fat are budgets (going over shows in red); fiber is a floor to
+ * reach (reaching it shows in green).
+ */
+function Macro(props: { label: string; value?: number; target?: number; kind: 'limit' | 'floor' }) {
   const v = props.value ?? 0;
-  const pct = props.target ? Math.min(v / props.target, 1) : null;
+  const t = props.target;
+  const pct = t ? Math.min(v / t, 1) : null;
+  const diff = t ? Math.round(t - v) : 0;
+  const over = t != null && props.kind === 'limit' && diff < 0;
+  const met = t != null && props.kind === 'floor' && diff <= 0;
+  const bar = over ? 'bg-berry' : met ? 'bg-sage' : props.kind === 'floor' ? 'bg-sage/70' : 'bg-ink-2';
   return (
     <div>
       <p class="eyebrow">{props.label}</p>
       <p class="mt-1">
-        <span class="num text-xl font-semibold">{Math.round(v)}</span>
-        <span class="text-xs text-faint">{props.target ? ` / ${Math.round(props.target)} g` : ' g'}</span>
+        <span class={`num text-xl font-semibold ${over ? 'text-berry' : ''}`}>{Math.round(v)}</span>
+        <span class="text-xs text-faint">{t ? ` / ${Math.round(t)} g` : ' g'}</span>
       </p>
       {pct != null && (
-        <div class="mt-1.5 h-1 rounded-full bg-sunken">
-          <div class="h-1 rounded-full bg-ink-2" style={{ width: `${pct * 100}%` }} />
-        </div>
+        <>
+          <div
+            class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-sunken"
+            role="progressbar"
+            aria-label={`${props.label} toward target`}
+            aria-valuemin={0}
+            aria-valuemax={Math.round(t!)}
+            aria-valuenow={Math.round(v)}
+          >
+            <div class={`h-full rounded-full ${bar}`} style={{ width: `${pct * 100}%` }} />
+          </div>
+          <p class={`mt-1 text-[11px] ${over ? 'text-berry' : met ? 'text-sage' : 'text-faint'}`}>
+            {over ? `${-diff} g over` : met ? 'Met' : props.kind === 'floor' ? `${diff} g to go` : `${diff} g left`}
+          </p>
+        </>
       )}
     </div>
   );
