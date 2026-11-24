@@ -75,7 +75,8 @@ export function Targets(props: { weightUnit: 'kg' | 'lb' }) {
           sticky: true,
           message: `Saved, but your macros add up to ${Math.round(macroKcal).toLocaleString()} kcal, not ${kcal.toLocaleString()}. Clear the ones you want recalculated.`,
         });
-      else toast.success(filled.length ? `Saved. Filled in ${filled.join(', ')}` : 'Targets saved');
+      // Same id as the mismatch warning, so a balanced save replaces a warning left from an earlier one.
+      else toast.success(filled.length ? `Saved. Filled in ${filled.join(', ')}` : 'Targets saved', { id: 'targets' });
       load();
     } catch (e) {
       toast.error(e);
