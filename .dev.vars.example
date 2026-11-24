@@ -1,10 +1,13 @@
-# Copy to .dev.vars for local development. Never commit .dev.vars.
-DEV_AUTH=1
-DEV_USER_EMAIL=me@example.test
-# DEMO_KEY works for light local use; get a real key at https://fdc.nal.usda.gov/api-key-signup
+# Secrets the Worker needs. The Deploy to Cloudflare button asks for these; see package.json "cloudflare.bindings".
+# For local development, copy this file to .dev.vars (never commit .dev.vars) and add the local-only lines below.
+ACCESS_TEAM_DOMAIN=
+ACCESS_AUD=
+# Free key at https://fdc.nal.usda.gov/api-key-signup (DEMO_KEY works for light use)
 USDA_API_KEY=DEMO_KEY
 
-# Leave empty locally to call Workers AI without AI Gateway (create the gateway before deploying).
-AI_GATEWAY_ID=
-# Optional: point the USDA client at a mock server for local testing.
-# USDA_BASE_URL=http://localhost:8799/fdc/v1
+# Local only, add to .dev.vars:
+#   DEV_AUTH=1                     skip Access (honoured only on localhost)
+#   DEV_USER_EMAIL=me@example.test
+#   AI_GATEWAY_ID=                 empty calls Workers AI without a gateway
+# Optional anywhere: FATSECRET_CONSUMER_KEY / FATSECRET_CONSUMER_SECRET (FatSecret search),
+#   VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY / VAPID_SUBJECT (push reminders: node scripts/vapid-keys.mjs)
