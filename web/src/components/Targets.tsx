@@ -52,17 +52,30 @@ export function Targets(props: { weightUnit: 'kg' | 'lb' }) {
   }, []);
 
   async function saveTargets() {
-    const body: Record<string, number | null> = {};
+    // Blank fields are calculated around the filled ones (server side, see balanceTargets) and saved too.
+    const body: Record<string, number | null | boolean> = { fill: true };
     for (const [type, code] of FIELDS) {
       const raw = edit[code]?.trim() ?? '';
-      const cur = g?.default_targets?.includes(code) ? undefined : g?.targets[code];
-      const next = raw === '' ? null : Number(raw);
-      if ((next ?? null) !== (cur ?? null)) body[type] = next;
+      const n = Number(raw);
+      if (raw !== '' && !(n > 0)) return toast.error(`${FIELDS.find(([t]) => t === type)![2]} must be a positive number`);
+      body[type] = raw === '' ? null : n;
     }
-    if (!Object.keys(body).length) return;
     try {
-      await api.put('/goals', body);
-      toast.success('Targets saved');
+      const r = await api.put<{ targets: Record<string, number>; filled?: string[] }>('/goals', body);
+      const filled = (r.filled ?? []).map((t) => {
+        const [, code, label] = FIELDS.find(([type]) => type === t)!;
+        return `${label.replace(/ \(.*\)$/, '').toLowerCase()} ${Math.round(r.targets[code]!).toLocaleString()}${code === 'ENERC_KCAL' ? ' kcal' : ' g'}`;
+      });
+      const { ENERC_KCAL: kcal, PROCNT: p, FAT: f, CHOCDF: c } = r.targets;
+      const macroKcal = (p ?? 0) * 4 + (f ?? 0) * 9 + (c ?? 0) * 4;
+      if (kcal && p && f && c && Math.abs(macroKcal - kcal) > kcal * 0.05)
+        toast.show({
+          id: 'targets',
+          tone: 'info',
+          sticky: true,
+          message: `Saved, but your macros add up to ${Math.round(macroKcal).toLocaleString()} kcal, not ${kcal.toLocaleString()}. Clear the ones you want recalculated.`,
+        });
+      else toast.success(filled.length ? `Saved. Filled in ${filled.join(', ')}` : 'Targets saved');
       load();
     } catch (e) {
       toast.error(e);
@@ -98,16 +111,18 @@ export function Targets(props: { weightUnit: 'kg' | 'lb' }) {
                 inputMode="numeric"
                 placeholder={g.default_targets?.includes(code) ? `${Math.round(g.targets[code]!)} (default)` : '—'}
                 value={edit[code] ?? ''}
-                onInput={(e) => setEdit({ ...edit, [code]: (e.target as HTMLInputElement).value })}
+                onInput={(e) => {
+                  const v = (e.target as HTMLInputElement).value;
+                  setEdit((cur) => ({ ...cur, [code]: v }));
+                }}
               />
             </label>
           ))}
         </div>
-        {!!g.default_targets?.length && (
-          <p class="text-xs text-ink-2">
-            Fat, carbs and fiber you leave empty follow your calorie target: fat 30% of calories, carbs the rest after protein, fiber 14 g per 1,000 kcal.
-          </p>
-        )}
+        <p class="text-xs text-ink-2">
+          Leave any field empty and saving fills it in around the ones you set: macros split the calories left at 20% protein, 30% fat, 50% carbs; calories add up from your macros;
+          fiber is 14 g per 1,000 kcal.
+        </p>
         <button class="btn-primary" onClick={saveTargets}>
           Save targets
         </button>

@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { AppEnv } from '../env';
 import { addDays, isDate, logDate } from '../lib/dates';
 import { suggestTargets, validProfile, weightTrend, type Profile } from '../lib/energy';
-import { defaultedTargets, goalsOn, targetsFromGoals, type GoalRow } from '../lib/goals';
+import { balanceTargets, defaultedTargets, goalsOn, targetsFromGoals, type GoalRow } from '../lib/goals';
 import { HttpError, newId } from '../lib/ids';
 import { COUNTED_STATUSES, dailyTotals } from '../lib/intake';
 import { round } from '../lib/nutrients';
@@ -31,15 +31,26 @@ progress.get('/goals', async (c) => {
 });
 
 /**
- * PUT /api/goals { energy?: number|null, protein?: ..., 'body-weight'?: ... }
+ * PUT /api/goals { energy?: number|null, protein?: ..., 'body-weight'?: ..., fill?: boolean }
  * A new value starts today and closes the previous goal; null cancels.
+ * With `fill`, the body is the whole set of nutrition targets: the ones given are anchors and the blank ones
+ * (null or missing) are calculated around them (see balanceTargets) and saved too; `filled` lists those.
  */
 progress.put('/goals', async (c) => {
   const user = c.get('user');
   const date = await today(c.env.DB, user.id, user.timezone);
-  await setGoals(c.env.DB, user.id, date, await c.req.json<Record<string, number | null>>());
+  const { fill, ...body } = await c.req.json<Record<string, number | null> & { fill?: boolean }>();
+  let filled: string[] = [];
+  if (fill) {
+    const types = ['energy', 'protein', 'fat', 'carbs', 'fiber'] as const;
+    for (const t of types) if (body[t] != null && !(typeof body[t] === 'number' && body[t]! > 0)) throw new HttpError(400, `invalid ${t} target`);
+    const b = balanceTargets(body);
+    filled = types.filter((t) => body[t] == null && b[t] != null && b[t]! > 0);
+    for (const t of types) body[t] = b[t] != null && b[t]! > 0 ? b[t] : null;
+  }
+  await setGoals(c.env.DB, user.id, date, body);
   const goals = await goalsOn(c.env.DB, user.id, date);
-  return c.json({ date, goals, targets: targetsFromGoals(goals), default_targets: defaultedTargets(goals) });
+  return c.json({ date, goals, targets: targetsFromGoals(goals), default_targets: defaultedTargets(goals), ...(fill ? { filled } : {}) });
 });
 
 async function setGoals(db: D1Database, userId: string, date: string, body: Record<string, number | null>): Promise<void> {

@@ -32,25 +32,47 @@ export async function goalsOn(db: D1Database, userId: string, date: string): Pro
   return out;
 }
 
-/** Share of energy from fat when no fat target is set (middle of the 20–35% guideline range). */
-const DEFAULT_FAT_SHARE = 0.3;
-/** Protein's share of energy assumed for the carb default when no protein target is set. */
-const DEFAULT_PROTEIN_SHARE = 0.2;
+/** Benchmark split of energy between the macros (protein and fat mid-range of the guidelines, carbs the rest). */
+export const MACRO_SHARE = { protein: 0.2, fat: 0.3, carbs: 0.5 } as const;
+const KCAL_PER_G = { protein: 4, fat: 9, carbs: 4 } as const;
 /** Fiber per 1,000 kcal (Dietary Guidelines for Americans). */
 const FIBER_PER_1000_KCAL = 14;
+const MACROS = ['protein', 'fat', 'carbs'] as const;
+
+export type TargetInput = Partial<Record<'energy' | 'protein' | 'fat' | 'carbs' | 'fiber', number | null>>;
 
 /**
- * Fat, carb and fiber targets that follow from the energy (and protein) target, for the ones the user
- * hasn't set: fat at 30% of energy, carbs the energy left after protein and fat, fiber 14 g per 1,000 kcal.
+ * Fill in the targets left blank, keeping the given ones as anchors.
+ * - No energy: it follows from the given macros at their benchmark shares (with all three given, simply their calories).
+ * - Blank macros split the energy the given ones leave, in proportion to their benchmark shares.
+ * - Blank fiber: 14 g per 1,000 kcal.
+ * Values come back rounded; a macro the others leave no room for comes back 0. With nothing to anchor on, nothing is filled.
  */
+export function balanceTargets(input: TargetInput): Record<'energy' | 'protein' | 'fat' | 'carbs' | 'fiber', number | null> {
+  const given = (v: number | null | undefined): v is number => typeof v === 'number' && v > 0;
+  const known = MACROS.filter((m) => given(input[m]));
+  const knownKcal = known.reduce((s, m) => s + input[m]! * KCAL_PER_G[m], 0);
+  let energy = given(input.energy) ? input.energy : null;
+  if (energy == null && known.length) energy = knownKcal / known.reduce((s, m) => s + MACRO_SHARE[m], 0);
+  const out = { energy: energy != null ? Math.round(energy) : null, protein: null, fat: null, carbs: null, fiber: null } as Record<
+    'energy' | 'protein' | 'fat' | 'carbs' | 'fiber',
+    number | null
+  >;
+  const blank = MACROS.filter((m) => !given(input[m]));
+  const left = energy != null ? Math.max(0, energy - knownKcal) : 0;
+  const blankShare = blank.reduce((s, m) => s + MACRO_SHARE[m], 0);
+  for (const m of MACROS) {
+    if (given(input[m])) out[m] = input[m];
+    else if (energy != null) out[m] = Math.round((left * MACRO_SHARE[m]) / blankShare / KCAL_PER_G[m]);
+  }
+  out.fiber = given(input.fiber) ? input.fiber : energy != null ? Math.round((energy / 1000) * FIBER_PER_1000_KCAL) : null;
+  return out;
+}
+
+/** Fat, carb and fiber targets that follow from the energy and protein targets (see balanceTargets). */
 export function defaultMacros(energy: number, protein?: number): Record<'FAT' | 'CHOCDF' | 'FIBTG', number> {
-  const fat = (energy * DEFAULT_FAT_SHARE) / 9;
-  const proteinKcal = protein != null ? protein * 4 : energy * DEFAULT_PROTEIN_SHARE;
-  return {
-    FAT: Math.round(fat),
-    CHOCDF: Math.max(0, Math.round((energy - proteinKcal - fat * 9) / 4)),
-    FIBTG: Math.round((energy / 1000) * FIBER_PER_1000_KCAL),
-  };
+  const b = balanceTargets({ energy, protein });
+  return { FAT: b.fat!, CHOCDF: b.carbs!, FIBTG: b.fiber! };
 }
 
 /** Nutrient codes whose target is a default (no goal set) rather than the user's own. */
@@ -66,12 +88,16 @@ export function ownTargets(goals: Record<string, GoalRow>): Record<string, numbe
   return t;
 }
 
-/** Targets by nutrient code: the user's goals, plus defaults for fat, carbs and fiber when an energy goal is set. */
+/** Targets by nutrient code: the user's goals, plus fat, carbs and fiber balanced around them when an energy goal is set. */
 export function targetsFromGoals(goals: Record<string, GoalRow>): Record<string, number> {
   const t = ownTargets(goals);
   if (goals.energy) {
-    const d = defaultMacros(goals.energy.target_value, goals.protein?.target_value);
-    for (const code of defaultedTargets(goals)) t[code] = d[code as keyof typeof d];
+    const v = (k: string) => goals[k]?.target_value;
+    const b = balanceTargets({ energy: v('energy'), protein: v('protein'), fat: v('fat'), carbs: v('carbs'), fiber: v('fiber') });
+    for (const code of defaultedTargets(goals)) {
+      const type = Object.keys(GOAL_NUTRIENT).find((k) => GOAL_NUTRIENT[k] === code) as keyof typeof b;
+      t[code] = b[type]!;
+    }
   }
   return t;
 }
