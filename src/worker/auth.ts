@@ -10,10 +10,19 @@ function teamOrigin(domain: string): string {
   return `https://${host.includes('.') ? host : `${host}.cloudflareaccess.com`}`;
 }
 
+/** localhost, loopback addresses and the reserved .localhost / .test names: never a deployed Worker's hostname. */
+export function isLocalHost(hostname: string): boolean {
+  const h = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  return h === 'localhost' || h === '127.0.0.1' || h === '::1' || h.endsWith('.localhost') || h.endsWith('.test');
+}
+
 /** Validate the Cloudflare Access JWT and return {sub, email}. Throws on failure. */
 export async function verifyAccess(req: Request, env: Env): Promise<{ sub: string; email: string | null }> {
-  if (!env.ACCESS_TEAM_DOMAIN || !env.ACCESS_AUD) {
-    if (env.DEV_AUTH === '1') {
+  // "pending" is the placeholder the Deploy to Cloudflare button suggests before Access exists.
+  const unset = (v?: string) => !v || v.trim() === '' || v.trim().toLowerCase() === 'pending';
+  if (unset(env.ACCESS_TEAM_DOMAIN) || unset(env.ACCESS_AUD)) {
+    // The bypass only works on a local host, so a deploy that carries DEV_AUTH by mistake still refuses everyone.
+    if (env.DEV_AUTH === '1' && isLocalHost(new URL(req.url).hostname)) {
       const email = env.DEV_USER_EMAIL || 'dev@example.test';
       return { sub: `dev:${email}`, email };
     }
@@ -21,7 +30,7 @@ export async function verifyAccess(req: Request, env: Env): Promise<{ sub: strin
   }
   const token = req.headers.get('Cf-Access-Jwt-Assertion') ?? cookie(req, 'CF_Authorization');
   if (!token) throw new Error('missing Access token');
-  const issuer = teamOrigin(env.ACCESS_TEAM_DOMAIN);
+  const issuer = teamOrigin(env.ACCESS_TEAM_DOMAIN!);
   let jwks = jwksCache.get(issuer);
   if (!jwks) {
     jwks = createRemoteJWKSet(new URL(`${issuer}/cdn-cgi/access/certs`));

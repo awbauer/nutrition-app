@@ -8,9 +8,9 @@
     "build": "npm run build:cards && vite build",
     "typecheck": "npm run build:cards && tsc --noEmit -p tsconfig.json && tsc --noEmit -p web/tsconfig.json",
     "test": "vitest run",
-    "db:migrate:local": "wrangler d1 migrations apply nutrition --local",
-    "db:migrate:remote": "wrangler d1 migrations apply nutrition --remote",
-    "deploy": "npm run build:cards && vite build && wrangler d1 migrations apply nutrition --remote && wrangler deploy",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local",
+    "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
+    "deploy": "npm run build:cards && vite build && wrangler d1 migrations apply DB --remote && wrangler deploy",
     "pretest": "npm run build:cards && vite build --logLevel warn",
     "build:cards": "vite build -c vite.cards.config.ts --logLevel warn",
     "format": "prettier --write .",
@@ -51,5 +51,21 @@
   "allowScripts": {
     "esbuild@0.28.2": true,
     "workerd@1.20261113.1": true
+  },
+  "cloudflare": {
+    "bindings": {
+      "ACCESS_TEAM_DOMAIN": {
+        "description": "Your Cloudflare Access team domain, e.g. `myteam.cloudflareaccess.com`. Turn on Access for the Worker after it deploys (Settings \u2192 Domains & Routes \u2192 workers.dev \u2192 Enable Cloudflare Access) and set this then; until both Access values are set, every API call answers 401. Enter `pending` for now."
+      },
+      "ACCESS_AUD": {
+        "description": "The Access application's **AUD tag**, shown once Access is on for the Worker. Enter `pending` for now and replace it after deploying."
+      },
+      "USDA_API_KEY": {
+        "description": "Free key from [USDA FoodData Central](https://fdc.nal.usda.gov/api-key-signup). `DEMO_KEY` works for a quick try but is rate-limited."
+      },
+      "AI_GATEWAY_ID": {
+        "description": "AI Gateway that every Workers AI call goes through. `default` is created for you on first use; any other name must exist first."
+      }
+    }
   }
 }

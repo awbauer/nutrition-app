@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { api, json, mockFetch } from './helpers';
+import { app } from '../src/worker/app';
+import { isLocalHost } from '../src/worker/auth';
+import { api, json, mockFetch, testEnv } from './helpers';
 import { DETAILS, searchResults } from './fixtures/usda';
 
 beforeEach(() => {
@@ -20,6 +22,16 @@ describe('auth', () => {
   it('rejects requests when Access is not configured and dev auth is off', async () => {
     const r = await api('/me', {}, { DEV_AUTH: '0' });
     expect(r.status).toBe(401);
+  });
+  it('ignores dev auth on a deployed hostname', async () => {
+    const res = await app.request('https://clem.example.workers.dev/api/me', {}, { ...testEnv, JOBS: undefined, HISTORY: undefined });
+    expect(res.status).toBe(401);
+    const pending = await api('/me', {}, { DEV_AUTH: '0', ACCESS_TEAM_DOMAIN: 'pending', ACCESS_AUD: 'pending' });
+    expect(pending.status).toBe(401);
+    expect(isLocalHost('localhost')).toBe(true);
+    expect(isLocalHost('[::1]')).toBe(true);
+    expect(isLocalHost('clem.example.workers.dev')).toBe(false);
+    expect(isLocalHost('localhost.example.com')).toBe(false);
   });
   it('provisions the dev user', async () => {
     const r = await api('/me');
