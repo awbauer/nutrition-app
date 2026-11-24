@@ -356,9 +356,9 @@ export function GraphView() {
               {nodes
                 .filter((n) => n.type === 'meal')
                 .map((m) => (
-                  <circle cx={m.x} cy={m.y} r={m.r * 3.2} fill="url(#meal-wash)" opacity={focusId && !near.has(m.id) ? 0.3 : 1} class="transition-opacity" />
+                  <circle cx={m.x} cy={m.y} r={m.r * 3.2} fill="url(#meal-wash)" pointer-events="none" opacity={focusId && !near.has(m.id) ? 0.3 : 1} class="transition-opacity" />
                 ))}
-              <g fill="none" stroke-linecap="round">
+              <g fill="none" stroke-linecap="round" pointer-events="none">
                 {links.map((l) => {
                   const a = l.source as SimNode;
                   const b = l.target as SimNode;
