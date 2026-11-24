@@ -12,6 +12,7 @@ A personal nutrition tracker that installs on your phone and runs entirely on yo
 ![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
 ![Preact](https://img.shields.io/badge/Preact-PWA-673AB8?logo=preact&logoColor=white)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/awbauer/nutrition-app)
 
@@ -125,7 +126,7 @@ Then set the secrets from steps 1–3 with `npx wrangler secret put`. If you set
 
 ```mermaid
 flowchart LR
-  A[📱 PWA<br/>photo · voice · text] -->|/api| W[Worker<br/>Hono]
+  A[📱 PWA<br/>photo · voice · text] -->|/api| W[Worker API<br/>Hono router]
   W --> Q[(Queue)]
   Q --> AI[Workers AI<br/>finds foods & portions]
   AI --> M[Matcher]
@@ -145,7 +146,7 @@ flowchart LR
 | Layer | Choice |
 | --- | --- |
 | Frontend | Vite, Preact and Tailwind v4, served as Worker static assets (one origin) |
-| API | Cloudflare Worker with Hono, plus an MCP server with OAuth 2.1 |
+| API | A Cloudflare Worker, with [Hono](https://hono.dev/) as its web framework for routing, plus an MCP server with OAuth 2.1 |
 | Auth | Cloudflare Access; the Worker validates the JWT |
 | Data | D1 (numbered migrations in `migrations/`); FHIR mapping in [docs/fhir-mapping.md](docs/fhir-mapping.md) |
 | Media | R2 (private) |
@@ -220,4 +221,4 @@ The running version is shown at the bottom of Settings.
 
 ---
 
-<sub>The original build spec is in [docs/spec.md](docs/spec.md). Work is tracked in [GitHub issues](https://github.com/awbauer/nutrition-app/issues). Screenshots show made-up demo data.</sub>
+<sub>The original build spec is in [docs/spec.md](docs/spec.md). Work is tracked in [GitHub issues](https://github.com/awbauer/nutrition-app/issues). Screenshots show made-up demo data. [MIT licensed](LICENSE).</sub>
