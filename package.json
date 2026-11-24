@@ -67,5 +67,6 @@
         "description": "AI Gateway that every Workers AI call goes through. `default` is created for you on first use; any other name must exist first."
       }
     }
-  }
+  },
+  "license": "MIT"
 }
