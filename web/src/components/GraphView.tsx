@@ -50,7 +50,13 @@ const RANGES = [
   { days: 365, label: 'Year' },
 ];
 
-const radius = (n: GNode) => (n.type === 'meal' ? 16 + Math.sqrt(n.weight) * 1.2 : 5 + Math.sqrt(Math.max(n.weight, 0.5)) * 3.2);
+const MEAL_ORDER = ['breakfast', 'lunch', 'dinner', 'snack'];
+const radius = (n: GNode) =>
+  n.type === 'meal'
+    ? Math.min(44, 22 + Math.sqrt(n.weight) * 1.1)
+    : n.type === 'brand'
+      ? 3.5 + Math.sqrt(Math.max(n.weight, 0.5)) * 1.6
+      : 4.5 + Math.sqrt(Math.max(n.weight, 0.5)) * 3;
 const endId = (e: SimLink['source']) => (typeof e === 'object' ? (e as SimNode).id : String(e));
 
 /** Lay the graph out once (no live jiggle): a few hundred ticks of a force simulation. */
@@ -58,34 +64,147 @@ function layout(g: Graph, shown: Set<NodeType>): { nodes: SimNode[]; links: SimL
   const nodes: SimNode[] = g.nodes.filter((n) => shown.has(n.type)).map((n) => ({ ...n, r: radius(n) }));
   const ids = new Set(nodes.map((n) => n.id));
   const links: SimLink[] = g.edges.filter((e) => ids.has(e.source) && ids.has(e.target)).map((e) => ({ ...e }));
-  // Meals sit apart on a ring so foods gather around the meal they belong to.
-  const meals = nodes.filter((n) => n.type === 'meal');
+  // Meals are pinned round a clock face (breakfast at the top, going clockwise), so each
+  // meal's foods gather in their own quarter instead of the meals drifting into one knot.
+  const meals = nodes.filter((n) => n.type === 'meal').sort((a, b) => MEAL_ORDER.indexOf(a.id.slice(5)) - MEAL_ORDER.indexOf(b.id.slice(5)));
+  const ring = 150 + Math.sqrt(nodes.length) * 13;
+  const mealAt = new Map<string, SimNode>();
   meals.forEach((m, i) => {
     const a = (i / meals.length) * Math.PI * 2 - Math.PI / 2;
-    m.x = Math.cos(a) * 220;
-    m.y = Math.sin(a) * 220;
+    m.fx = m.x = meals.length > 1 ? Math.cos(a) * ring : 0;
+    m.fy = m.y = meals.length > 1 ? Math.sin(a) * ring : 0;
+    mealAt.set(m.id.slice(5), m);
   });
+  // Start foods beside their usual meal so the layout settles into tidy clusters.
+  nodes.forEach((n, i) => {
+    if (n.type === 'meal') return;
+    const home = n.top_meal ? mealAt.get(n.top_meal) : undefined;
+    const a = i * 2.39996;
+    const d = 30 + (i % 7) * 12;
+    n.x = (home?.x ?? 0) + Math.cos(a) * d;
+    n.y = (home?.y ?? 0) + Math.sin(a) * d;
+  });
+  // Each food is drawn gently toward its usual meal; brands and the rest toward the middle.
+  const anchor = (n: SimNode) => (n.top_meal ? mealAt.get(n.top_meal) : undefined);
+  const home = (l: SimLink) => {
+    const food = (typeof l.source === 'object' ? l.source : null) as SimNode | null;
+    return food?.top_meal && endId(l.target) === `meal:${food.top_meal}`;
+  };
   const sim = forceSimulation<SimNode>(nodes)
     .force(
       'link',
       forceLink<SimNode, SimLink>(links)
         .id((n) => n.id)
-        .distance((l) => (l.type === 'eaten_with' ? 60 : l.type === 'eaten_at' ? 110 : 70))
-        .strength((l) => (l.type === 'eaten_at' ? 0.04 + Math.min(l.weight, 10) * 0.02 : l.type === 'eaten_with' ? 0.08 + Math.min(l.weight, 8) * 0.03 : 0.25)),
+        .distance((l) => (l.type === 'eaten_with' ? 55 : l.type === 'eaten_at' ? 95 : l.type === 'made_by' ? 38 : 60))
+        .strength((l) =>
+          l.type === 'eaten_at'
+            ? home(l)
+              ? 0.12 + Math.min(l.weight, 10) * 0.02
+              : 0.01
+            : l.type === 'eaten_with'
+              ? 0.05 + Math.min(l.weight, 8) * 0.02
+              : l.type === 'made_by'
+                ? 0.5
+                : 0.25,
+        ),
     )
     .force(
       'charge',
-      forceManyBody<SimNode>().strength((n) => (n.type === 'meal' ? -500 : -70)),
+      forceManyBody<SimNode>()
+        .strength((n) => (n.type === 'meal' ? -400 : n.type === 'brand' ? -25 : -60))
+        .distanceMax(260),
+    )
+    .force('collide', forceCollide<SimNode>((n) => (n.type === 'meal' ? n.r + 14 : n.r + 3.5)).iterations(2))
+    .force(
+      'x',
+      forceX<SimNode>((n) => (anchor(n)?.x ?? 0) * 0.9).strength((n) => (anchor(n) ? 0.06 : 0.02)),
     )
     .force(
-      'collide',
-      forceCollide<SimNode>((n) => n.r + 3),
+      'y',
+      forceY<SimNode>((n) => (anchor(n)?.y ?? 0) * 0.9).strength((n) => (anchor(n) ? 0.06 : 0.02)),
     )
-    .force('x', forceX<SimNode>(0).strength(0.03))
-    .force('y', forceY<SimNode>(0).strength(0.03))
     .stop();
-  sim.tick(320);
+  sim.tick(360);
   return { nodes, links };
+}
+
+/** A gentle bow so parallel edges don't stack into one thick line. */
+function arc(a: SimNode, b: SimNode): string {
+  const dx = b.x! - a.x!;
+  const dy = b.y! - a.y!;
+  const cx = (a.x! + b.x!) / 2 - dy * 0.12;
+  const cy = (a.y! + b.y!) / 2 + dx * 0.12;
+  return `M${a.x},${a.y}Q${cx},${cy} ${b.x},${b.y}`;
+}
+
+const LABEL_PX = 11;
+let ctx: CanvasRenderingContext2D | null | undefined;
+const widths = new Map<string, number>();
+/** Width of a label at LABEL_PX on screen, measured once with the page's own font. */
+function textWidth(text: string, weight: number): number {
+  const key = `${weight}|${text}`;
+  let w = widths.get(key);
+  if (w === undefined) {
+    if (ctx === undefined) ctx = document.createElement('canvas').getContext('2d');
+    if (ctx) ctx.font = `${weight} ${LABEL_PX}px ${getComputedStyle(document.body).fontFamily}`;
+    w = ctx ? ctx.measureText(text).width : text.length * LABEL_PX * 0.56;
+    widths.set(key, w);
+  }
+  return w;
+}
+
+const short = (s: string) => (s.length > 24 ? `${s.slice(0, 23)}…` : s);
+interface Label {
+  x: number;
+  y: number;
+  anchor: 'start' | 'middle' | 'end';
+  text: string;
+}
+type Rect = [number, number, number, number];
+const hits = (a: Rect, b: Rect) => a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1];
+const hitsCircle = (r: Rect, n: SimNode) => {
+  const cx = Math.max(r[0], Math.min(n.x!, r[2]));
+  const cy = Math.max(r[1], Math.min(n.y!, r[3]));
+  return (cx - n.x!) ** 2 + (cy - n.y!) ** 2 < n.r * n.r;
+};
+
+/**
+ * Greedy label placement: most important first, each label tries below, above, right and left
+ * of its circle and is dropped if every spot would overlap another label or circle. Positions are
+ * in layout units, sized so text stays LABEL_PX on screen at zoom k; `view` is the visible area,
+ * so a label at the edge of the box tries another side rather than being cut off.
+ */
+function placeLabels(nodes: SimNode[], k: number, focus: Set<string>, focusId: string | null, view: Rect | null): Map<string, Label> {
+  const out = new Map<string, Label>();
+  const placed: Rect[] = [];
+  const fs = LABEL_PX / k;
+  const pad = 2 / k;
+  for (const m of nodes) if (m.type === 'meal') placed.push([m.x! - m.r, m.y! - m.r, m.x! + m.r, m.y! + m.r]);
+  const rank = (n: SimNode) => (n.id === focusId ? 3 : focus.has(n.id) ? 2 : 0) + (n.type === 'brand' ? 0 : 1);
+  const order = nodes.filter((n) => n.type !== 'meal' && (focusId ? focus.has(n.id) : true)).sort((a, b) => rank(b) - rank(a) || b.weight - a.weight);
+  order.forEach((n, i) => {
+    // Away from the focus, small circles only get a label once zoomed in enough to read it.
+    if (!focusId && i > 45 && n.r * k < 9) return;
+    const text = short(n.label);
+    const w = textWidth(text, n.id === focusId ? 650 : 550) / k;
+    const gap = 3 / k;
+    const spots: [Label, Rect][] = [
+      [{ x: n.x!, y: n.y! + n.r + gap + fs * 0.8, anchor: 'middle', text }, [n.x! - w / 2, n.y! + n.r + gap, n.x! + w / 2, n.y! + n.r + gap + fs]],
+      [{ x: n.x!, y: n.y! - n.r - gap - fs * 0.2, anchor: 'middle', text }, [n.x! - w / 2, n.y! - n.r - gap - fs, n.x! + w / 2, n.y! - n.r - gap]],
+      [{ x: n.x! + n.r + gap, y: n.y! + fs * 0.35, anchor: 'start', text }, [n.x! + n.r + gap, n.y! - fs / 2, n.x! + n.r + gap + w, n.y! + fs / 2]],
+      [{ x: n.x! - n.r - gap, y: n.y! + fs * 0.35, anchor: 'end', text }, [n.x! - n.r - gap - w, n.y! - fs / 2, n.x! - n.r - gap, n.y! + fs / 2]],
+    ];
+    const must = n.id === focusId;
+    for (const [label, rect] of spots) {
+      const box: Rect = [rect[0] - pad, rect[1] - pad, rect[2] + pad, rect[3] + pad];
+      const off = view && (box[0] < view[0] || box[1] < view[1] || box[2] > view[2] || box[3] > view[3]);
+      if (!must && (off || placed.some((p) => hits(p, box)) || nodes.some((m) => m !== n && m.type !== 'meal' && hitsCircle(box, m)))) continue;
+      placed.push(box);
+      out.set(n.id, label);
+      return;
+    }
+  });
+  return out;
 }
 
 function ago(iso: string): string {
@@ -98,6 +217,7 @@ export function GraphView() {
   const [g, setG] = useState<Graph | null>(null);
   const [shown, setShown] = useState<Set<NodeType>>(() => new Set(['food', 'meal', 'brand', 'recipe']));
   const [sel, setSel] = useState<string | null>(null);
+  const [hover, setHover] = useState<string | null>(null);
   const [k, setK] = useState(1);
   const svgRef = useRef<SVGSVGElement>(null);
   const zoomRef = useRef<ZoomBehavior<SVGSVGElement, unknown> | null>(null);
@@ -106,6 +226,7 @@ export function GraphView() {
   useEffect(() => {
     setG(null);
     setSel(null);
+    setHover(null);
     api.get<Graph>(`/graph?days=${days}`).then(setG, (e) => toast.error(e));
   }, [days]);
 
@@ -121,19 +242,15 @@ export function GraphView() {
     }
     return m;
   }, [links, byId]);
-  // The most-eaten foods are always labelled; the rest when zoomed in or next to the selection.
-  const labelled = useMemo(
-    () =>
-      new Set(
-        nodes
-          .filter((n) => n.type !== 'meal')
-          .sort((a, b) => b.weight - a.weight)
-          .slice(0, 14)
-          .map((n) => n.id),
-      ),
-    [nodes],
-  );
-  const near = useMemo(() => new Set(sel ? [sel, ...(neighbours.get(sel) ?? []).map((x) => x.node.id)] : []), [sel, neighbours]);
+  // Hovering (mouse only) previews what selecting would highlight.
+  const focusId = hover ?? sel;
+  const near = useMemo(() => new Set(focusId ? [focusId, ...(neighbours.get(focusId) ?? []).map((x) => x.node.id)] : []), [focusId, neighbours]);
+  // Labels are re-placed per zoom step: that is what lets more of them appear as you zoom in.
+  const svgW = svgRef.current?.clientWidth ?? 0;
+  const svgH = svgRef.current?.clientHeight ?? 0;
+  const view: Rect | null = svgW ? [-t.x / t.k, -t.y / t.k, (svgW - t.x) / t.k, (svgH - t.y) / t.k] : null;
+  const viewKey = view?.map((v) => Math.round(v)).join() ?? '';
+  const labels = useMemo(() => placeLabels(nodes, k, near, focusId, view), [nodes, k, near, focusId, viewKey]);
 
   // Pan and pinch-zoom; fit the layout to the box whenever it changes.
   useEffect(() => {
@@ -157,9 +274,11 @@ export function GraphView() {
     if (!svg || !z || !nodes.length) return;
     const w = svg.clientWidth;
     const h = svg.clientHeight;
-    const xs = nodes.map((n) => n.x!);
-    const ys = nodes.map((n) => n.y!);
-    const [x0, x1, y0, y1] = [Math.min(...xs) - 40, Math.max(...xs) + 40, Math.min(...ys) - 40, Math.max(...ys) + 40];
+    // Extra room at the sides for labels that sit beside their circle.
+    const x0 = Math.min(...nodes.map((n) => n.x! - n.r)) - 60;
+    const x1 = Math.max(...nodes.map((n) => n.x! + n.r)) + 60;
+    const y0 = Math.min(...nodes.map((n) => n.y! - n.r)) - 30;
+    const y1 = Math.max(...nodes.map((n) => n.y! + n.r)) + 30;
     const s = Math.min(2, w / (x1 - x0), h / (y1 - y0));
     select(svg).call(z.transform, zoomIdentity.translate(w / 2 - ((x0 + x1) / 2) * s, h / 2 - ((y0 + y1) / 2) * s).scale(s));
   }, [nodes]);
@@ -207,7 +326,14 @@ export function GraphView() {
       </div>
 
       <div class="relative flex flex-col gap-4">
-        <div class="card relative h-[58dvh] min-h-[22rem] overflow-hidden lg:h-[72dvh]">
+        <div
+          class="card relative h-[58dvh] min-h-[22rem] overflow-hidden lg:h-[72dvh]"
+          style={{
+            backgroundImage: 'radial-gradient(var(--line) 1px, transparent 1.2px)',
+            backgroundSize: '20px 20px',
+            backgroundPosition: `${t.x}px ${t.y}px`,
+          }}
+        >
           {!g && <div class="absolute inset-0 animate-pulse bg-sunken" />}
           {g && !g.nodes.length && (
             <div class="absolute inset-0 flex flex-col items-center justify-center gap-3 px-8 text-center">
@@ -226,64 +352,99 @@ export function GraphView() {
             }}
           >
             <g transform={`translate(${t.x},${t.y}) scale(${t.k})`}>
-              {links.map((l) => {
-                const a = l.source as SimNode;
-                const b = l.target as SimNode;
-                const on = !sel || a.id === sel || b.id === sel;
-                return (
-                  <line
-                    x1={a.x}
-                    y1={a.y}
-                    x2={b.x}
-                    y2={b.y}
-                    stroke={l.type === 'eaten_with' ? 'var(--accent)' : 'var(--ink-2)'}
-                    stroke-opacity={on ? (sel ? 0.7 : l.type === 'eaten_with' ? 0.35 : 0.14) : 0.04}
-                    stroke-width={(l.type === 'eaten_with' ? 0.8 + Math.min(l.weight, 8) * 0.5 : 0.8) / Math.sqrt(k)}
-                    stroke-dasharray={l.type === 'ingredient' ? '3 3' : undefined}
-                  />
-                );
-              })}
+              {/* Each meal's quarter gets a soft wash so the clusters read at a glance. */}
+              {nodes
+                .filter((n) => n.type === 'meal')
+                .map((m) => (
+                  <circle cx={m.x} cy={m.y} r={m.r * 3.2} fill="url(#meal-wash)" pointer-events="none" opacity={focusId && !near.has(m.id) ? 0.3 : 1} class="transition-opacity" />
+                ))}
+              <g fill="none" stroke-linecap="round" pointer-events="none">
+                {links.map((l) => {
+                  const a = l.source as SimNode;
+                  const b = l.target as SimNode;
+                  const on = !!focusId && (a.id === focusId || b.id === focusId);
+                  const base = l.type === 'eaten_with' ? 0.32 : l.type === 'eaten_at' ? 0.09 : l.type === 'made_by' ? 0.3 : 0.45;
+                  const w = l.type === 'eaten_with' ? 0.8 + Math.min(l.weight, 8) * 0.35 : l.type === 'eaten_at' ? 0.6 + Math.min(l.weight, 10) * 0.08 : 0.9;
+                  return (
+                    <path
+                      d={arc(a, b)}
+                      stroke={l.type === 'eaten_with' ? 'var(--accent)' : l.type === 'eaten_at' ? 'var(--mustard)' : COLOR[b.type === 'food' ? a.type : b.type]}
+                      stroke-opacity={focusId ? (on ? 0.85 : 0.03) : base}
+                      stroke-width={(on ? w + 0.6 : w) / Math.sqrt(k)}
+                      stroke-dasharray={l.type === 'ingredient' ? `${3 / k} ${3 / k}` : undefined}
+                      class="transition-[stroke-opacity]"
+                    />
+                  );
+                })}
+              </g>
               {nodes.map((n) => {
-                const dim = sel && !near.has(n.id);
-                const showLabel = n.type !== 'food' || labelled.has(n.id) || n.r * k > 16 || near.has(n.id);
-                // Text keeps the same size on screen whatever the zoom.
-                const fs = (n.type === 'meal' ? 12 : 11) / k;
+                const dim = !!focusId && !near.has(n.id);
+                const sw = 1.5 / Math.sqrt(k);
                 return (
                   <g
                     transform={`translate(${n.x},${n.y})`}
-                    class="cursor-pointer"
-                    opacity={dim ? 0.18 : 1}
+                    class="cursor-pointer transition-opacity"
+                    opacity={dim ? 0.15 : 1}
+                    onPointerEnter={(e) => e.pointerType === 'mouse' && setHover(n.id)}
+                    onPointerLeave={() => setHover((h) => (h === n.id ? null : h))}
                     onClick={(e) => {
                       e.stopPropagation();
                       setSel(sel === n.id ? null : n.id);
                     }}
                   >
-                    <circle
-                      r={n.r}
-                      fill={COLOR[n.type]}
-                      fill-opacity={n.type === 'meal' ? 0.22 : 0.9}
-                      stroke={COLOR[n.type]}
-                      stroke-width={n.id === sel ? 3 : n.type === 'meal' ? 1.5 : 0}
-                    />
-                    {showLabel && (
-                      <text
-                        y={n.type === 'meal' ? fs * 0.35 : n.r + fs * 1.05}
-                        text-anchor="middle"
-                        font-size={fs}
-                        font-weight={n.type === 'meal' || n.id === sel ? 650 : 500}
-                        fill="var(--ink)"
-                        stroke="var(--card)"
-                        stroke-width={3 / k}
-                        paint-order="stroke"
-                        style={{ pointerEvents: 'none' }}
-                      >
-                        {n.label.length > 26 ? `${n.label.slice(0, 25)}…` : n.label}
-                      </text>
+                    {n.id === sel && <circle r={n.r + 4 / Math.sqrt(k)} fill="none" stroke="var(--ink)" stroke-width={sw} />}
+                    {n.type === 'meal' ? (
+                      <>
+                        <circle r={n.r} fill="var(--mustard-soft)" stroke="var(--mustard)" stroke-width={sw * 1.3} />
+                        <text
+                          y={(LABEL_PX + 1) / k / 2.8}
+                          text-anchor="middle"
+                          font-size={(LABEL_PX + 1) / k}
+                          font-weight={700}
+                          letter-spacing={0.02}
+                          fill="var(--ink)"
+                          stroke="var(--mustard-soft)"
+                          stroke-width={3 / k}
+                          paint-order="stroke"
+                          style={{ pointerEvents: 'none' }}
+                        >
+                          {n.label}
+                        </text>
+                      </>
+                    ) : n.type === 'brand' ? (
+                      // Brands are context, not food: hollow so the eye goes to what was eaten.
+                      <circle r={n.r} fill="var(--card)" stroke={COLOR.brand} stroke-width={sw} />
+                    ) : (
+                      <circle r={n.r} fill={COLOR[n.type]} stroke="var(--card)" stroke-width={sw} />
                     )}
                   </g>
                 );
               })}
+              <g style={{ pointerEvents: 'none' }} stroke="var(--card)" stroke-width={3 / k} paint-order="stroke" stroke-linejoin="round">
+                {nodes.map((n) => {
+                  const lb = labels.get(n.id);
+                  if (!lb) return null;
+                  return (
+                    <text
+                      x={lb.x}
+                      y={lb.y}
+                      text-anchor={lb.anchor}
+                      font-size={LABEL_PX / k}
+                      font-weight={n.id === focusId ? 650 : 550}
+                      fill={n.type === 'brand' ? 'var(--ink-2)' : 'var(--ink)'}
+                    >
+                      {lb.text}
+                    </text>
+                  );
+                })}
+              </g>
             </g>
+            <defs>
+              <radialGradient id="meal-wash">
+                <stop offset="0" stop-color="var(--mustard)" stop-opacity="0.13" />
+                <stop offset="1" stop-color="var(--mustard)" stop-opacity="0" />
+              </radialGradient>
+            </defs>
           </svg>
           {g && g.nodes.length > 0 && !sel && <p class="pointer-events-none absolute bottom-3 left-4 text-xs text-faint">Tap a circle · pinch or scroll to zoom</p>}
         </div>
