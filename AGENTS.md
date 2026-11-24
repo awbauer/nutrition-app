@@ -35,10 +35,15 @@ When you do ask, batch the questions, give your recommendation first, and keep w
 Merging to `main` deploys to production through Workers Builds (it runs `npm run deploy`, which applies D1 migrations first). Before merging a PR:
 
 1. **CI is green on the PR.** CI runs format check, typecheck and tests.
-2. **You have read the whole diff yourself**, including work done by subagents. Their reports are claims, not proof.
-3. **Tests cover new server logic.** For user-visible changes, you have run the app locally and looked at it (`.claude/launch.json`, port 8788; phone width 390×844 and desktop).
-4. **Migrations are additive and safe for old clients.** Old clients keep calling the API for a few minutes after a deploy.
-5. **Merge order:** PRs merge one at a time, in dependency order. A stacked PR is rebased or retargeted onto `main` after its base merges.
+2. **The PR has been reviewed.** Codex (`@codex`) reviews PRs.
+   - Wait for its review after opening the PR. If nothing from Codex has appeared 10 minutes after opening, comment `@codex review` on the PR.
+   - If there is still nothing 20 minutes after tagging, merge anyway and say in the PR that the review never came.
+   - Address every review finding before merging: fix it, or reply on the thread with why not.
+   - Pushing fixes doesn't restart the wait.
+3. **You have read the whole diff yourself**, including work done by subagents. Their reports are claims, not proof.
+4. **Tests cover new server logic.** For user-visible changes, you have run the app locally and looked at it (`.claude/launch.json`, port 8788; phone width 390×844 and desktop).
+5. **Migrations are additive and safe for old clients.** Old clients keep calling the API for a few minutes after a deploy.
+6. **Merge order:** PRs merge one at a time, in dependency order. A stacked PR is rebased or retargeted onto `main` after its base merges.
 
 After merging, watch the Workers Build until it succeeds. Then check production logs for new errors over the next stretch of traffic. If the deploy breaks something, revert first and investigate second.
 
