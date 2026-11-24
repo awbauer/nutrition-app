@@ -677,8 +677,10 @@ export function buildServer(api: Api, appUrl = ''): McpServer {
     'set_targets',
     {
       title: 'Set targets',
-      description: 'Set daily targets from today on. Pass only the ones to change; null removes one.',
+      description:
+        'Set daily targets from today on. Pass only the ones to change; null removes one. With fill: true, pass the whole set you want: blank ones are calculated around the given ones (macros split the calories left by benchmark shares of 20% protein, 30% fat, 50% carbs; calories from the macros when left out; fiber 14 g per 1,000 kcal).',
       inputSchema: z.object({
+        fill: z.boolean().optional().describe('calculate and save the targets left out'),
         energy: z.number().positive().nullable().optional().describe('kcal'),
         protein: z.number().positive().nullable().optional().describe('g'),
         fat: z.number().positive().nullable().optional().describe('g'),

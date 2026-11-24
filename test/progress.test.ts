@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { suggestTargets, weightTrend } from '../src/worker/lib/energy';
-import { defaultMacros } from '../src/worker/lib/goals';
+import { balanceTargets, defaultMacros } from '../src/worker/lib/goals';
 import { addDays } from '../src/worker/lib/dates';
 import { api } from './helpers';
 
@@ -37,10 +37,25 @@ describe('energy and trend maths', () => {
 
 describe('goals', () => {
   it('derives default fat, carb and fiber targets from energy and protein', () => {
-    // 1,800 kcal with 150 g protein: fat 60 g (30%), carbs (1800 - 600 - 540) / 4 = 165 g, fiber 25 g.
-    expect(defaultMacros(1800, 150)).toEqual({ FAT: 60, CHOCDF: 165, FIBTG: 25 });
-    // Very high protein never makes carbs negative.
-    expect(defaultMacros(1500, 300).CHOCDF).toBe(0);
+    // 1,800 kcal with 150 g protein leaves 1,200 kcal, split fat:carbs 30:50 -> 450 kcal fat (50 g), 750 kcal carbs (188 g).
+    expect(defaultMacros(1800, 150)).toEqual({ FAT: 50, CHOCDF: 188, FIBTG: 25 });
+    // Protein using up all the calories leaves the others at 0, never negative.
+    expect(defaultMacros(1500, 400)).toMatchObject({ FAT: 0, CHOCDF: 0 });
+  });
+
+  it('balances blank targets around the ones given', () => {
+    // Energy and one macro: the rest split what's left by benchmark share.
+    expect(balanceTargets({ energy: 2000, fat: 80 })).toEqual({ energy: 2000, protein: 91, fat: 80, carbs: 229, fiber: 28 });
+    // All macros, no energy: energy is their calories.
+    expect(balanceTargets({ protein: 150, fat: 60, carbs: 200, fiber: 30 })).toEqual({ energy: 1940, protein: 150, fat: 60, carbs: 200, fiber: 30 });
+    // One macro, no energy: it sets the scale at its benchmark share (150 g protein = 600 kcal = 20%).
+    expect(balanceTargets({ protein: 150 })).toEqual({ energy: 3000, protein: 150, fat: 100, carbs: 375, fiber: 42 });
+    // Two macros: energy from their combined share (600 + 540 kcal over 50%), carbs the remainder.
+    expect(balanceTargets({ protein: 150, fat: 60 })).toEqual({ energy: 2280, protein: 150, fat: 60, carbs: 285, fiber: 32 });
+    // Everything given is kept as is, even if it doesn't add up.
+    expect(balanceTargets({ energy: 1800, protein: 150, fat: 60, carbs: 200, fiber: 30 })).toEqual({ energy: 1800, protein: 150, fat: 60, carbs: 200, fiber: 30 });
+    // Fiber alone anchors nothing.
+    expect(balanceTargets({ fiber: 30 })).toEqual({ energy: null, protein: null, fat: null, carbs: null, fiber: 30 });
   });
 
   it('suggests, applies, and replaces targets', async () => {
@@ -58,13 +73,13 @@ describe('goals', () => {
     expect(g.data.targets).toEqual({
       ENERC_KCAL: e,
       PROCNT: 112,
-      FAT: Math.round((e * 0.3) / 9),
-      CHOCDF: Math.round((e - 112 * 4 - e * 0.3) / 4),
+      FAT: Math.round(((e - 448) * 0.375) / 9),
+      CHOCDF: Math.round(((e - 448) * 0.625) / 4),
       FIBTG: Math.round((e / 1000) * 14),
     });
     expect(g.data.default_targets).toEqual(['FAT', 'CHOCDF', 'FIBTG']);
 
-    // A set fiber target replaces its default; without protein, carbs assume 20% of energy from it.
+    // A set fiber target replaces its default; without a protein target, fat and carbs keep their benchmark shares.
     const upd = await api('/goals', { method: 'PUT', json: { energy: 1900, fiber: 30, protein: null } }, USER);
     expect(upd.data.targets).toEqual({ ENERC_KCAL: 1900, FIBTG: 30, FAT: 63, CHOCDF: 238 });
     expect(upd.data.default_targets).toEqual(['FAT', 'CHOCDF']);
@@ -75,6 +90,18 @@ describe('goals', () => {
     expect(day.data.targets).toMatchObject({ FAT: 63, CHOCDF: 238, FIBTG: 30 });
     expect(day.data.default_targets).toEqual(['FAT', 'CHOCDF']);
     expect(day.data.remaining.FAT).toBe(63);
+
+    // Fill: the given targets anchor, the blank ones are calculated and saved as the user's own.
+    const fill = await api('/goals', { method: 'PUT', json: { fill: true, energy: 2000, protein: 150, fat: null, carbs: null, fiber: null } }, USER);
+    expect(fill.status).toBe(200);
+    expect(fill.data.targets).toEqual({ ENERC_KCAL: 2000, PROCNT: 150, FAT: 58, CHOCDF: 219, FIBTG: 28 });
+    expect(fill.data.filled).toEqual(['fat', 'carbs', 'fiber']);
+    expect(fill.data.default_targets).toEqual([]);
+    // No energy: it's added up from the macros.
+    const sum = await api('/goals', { method: 'PUT', json: { fill: true, protein: 150, fat: 60, carbs: 200 } }, USER);
+    expect(sum.data.targets).toMatchObject({ ENERC_KCAL: 1940, PROCNT: 150, FAT: 60, CHOCDF: 200 });
+    expect(sum.data.filled).toEqual(['energy', 'fiber']);
+    expect((await api('/goals', { method: 'PUT', json: { fill: true, energy: -5 } }, USER)).status).toBe(400);
 
     expect((await api('/goals', { method: 'PUT', json: { calories: 2000 } }, USER)).status).toBe(400);
     expect((await api('/goals/suggest', { method: 'POST', json: { profile: { height_cm: 170 } } }, USER)).status).toBe(400);
