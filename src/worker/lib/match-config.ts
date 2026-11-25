@@ -123,7 +123,7 @@ export interface MatchConfig {
 }
 
 export const MATCH_CONFIG: MatchConfig = {
-  logic: 7,
+  logic: 8,
   words: {
     stop: ['and', 'with', 'the', 'of', 'a', 'an', 'in', 'on', 'or', 'for', 'to', 'style', 'plain', 'regular'],
     distinct: [

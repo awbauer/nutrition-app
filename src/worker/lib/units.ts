@@ -28,6 +28,8 @@ const VOLUME_ML: Record<string, number> = {
   pint: 473.176,
   quart: 946.353,
   gallon: 3785.41,
+  // A coffee-shop syrup or sauce pump: about a quarter fluid ounce (a pump of syrup is ~20 kcal).
+  pump: 7.5,
 };
 const CUP_ML = VOLUME_ML.cup!;
 /** A bowl, when the food's grams per cup are known: about a cup and a half (cereal, soup, rice). */
@@ -316,6 +318,18 @@ export function withCounts(portions: Portion[]): Portion[] {
 /** A portion counted in whole things (cookie, breast, medium), not a serving or a measure. */
 const isCounted = (p: Portion) => p.unit !== 'serving' && !(p.unit in VOLUME_ML) && !(p.unit in MASS);
 
+/** Portions smaller than the everyday one: a "piece" of bagel is not a miniature bagel. */
+const UNDERSIZED = /\b(miniature|mini|bite[- ]?size|snack[- ]?size|fun[- ]?size|cracker[- ]?size|baby|thin|small)\b/i;
+
+/**
+ * The everyday size of a food counted in whole things: "1 regular" or "1 medium" when the database
+ * lists sizes (USDA survey foods often list "1 miniature" first), else the first that isn't undersized.
+ */
+function typicalCounted(portions: Portion[]): Portion | undefined {
+  const counted = portions.filter(isCounted);
+  return counted.find((p) => p.unit === 'regular' || p.unit === 'medium') ?? counted.find((p) => !UNDERSIZED.test(p.label) && !UNDERSIZED.test(p.unit)) ?? counted[0];
+}
+
 /** The food's own word for one of it ("cookie"), for items counted as pieces. */
 export function countUnit(portions: Portion[]): string | null {
   // Only a count read from the food's own serving label ("2 cookies"); a "1 medium" portion
@@ -349,9 +363,11 @@ export function toGrams(amount: number, rawUnit: string, food?: FoodForGrams): C
   const portion =
     portions.find((p) => p.unit === unit) ??
     portions.find((p) => normaliseUnit(p.label.split(/[ ,(]/)[0] ?? '') === unit) ??
-    // A piece is one of the things counted ("3 Oreos" is 3 cookies, not 3 servings of 2 cookies).
-    (unit === 'piece' ? portions.find(isCounted) : undefined) ??
-    (unit === 'serving' || unit === 'piece' ? portions[0] : undefined);
+    // A piece is one of the things counted ("3 Oreos" is 3 cookies, not 3 servings of 2 cookies),
+    // at its everyday size.
+    (unit === 'piece' ? typicalCounted(portions) : undefined) ??
+    // A serving without a serving portion: the first listed, unless that's an undersized one.
+    (unit === 'serving' || unit === 'piece' ? ((portions[0] && UNDERSIZED.test(portions[0].label) ? typicalCounted(portions) : undefined) ?? portions[0]) : undefined);
   if (portion && portion.amount > 0) return { grams: (amount * portion.grams) / portion.amount, method: 'portion' };
 
   if ((unit === 'serving' || unit === 'piece') && food?.default_serving_grams) return { grams: amount * food.default_serving_grams, method: 'default-serving' };

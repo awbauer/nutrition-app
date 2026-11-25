@@ -92,6 +92,48 @@ describe('serving to grams', () => {
     expect(toGrams(1, 'cup', { portions: [{ label: '1/4 cup', unit: 'serving', amount: 1, grams: 58 }] }).grams).toBe(232);
     expect(withCounts([{ label: '28 g', unit: 'serving', amount: 1, grams: 28 }])).toHaveLength(1);
   });
+  it('counts a piece at its everyday size, not the miniature listed first', () => {
+    // USDA survey foods list sizes smallest first: "1 bagel" came out at a miniature's 26 g.
+    const bagel = {
+      default_serving_grams: 26,
+      portions: [
+        { label: '1 miniature', unit: 'miniature', amount: 1, grams: 26 },
+        { label: '1 small', unit: 'small', amount: 1, grams: 69 },
+        { label: '1 regular', unit: 'regular', amount: 1, grams: 105 },
+        { label: '1 large', unit: 'large', amount: 1, grams: 131 },
+      ],
+    };
+    expect(toGrams(1, 'piece', bagel).grams).toBe(105);
+    expect(toGrams(1, 'serving', bagel).grams).toBe(105);
+    // Asked for by size, the size still wins.
+    expect(toGrams(1, 'large', bagel).grams).toBe(131);
+    expect(toGrams(1, 'miniature', bagel).grams).toBe(26);
+    // Without a regular or medium, the first size that isn't undersized.
+    const muffin = {
+      portions: [
+        { label: '1 mini', unit: 'mini', amount: 1, grams: 17 },
+        { label: '1 muffin', unit: 'muffin', amount: 1, grams: 113 },
+      ],
+    };
+    expect(toGrams(2, 'piece', muffin).grams).toBe(226);
+    // A first portion that's a measure is still the serving.
+    expect(toGrams(1, 'serving', { portions: [{ label: '1 cup', unit: 'cup', amount: 1, grams: 185 }] }).grams).toBe(185);
+  });
+  it('weighs a pump of syrup as a quarter fluid ounce, not a serving', () => {
+    // Pancake syrup's default serving is a cup (320 g): "2 pumps" came out at 640 g.
+    const syrup = {
+      name: 'hazelnut syrup',
+      default_serving_grams: 320,
+      portions: [
+        { label: '1 cup', unit: 'cup', amount: 1, grams: 320 },
+        { label: '1 tablespoon', unit: 'tbsp', amount: 1, grams: 20 },
+      ],
+    };
+    expect(normaliseUnit('pumps')).toBe('pump');
+    expect(toGrams(2, 'pumps', syrup).grams).toBe(20);
+    // With no portions, the syrup's density from the cup table.
+    expect(toGrams(2, 'pump', { name: 'vanilla syrup' }).grams).toBeCloseTo(20.6, 1);
+  });
   it('maps UCUM units', () => {
     expect(ucum('ml')).toBe('mL');
     expect(ucum('cups')).toBe('[cup_us]');
